@@ -20,7 +20,7 @@ namespace MPFever
         public static bool Hex(string s, int n) => s != null && s.Length == n && s.All(c => c >= '0' && c <= '9' || c >= 'a' && c <= 'f');
         public static bool CanonicalBase64(string data,int bytes)
         {
-            if(bytes<1 || data==null || data.Length!=4*((bytes+2)/3))return false;
+            if(bytes<1 || bytes>ChunkBytes || data==null || data.Length!=4*((bytes+2)/3))return false;
             int pad=(3-bytes%3)%3,end=data.Length-pad,last=0;
             for(int i=0;i<end;i++)
             {

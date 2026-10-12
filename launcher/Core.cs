@@ -449,7 +449,7 @@ namespace MPFever
             {
                 if (c == '"' || c == '\\') sb.Append('\\').Append(c);
                 else if (c == '\n') sb.Append("\\n");
-                else if (c < 32) sb.Append('\\').Append(((int)c).ToString("000"));
+                else if (c < 32 || c == 127) sb.Append('\\').Append(((int)c).ToString("000"));
                 else sb.Append(c);
             }
             return sb.Append('"').ToString();
