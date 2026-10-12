@@ -28,6 +28,7 @@ namespace MPFever
             {
                 if(args.Length==1 && args[0]=="--bench") return TcpBenchmark.Run();
                 NetworkTests();
+                HandshakeTests();
                 SnapshotTests();
                 IdentityTests();
                 SchemaTests();
