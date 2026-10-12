@@ -114,7 +114,7 @@ python tests\test_lang.py
 python tests\test_lockstep.py
 ```
 
-`test_lockstep.py` has not been updated for the companies module (0.3.x) yet and currently stops at start-up.
+The offline harness now loads the current companies module and runs the existing scenarios on Linux and Windows. Run the full regression suite with `python -m unittest discover -s tests -p "test_*.py" -v` after installing `tests/requirements-offline.txt`. The raw language check still reports three audited missing keys; `python tests/test_lang_baseline.py --report` rejects any new translation defect. One known registry-signature failure (AUD-04) remains explicitly expected. See [the stage 1 report](docs/STAGE1_TESTS_DECODER.md) for limits and evidence; offline success does not verify the game engine.
 
 The real tests run two games on one PC: `MPFever.exe --autotest <savegame>`, with scenarios chosen by environment variables. See [RESEARCH](docs/RESEARCH.md) for the determinism test and the census.
 

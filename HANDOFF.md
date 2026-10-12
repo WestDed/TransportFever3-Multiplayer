@@ -1,5 +1,8 @@
 # Продолжение работы после аудита
 
+Актуальное продолжение: [PR #2](https://github.com/WestDed/TransportFever3-Multiplayer/pull/2), ветка `fix/offline-tests-safe-decoder` от main `6611e8f`. Сначала прочитать [STAGE1_TESTS_DECODER](docs/STAGE1_TESTS_DECODER.md): mock loader и декодеры уже исправлены, повторять эти работы не нужно. AUD-04, авторизация компаний, command schema, ограничения чтения, порядок и эпохи — следующий объём. Ниже сохранена информация о первичной публикации аудита.
+
+
 Основной проект: https://github.com/WestDed/TransportFever3-Multiplayer
 Локальная ветка: `audit/separate-companies-2026-10-12`, база `0c4a6d35bb5fd22f2ef851d8089e4c6f2cde6773`.
 
