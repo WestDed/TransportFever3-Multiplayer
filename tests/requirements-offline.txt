@@ -1,0 +1,2 @@
+# Includes the Lua 5.2 runtime used by the audited game scripts.
+lupa==2.6
