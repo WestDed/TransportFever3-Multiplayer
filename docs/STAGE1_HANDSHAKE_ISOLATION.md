@@ -19,6 +19,14 @@
 
 Небольшие source и regression commits отделены. Новая реализация транспорта, центральный replay и новые игровые hooks в этом PR отсутствуют.
 
+## Ошибка ожидания Connect, обнаруженная CI
+
+Первый run 38318050228 прошёл все шесть jobs. На следующем run 38318246921 тот же C# код упал на Ubuntu: существующий тест forged reconnect получил `ObjectDisposedException` с `SafeWaitHandle` в `Client.Connect` вместо ожидаемого отказа credential. Новые handshake tests до этого места прошли. Ошибка реальная для используемого net8 runtime; это не отсутствие зависимости и не основание ослаблять тест.
+
+Connect использовал BeginConnect и `using(connect.AsyncWaitHandle)`. [Task-to-APM adapter .NET](https://github.com/dotnet/runtime/blob/main/src/libraries/Common/src/System/Threading/Tasks/TaskToAsyncResult.cs) возвращает handle внутреннего Task; ручной Dispose этого handle нежелателен при повторном использовании завершённой Task. Связь с кэшированным Task — объяснение по исходникам, не отдельная трассировка runtime данного runner.
+
+Путь заменён на `TcpClient.ConnectAsync`, bounded `Task.WaitAny` и `GetAwaiter().GetResult()`. Внешний wait handle больше не закрывается нашим кодом; исходная SocketException сохраняется. На timeout внешний catch закрывает сокет, поздняя faulted Task наблюдается continuation. Добавлен настоящий отказ подключения к зарезервированному, но не слушающему порту: ожидаются исходная SocketException и отсутствие accepted identity/events. Обязательная net48 сборка проверяет применимость выбранного API production-лаунчеру.
+
 ## Проверки
 
 `tests/offline/HandshakeTests.cs` исполняет реальные Relay/Client/reader из production исходников. Проверяются exact cap и UTF-8 byte count, ранний отказ без LF, сохранение следующего большого buffered frame, отказ Client от oversized host response, отсутствие сообщений у pending socket, исправный broadcast joined клиенту, join+chat в одном TCP write, malformed/oversized join и освобождение reserved slot. Дополнительно 32 reconnect цикла идут при параллельном session broadcast; подтверждение должно быть первым.

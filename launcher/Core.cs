@@ -8,6 +8,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Win32;
 
 namespace MPFever
@@ -845,12 +846,16 @@ namespace MPFever
             tcp = new TcpClient { NoDelay = true, SendTimeout = Wire.SendTimeoutMs };
             try
             {
-                var connect=tcp.BeginConnect(host,port,null,null);
-                using(var wait=connect.AsyncWaitHandle)
+                // Do not dispose an AsyncWaitHandle owned by the APM adapter: a
+                // synchronously completed operation can use a shared cached Task.
+                var connect = tcp.ConnectAsync(host, port);
+                if (Task.WaitAny(new[] { connect }, Wire.HandshakeMs) < 0)
                 {
-                    if(!wait.WaitOne(Wire.HandshakeMs))throw new IOException("TCP connection deadline exceeded");
-                    tcp.EndConnect(connect);
+                    // Dispose below aborts the socket; observe any later fault too.
+                    connect.ContinueWith(t => { var ignored = t.Exception; }, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+                    throw new IOException("TCP connection deadline exceeded");
                 }
+                connect.GetAwaiter().GetResult(); // Preserve the original socket exception.
                 outbox = new BoundedOutbox(tcp.GetStream(), () => tcp.Close(), "Client send");
                 Send(Msg.Make("join", name, "{[\"protocol\"]=" + Wire.Version + (ResumeToken == null ? "" : ",[\"resume\"]=" + LuaLit.Quote(ResumeToken)) + "}"));
                 var reader=new BoundedLineReader(tcp.GetStream());

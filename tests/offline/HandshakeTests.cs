@@ -63,6 +63,19 @@ namespace MPFever
             }
             finally { listener.Stop(); }
 
+            // Reserve a port without listening: a failed TCP connect must retain
+            // SocketException, not turn into an aggregate or closed wait-handle error.
+            using (var reserved = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
+            using (var client = new Client())
+            {
+                reserved.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+                int events = 0;
+                client.Received += m => Interlocked.Increment(ref events);
+                client.Closed += () => Interlocked.Increment(ref events);
+                Reject<SocketException>(() => client.Connect("127.0.0.1", ((IPEndPoint)reserved.LocalEndPoint).Port, "refused"), "failed actual TCP connect preserves original socket exception");
+                Check(client.ResumeToken == null && events == 0, "refused TCP connection creates no accepted identity or lifecycle events");
+            }
+
             using (var relay = new Relay())
             using (var healthy = new Client())
             {
