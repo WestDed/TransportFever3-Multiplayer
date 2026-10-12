@@ -26,6 +26,7 @@ namespace MPFever
         readonly FileStream file;
         readonly long byteLimit;
         readonly string epoch;
+        readonly string freezePath;
         readonly Dictionary<string,int> companies = new Dictionary<string,int>();
         sealed class Entry { public long Offset, Sequence; public string Digest; public byte[] Previous; }
         readonly List<Entry> entries = new List<Entry>();
@@ -39,6 +40,7 @@ namespace MPFever
         {
             if (!SnapshotLimits.Hex(epoch,32) || byteLimit < HeaderBytes) throw new InvalidDataException("Invalid journal epoch or budget");
             this.epoch=epoch; this.byteLimit=byteLimit;
+            freezePath=Path.GetFullPath(path)+".freeze";
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));
             file = new FileStream(path,FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.Read);
             try
@@ -50,6 +52,15 @@ namespace MPFever
                     file.Write(header,0,header.Length); file.Flush(true);
                 }
                 Recover();
+                if(File.Exists(freezePath))
+                {
+                    using(var marker=File.OpenRead(freezePath))
+                    using(var reader=new BinaryReader(marker))
+                    {
+                        if(marker.Length!=80 || Encoding.ASCII.GetString(ReadExact(reader,40))!="MPFF0001"+epoch || reader.ReadInt64()!=entries.Count || !ReadExact(reader,32).SequenceEqual(lastHash)) throw new InvalidDataException("Corrupt or inconsistent durable freeze marker");
+                        frozen=true;
+                    }
+                }
             }
             catch { file.Dispose(); throw; }
         }
@@ -108,7 +119,26 @@ namespace MPFever
                 return command;
             }
         }
-        public long Freeze() { lock(gate) { EnsureOpen(); frozen=true; return entries.Count; } }
+        public long Freeze()
+        {
+            lock(gate)
+            {
+                EnsureOpen();if(frozen)return entries.Count;
+                string tmp=freezePath+"."+Guid.NewGuid().ToString("N")+".tmp";
+                try
+                {
+                    using(var marker=new FileStream(tmp,FileMode.CreateNew,FileAccess.Write,FileShare.None))
+                    {
+                        using(var writer=new BinaryWriter(marker,Encoding.UTF8,true)) {writer.Write(Encoding.ASCII.GetBytes("MPFF0001"+epoch));writer.Write((long)entries.Count);writer.Write(lastHash);}
+                        marker.Flush(true);
+                    }
+                    if(File.Exists(freezePath))File.Replace(tmp,freezePath,null);else File.Move(tmp,freezePath);
+                    frozen=true;return entries.Count;
+                }
+                catch {faulted=true;throw;}
+                finally {if(File.Exists(tmp))File.Delete(tmp);}
+            }
+        }
         public IEnumerable<OrderedCommand> Replay(string expectedEpoch,long after,int count=64)
         {
             Entry[] window;

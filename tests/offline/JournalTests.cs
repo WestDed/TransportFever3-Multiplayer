@@ -51,6 +51,7 @@ namespace MPFever
                 {
                     reopened.Bind("Peer#1",2);
                     Check(reopened.LastSequence==1 && reopened.Accept(epoch,JournalAction("Peer#1",1)).Sequence==1,"restart recovers accepted sequence and duplicate index");
+                    Reject<InvalidDataException>(()=>reopened.Accept(epoch,JournalAction("Peer#1",2)),"freeze survives restart and cannot silently admit actions");
                     Check(ReadJournal(reopened,epoch).Single().Payload==JournalAction("Peer#1",1).Payload,"restart replay retains exact command payload");
                 }
                 Reject<InvalidDataException>(()=>{using(var wrong=new CommandJournal(path,otherEpoch)){}},"journal cannot be opened with another epoch");
