@@ -652,9 +652,8 @@ namespace MPFever
         public int Id;
         public string Name;
         public TcpClient Tcp;
-        public StreamWriter Writer;
+        public BoundedOutbox Outbox;
         public bool Joined;
-        public readonly object Gate = new object();
     }
 
     /// <summary>Host side: accepts TCP clients and relays every message to everybody else.</summary>
@@ -672,7 +671,9 @@ namespace MPFever
         public int Port => ((IPEndPoint)listener.LocalEndpoint).Port;
 
         /// <summary>The players connected right now (name#id), including those whose game is not ready yet.</summary>
-        public string[] PeerNames() { lock (peers) return peers.Where(p => p.Name != null).Select(p => p.Name).ToArray(); }
+        public Peer[] Peers() { lock (peers) return peers.Where(p => p.Joined).ToArray(); }
+
+        public string[] PeerNames() { lock (peers) return peers.Where(p => p.Joined).Select(p => p.Name).ToArray(); }
 
         public void Start(int port)
         {
@@ -692,7 +693,8 @@ namespace MPFever
                     c.NoDelay = true;
                     c.SendTimeout = Wire.SendTimeoutMs;
                     lock (peers) if (peers.Count >= Wire.MaxPeers) { c.Close(); continue; }
-                    var p = new Peer { Id = nextId++, Tcp = c, Writer = new StreamWriter(c.GetStream(), new UTF8Encoding(false)) { NewLine = "\n", AutoFlush = true } };
+                    var p = new Peer { Id = nextId++, Tcp = c };
+                    p.Outbox = new BoundedOutbox(c.GetStream(), () => c.Close(), "Relay send " + p.Id);
                     p.Name = "Player" + p.Id;
                     lock (peers) peers.Add(p);
                     Log.Dim(L.F("Connexion entrante de {0} (id {1})", "Incoming connection from {0} (id {1})", c.Client.RemoteEndPoint, p.Id));
@@ -718,7 +720,8 @@ namespace MPFever
                         var join = LuaLit.Parse(m.Payload) as Dictionary<object, object>;
                         if (p.Joined || join == null || !join.TryGetValue("protocol", out var pv) || !(pv is double v) || v != Wire.Version)
                         {
-                            Send(p, Msg.Make("reject", "MPFever", "{[\"reason\"]=\"Incompatible protocol; install the same MPFever build as the host\"}"));
+                            var rejection = Wire.Encode(Msg.Make("reject", "MPFever", "{[\"reason\"]=\"Incompatible protocol; install the same MPFever build as the host\"}"));
+                            p.Tcp.GetStream().Write(rejection, 0, rejection.Length);
                             throw new InvalidDataException("Repeated join or incompatible protocol");
                         }
                         p.Joined = true;
@@ -731,6 +734,7 @@ namespace MPFever
                 }
             }
             catch (Exception e) { if (!stop) Log.W($"{p.Name} : {e.Message}"); }
+            p.Outbox.Dispose();
             try { p.Tcp.Close(); } catch { }
             lock (peers) peers.Remove(p);
             if (p.Joined) Left?.Invoke(p);
@@ -757,11 +761,15 @@ namespace MPFever
                 }
         }
 
-        public void Send(Peer p, Msg m)
+        public void Send(Peer p, Msg m) { if (!SendBulk(p, m, false)) Close(p); }
+
+        public bool SendBulk(Peer p, Msg m, bool wait = true)
         {
-            try { Wire.Encode(m); lock (p.Gate) p.Writer.WriteLine(m.ToString()); }
-            catch (Exception e) { Log.Warn(L.F("envoi vers {0} : {1}", "sending to {0}: {1}", p.Name, e.Message)); }
+            try { return p.Outbox.Enqueue(m, wait); }
+            catch (Exception e) { Log.Warn("sending to " + p.Name + ": " + e.Message); return false; }
         }
+
+        public void Close(Peer p) { p.Outbox.Dispose(); try { p.Tcp.Close(); } catch { } }
 
         public void Broadcast(Msg m, Peer except = null)
         {
@@ -774,7 +782,7 @@ namespace MPFever
         {
             stop = true;
             try { listener?.Stop(); } catch { }
-            lock (peers) foreach (var p in peers) try { p.Tcp.Close(); } catch { }
+            lock (peers) foreach (var p in peers) Close(p);
         }
     }
 
@@ -782,8 +790,7 @@ namespace MPFever
     sealed class Client : IDisposable
     {
         TcpClient tcp;
-        StreamWriter writer;
-        readonly object gate = new object();
+        BoundedOutbox outbox;
         volatile bool stop;
         public event Action<Msg> Received;
         public event Action Closed;
@@ -792,7 +799,7 @@ namespace MPFever
         {
             tcp = new TcpClient { NoDelay = true, SendTimeout = Wire.SendTimeoutMs };
             tcp.Connect(host, port);
-            writer = new StreamWriter(tcp.GetStream(), new UTF8Encoding(false)) { NewLine = "\n", AutoFlush = true };
+            outbox = new BoundedOutbox(tcp.GetStream(), () => tcp.Close(), "Client send");
             Send(Msg.Make("join", name, "{[\"protocol\"]=" + Wire.Version + "}"));
             new Thread(ReadLoop) { IsBackground = true, Name = "Client read" }.Start();
             Log.Ok(L.F("Client : connecté à {0}:{1}", "Client: connected to {0}:{1}", host, port));
@@ -813,17 +820,18 @@ namespace MPFever
                 }
             }
             catch (Exception e) { if (!stop) Log.W("client : " + e.Message); }
+            outbox.Dispose();
             try { tcp.Close(); } catch { }
             Closed?.Invoke();
         }
 
         public void Send(Msg m)
         {
-            try { Wire.Encode(m); lock (gate) writer.WriteLine(m.ToString()); }
+            try { if (!outbox.Enqueue(m)) Dispose(); }
             catch (Exception e) { Log.Warn(L.T("envoi vers l'hôte : ", "sending to the host: ") + e.Message); }
         }
 
-        public void Dispose() { stop = true; try { tcp?.Close(); } catch { } }
+        public void Dispose() { stop = true; outbox?.Dispose(); try { tcp?.Close(); } catch { } }
     }
 
     static class GameInstall

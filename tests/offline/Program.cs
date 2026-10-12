@@ -9,7 +9,7 @@ using System.Threading;
 
 namespace MPFever
 {
-    static class OfflineTests
+    static partial class OfflineTests
     {
         static int checks;
         public static void Check(bool ok, string name)
@@ -27,6 +27,7 @@ namespace MPFever
             try
             {
                 NetworkTests();
+                SnapshotTests();
                 Console.WriteLine("Offline C# components: " + checks + " checks passed; no game was run.");
                 return 0;
             }

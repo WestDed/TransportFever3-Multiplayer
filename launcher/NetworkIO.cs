@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Threading;
 
 namespace MPFever
 {
@@ -138,6 +139,66 @@ namespace MPFever
                 }
             }
             return result;
+        }
+    }
+
+    // One independent writer per connection. A slow peer cannot hold the host's
+    // broadcast lock. Bulk producers wait for bounded space on their own worker.
+    sealed class BoundedOutbox : IDisposable
+    {
+        public const int MaxQueuedBytes = 8 * 1024 * 1024, MaxQueuedFrames = 128;
+        readonly object gate = new object();
+        readonly Queue<byte[]> queue = new Queue<byte[]>();
+        readonly Stream stream;
+        readonly Action close;
+        readonly int byteLimit;
+        int bytes, frames;
+        bool stopped;
+        public BoundedOutbox(Stream stream, Action close, string name, int byteLimit = MaxQueuedBytes)
+        {
+            this.stream = stream; this.close = close; this.byteLimit = byteLimit;
+            new Thread(WriteLoop) { IsBackground = true, Name = name }.Start();
+        }
+        public bool Enqueue(Msg m, bool wait = false)
+        {
+            var data = Wire.Encode(m);
+            if (data.Length > byteLimit) return false;
+            var time = Stopwatch.StartNew();
+            lock (gate)
+            {
+                while (!stopped && (bytes + data.Length > byteLimit || frames >= MaxQueuedFrames))
+                {
+                    if (!wait || time.ElapsedMilliseconds >= 120000) return false;
+                    Monitor.Wait(gate, 100);
+                }
+                if (stopped) return false;
+                queue.Enqueue(data); bytes += data.Length; frames++;
+                Monitor.PulseAll(gate);
+                return true;
+            }
+        }
+        void WriteLoop()
+        {
+            try
+            {
+                while (true)
+                {
+                    byte[] data;
+                    lock (gate)
+                    {
+                        while (!stopped && queue.Count == 0) Monitor.Wait(gate);
+                        if (stopped) return;
+                        data = queue.Dequeue();
+                    }
+                    stream.Write(data, 0, data.Length);
+                    lock (gate) { bytes -= data.Length; frames--; Monitor.PulseAll(gate); }
+                }
+            }
+            catch (Exception) { Dispose(); close(); }
+        }
+        public void Dispose()
+        {
+            lock (gate) { stopped = true; queue.Clear(); Monitor.PulseAll(gate); }
         }
     }
 }
