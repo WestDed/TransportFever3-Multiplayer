@@ -10,9 +10,11 @@ namespace MPFever
     // Limits are checked before a frame or file delta can grow the allocation.
     static class Wire
     {
-        public const int Version = 2;
+        public const int Version = 3;
         public const int MaxFrameBytes = LuaLit.MaxBytes + 256;
         public const int MaxPeers = 8;
+        public const int HandshakeReserve = 4;
+        public const int MaxHandshakeBytes = 4096;
         public const int HandshakeMs = 10000;
         public const int PartialFrameMs = 60000;
         public const int SendTimeoutMs = 60000;
@@ -20,18 +22,18 @@ namespace MPFever
 
         public static bool ValidEnvelope(Msg m)
         {
-            if (m == null || string.IsNullOrEmpty(m.Kind) || m.Kind.Length > 32 || m.From == null || m.From.Length > 64 || m.Payload == null) return false;
+            if (m == null || string.IsNullOrEmpty(m.Kind) || m.Kind.Length > 32 || m.From == null || m.From.Length > 64 || m.Payload == null || m.Payload.Length > LuaLit.MaxBytes) return false;
             foreach (char c in m.Kind) if (!(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_')) return false;
             foreach (char c in m.From) if (char.IsControl(c)) return false;
             if (m.Payload.IndexOfAny(new[] { '\r', '\n', '\t' }) >= 0) return false;
-            try { return Utf8.GetByteCount(m.Payload) <= LuaLit.MaxBytes && Utf8.GetByteCount(m.ToString()) <= MaxFrameBytes; }
+            try { int bytes=Utf8.GetByteCount(m.Payload);return bytes<=LuaLit.MaxBytes && m.Kind.Length+Utf8.GetByteCount(m.From)+2+bytes<=MaxFrameBytes; }
             catch (EncoderFallbackException) { return false; }
         }
 
         public static byte[] Encode(Msg m)
         {
             if (!ValidEnvelope(m)) throw new InvalidDataException("Invalid or oversized message envelope");
-            return Utf8.GetBytes(m + "\n");
+            return Utf8.GetBytes(m.Kind+"\t"+m.From+"\t"+m.Payload+"\n");
         }
     }
 
@@ -66,11 +68,16 @@ namespace MPFever
         readonly LineAccumulator line;
         readonly byte[] buffer = new byte[8192];
         readonly int partialMs;
+        readonly int limit;
         int pos, count;
         public BoundedLineReader(Stream stream, int limit = Wire.MaxFrameBytes, int partialMs = Wire.PartialFrameMs)
-        { this.stream = stream; line = new LineAccumulator(limit); this.partialMs = partialMs; }
-        public string ReadLine(int idleMs = -1)
+        { this.stream = stream; this.limit = limit; line = new LineAccumulator(limit); this.partialMs = partialMs; }
+        // A smaller first-frame cap must keep this reader's already buffered bytes:
+        // replacing the reader after join could lose the next pipelined message.
+        public string ReadLine(int idleMs = -1, int? maxBytes = null)
         {
+            int frameLimit = maxBytes ?? limit;
+            if (frameLimit <= 0 || frameLimit > limit) throw new ArgumentOutOfRangeException(nameof(maxBytes));
             var idle = Stopwatch.StartNew();
             Stopwatch partial = null;
             while (true)
@@ -79,6 +86,7 @@ namespace MPFever
                 {
                     byte b = buffer[pos++];
                     if (b == 10) return line.Finish();
+                    if (line.Length >= frameLimit) throw new InvalidDataException("Line exceeds the byte limit");
                     if (partial == null) partial = Stopwatch.StartNew();
                     line.Add(b);
                 }

@@ -22,12 +22,17 @@ namespace MPFever
             while (DateTime.UtcNow < end) { if (condition()) { Check(true, name); return; } Thread.Sleep(10); }
             throw new Exception("Timed out: " + name);
         }
-        static int Main()
+        static int Main(string[] args)
         {
             try
             {
+                if(args.Length==1 && args[0]=="--bench") return TcpBenchmark.Run();
                 NetworkTests();
+                HandshakeTests();
                 SnapshotTests();
+                IdentityTests();
+                SchemaTests();
+                JournalTests();
                 Console.WriteLine("Offline C# components: " + checks + " checks passed; no game was run.");
                 return 0;
             }
@@ -111,7 +116,7 @@ namespace MPFever
                 {
                     var b = Wire.Encode(Msg.Make("chat", "spoof")); c.GetStream().Write(b,0,b.Length);
                     c.ReceiveTimeout = 5000;
-                    Check(c.GetStream().ReadByte() == -1 && joined == 0 && received == 0, "message before join closes without dispatch");
+                    Check(Msg.Parse(new BoundedLineReader(c.GetStream()).ReadLine(5000)).Kind=="reject" && joined == 0 && received == 0, "message before join rejected without dispatch");
                 }
                 using (var c = new TcpClient("127.0.0.1", relay.Port))
                 {
@@ -119,6 +124,28 @@ namespace MPFever
                     c.ReceiveTimeout = 5000;
                     Check(new BoundedLineReader(c.GetStream()).ReadLine().StartsWith("reject\t"), "old protocol receives explicit rejection");
                     Check(joined == 0, "old client never joins");
+                }
+            }
+            using (var relay = new Relay())
+            using (var healthy = new Client())
+            {
+                Peer slow=null;var delivered=new ManualResetEventSlim();
+                relay.Joined+=p=>{if(p.Identity.Name=="slow")slow=p;};
+                healthy.Received+=m=>{if(m.Kind=="chatmsg")delivered.Set();};
+                relay.Start(0);healthy.Connect("127.0.0.1",relay.Port,"healthy");
+                Wait(()=>healthy.ResumeToken!=null,"healthy peer ready for real slow-consumer test");
+                using(var raw=new TcpClient("127.0.0.1",relay.Port))
+                {
+                    raw.ReceiveBufferSize=1024;
+                    var join=Wire.Encode(Msg.Make("join","slow","{[\"protocol\"]="+Wire.Version+"}"));raw.GetStream().Write(join,0,join.Length);
+                    Wait(()=>slow!=null,"real TCP slow peer joined");
+                    bool full=false;
+                    var large=Msg.Make("chatmsg","Host","{[\"text\"]=\""+new string('a',512*1024)+"\"}");
+                    for(int i=0;i<100;i++)if(!relay.SendBulk(slow,large,false)){full=true;break;}
+                    Check(full,"real non-reading TCP peer fills bounded outbox");
+                    relay.Close(slow);
+                    relay.Broadcast(Msg.Make("chatmsg","Host","{[\"text\"]=\"ok\"}"));
+                    Check(delivered.Wait(5000),"healthy peer receives broadcast after slow peer is isolated");
                 }
             }
         }

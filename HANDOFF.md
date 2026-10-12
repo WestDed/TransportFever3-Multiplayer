@@ -1,29 +1,23 @@
-# Продолжение работы после аудита
+# Продолжение проекта в следующей сессии
 
-PR #3 (`fix/network-bounds-snapshots`) зависит от #2, оба без автоматического merge. Прочитать [STAGE1_NETWORK_SNAPSHOTS](docs/STAGE1_NETWORK_SNAPSHOTS.md): bounded reads/outboxes, streamed SHA256 snapshots и full Windows build уже добавлены. Продолжать company identity/schema и epoch/order, не переделывать выполненную работу. Фактический финальный CI смотреть по head SHA PR.
+Основной репозиторий: https://github.com/WestDed/TransportFever3-Multiplayer. Пользователь разрешил автономную работу без игры, отдельные ветки и PR, без автоматического merge. GitHub write доступ восстановлен; Desktop не требуется. Авторские репозитории не изменяем, MIT copyright arthur сохранён.
 
-Актуальное продолжение: [PR #2](https://github.com/WestDed/TransportFever3-Multiplayer/pull/2), ветка `fix/offline-tests-safe-decoder` от main `6611e8f`. Сначала прочитать [STAGE1_TESTS_DECODER](docs/STAGE1_TESTS_DECODER.md): mock loader и декодеры уже исправлены, повторять эти работы не нужно. AUD-04, авторизация компаний, command schema, ограничения чтения, порядок и эпохи — следующий объём. Ниже сохранена информация о первичной публикации аудита.
+## Сохранённая работа
 
+- PR #1 — аудит, объединён заказчиком. Main базы: 6611e8f63e29e04aeb978bddd17877b461894edf; upstream 0.3.6: 0c4a6d35bb5fd22f2ef851d8089e4c6f2cde6773.
+- [PR #2](https://github.com/WestDed/TransportFever3-Multiplayer/pull/2), `fix/offline-tests-safe-decoder`, base main. Реальные 17 lockstep assertions, no Lua eval, bounded C# parser, strict CI. Head 99ccf249; 44 Python tests с тогдашним AUD-04, 46 C# checks.
+- [PR #3](https://github.com/WestDed/TransportFever3-Multiplayer/pull/3), `fix/network-bounds-snapshots`, base #2. Bounded TCP/C# IPC/outboxes, streamed SHA/atomic snapshots, full Windows build/license/portable ZIP. Head 87102063; run 38209145412, 6 jobs green, 70 C# component checks.
+- [PR #4](https://github.com/WestDed/TransportFever3-Multiplayer/pull/4), `fix/company-identity-schemas`, base #3. sid signature, credential reconnect, directions/schema/co binding, fleet/line policy, stored Repay. Head b3fc4108; run 38210479835, 6 jobs green, 60 Python tests без expectedFailure.
+- [PR #5](https://github.com/WestDed/TransportFever3-Multiplayer/pull/5), `fix/offline-order-recovery`, base #4. Lua IPC, durable journal/cursor/barrier foundation, real TCP bench/slow peer, full-server accepted reconnect, native export checks, translation gaps filled, allocation fixes and lifecycle guards. Точный итоговый head/run смотреть в PR, не считать прежний SHA доказательством позднего изменения.
 
-Основной проект: https://github.com/WestDed/TransportFever3-Multiplayer
-Локальная ветка: `audit/separate-companies-2026-10-12`, база `0c4a6d35bb5fd22f2ef851d8089e4c6f2cde6773`.
+- [PR #6](https://github.com/WestDed/TransportFever3-Multiplayer/pull/6), `fix/handshake-isolation`, base #5. Pending sockets не получают общие/адресные данные; connection enqueue до Joined; first-frame cap 4 КиБ без потери buffered traffic; real TCP regressions и 32 reconnect при concurrent broadcast. Точный CI head/run смотреть в PR. Initial identity/TLS не реализованы.
 
-При первой попытке 12.10.2026 GitHub connector вернул HTTP 403 `Resource not accessible by integration`; обычный HTTPS git также не имел credentials. После переподключения GitHub пользователем доступ восстановлен: установка приложения видна для WestDed и ветка создана в основном репозитории. Результаты публикуются через GitHub connector в эту ветку, main не изменяется напрямую. Первичный архив содержит локальный коммит `774881808fdd69f100ffa7ddb199ab3c9ce7e008`; коммит публикации может иметь иной SHA при том же содержимом.
+Прочитать ARCHITECTURE/FEATURES/ROADMAP/RISKS/TESTING, docs/STAGE1_*.md и ADR_0001_COMMAND_CUTOVER.md. Не повторять уже выполненные fixes. Все branches stack; для review порядок #2 → #3 → #4 → #5 → #6. После ручного слияния предыдущей ветки проверить diff следующего PR относительно актуальной main и при необходимости retarget; не force-push чужой head и не merge самостоятельно.
 
-Для следующей сессии:
-1. Открыть PR ветки `audit/separate-companies-2026-10-12`, прочитать пять документов и посмотреть его фактические проверки Actions.
-2. Сверить main/HEAD и существующие изменения, не перезаписывать чужую работу.
-3. Следовать этапу 1 ROADMAP.md: восстановить mock loader, ограничить декодер/протокол, затем порядок и эпохи команд. Игровые функции принимаются только по настоящим испытаниям после приобретения TF3.
-4. Каждое продолжение — отдельная ветка и PR с результатами проверок. Разрешение пользователя на публикацию аудита уже дано; merge не выполняется автоматически.
+## Граница завершения
 
-## Текст Pull Request
+Игры/бинарников/saves/Steam-сессии нет. Полная EXE/DLL сборка, parser/socket/file tests — выполнены; игровые tests не выполнялись. CommandJournal/ReplayCursor/RecoveryBarrier **не используются production scheduler**. Первое подтверждение старой company ownership, TLS/initial admission, полные schemas/ценовые правила/native world rights и save/frontier cutover ещё не готовы. Shared progression/Obtain/billing/конкуренция/Gigantomaniac остаются.
 
-Название: `Технический аудит отдельных компаний: архитектура, риски и проверки без игры`
+Следующий код — лишь отдельным обоснованным PR. До engine adapter сначала получить реальные game build/API/saves и пройти минимальный стенд. Можно продолжать source review/fuzz/security design/offline components, но не выдавать их за доказанную игру и не включать central replay без GUI/native hold gate.
 
-В существующей копии MPFever 0.3.6 отдельные компании уже есть, но прогресс общий, сетевой хост в основном ретранслирует команды, а восстановление может закреплять неверно повторённое действие. Этот PR фиксирует архитектуру и ограничения и обосновывает продолжение MPFever вместо переписывания с нуля.
-
-Добавлены ARCHITECTURE.md, FEATURES.md, ROADMAP.md, RISKS.md, TESTING.md; 16 проверок реальных чистых Lua-компонентов и offline workflow. Сохранены исходные лицензия и авторство; производственный Lua/C#/native не изменён. Альтернатива Juliansgith сопоставлена по закреплённому SHA, включая различие между проектным описанием и native AcceptAll ruleset.
-
-Проверки: 14 PASS, 2 expected failures (исполняемый payload в decoder и sid отсутствует в registry signature). Исходный test_lang.py FAIL: три новых ключа отсутствуют в 11 локалях. Исходный test_lockstep.py FAIL при загрузке отсутствующего mock namespace-модуля. Workflow отдельно показывает эти baseline failures и сохраняет логи; зелёный pure-Lua job не свидетельствует об их исправлении.
-
-TF3 не установлена. Игровые, native Windows и альтернативные Rust-тесты не выполнялись. Open issues #15–22 — отчёты upstream, не наши воспроизведения. Следующий этап: восстановить harness, ограничить парсер/протокол, проверить порядок/эпохи команд; после покупки игры — regressions строительства, затем независимость компаний и конкуренция.
+Локальные scratch пути не являются постоянным хранилищем: восстановить ветки из GitHub. Все необходимые исходники/тесты/документы опубликованы там; параметры воспроизведения в TESTING.md. Benchmark JSON постоянно в docs/benchmarks, текущие результаты/ZIP/manifest дополнительно в Actions artifacts. Ни один PR не был объединён автоматически.

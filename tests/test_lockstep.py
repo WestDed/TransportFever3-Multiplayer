@@ -248,7 +248,7 @@ class Game:
         self.L.execute("GAME.nextEntity = %d" % first_entity)
         self.L.globals().MODULE_SOURCES = self.L.table_from({
             n: Path(CONTENT, n).read_text(encoding="utf-8")
-            for n in ("mpfever_common.lua", "mpfever_refs.lua", "mpfever_co.lua")
+            for n in ("mpfever_common.lua", "mpfever_refs.lua", "mpfever_co.lua", "mpfever_permissions.lua")
         })
         self.L.execute(REQUIRE)
         self.L.execute(Path(CONTENT, "mpfever_bridge.script.lua").read_text(encoding="utf-8"))

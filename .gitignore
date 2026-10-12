@@ -6,6 +6,7 @@ release/
 bin/
 tests/offline/bin/
 tests/offline/obj/
+audit-results/
 
 # internal reverse-engineering tools and caches (derived from the game binary)
 re/
