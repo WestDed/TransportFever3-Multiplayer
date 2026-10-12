@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 
 namespace MPFever
 {
@@ -46,6 +47,17 @@ namespace MPFever
             join["host"]=false; join["start"]=2000001d;
             Reject<InvalidDataException>(()=>bindings.Join(other,join,2000000),"client cannot increase initial balance");
             Check(CompanyBindings.AsciiLower("ПРИВЕТAbC") == "ПРИВЕТabc","company key lowercase matches Lua byte semantics");
+            using (var relay = new Relay())
+            using (var client = new Client())
+            {
+                int dispatched = 0; var closed = new ManualResetEventSlim();
+                relay.Received += (p,m) => Interlocked.Increment(ref dispatched);
+                client.Closed += () => closed.Set();
+                relay.Start(0); client.Connect("127.0.0.1",relay.Port,"attacker");
+                Wait(()=>client.ResumeToken != null,"malicious socket completes legitimate handshake");
+                client.Send(Msg.Make("auth","forgedHost","{[\"money\"]=999}"));
+                Check(closed.Wait(5000) && dispatched == 0,"real Relay rejects client host-control before dispatch");
+            }
         }
     }
 }
