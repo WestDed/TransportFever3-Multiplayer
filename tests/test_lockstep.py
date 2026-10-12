@@ -6,12 +6,13 @@ two games (game B allocates 1000 higher). Checks:
   - actions captured on either game are applied by both simulations at the same game time;
   - entity references (depot of a purchase, vehicle of a line assignment, nodes of a road) resolve to each game's
     own local entity; a reference that cannot be resolved is skipped instead of crashing;
-  - native tools: preview vetoed, CONSTRUIRE confirms, both games build at the same time;
+  - native build events: captured/replayed Lua proposals build at the same time (DLL not loaded);
   - pause at the same step on both games, action during the pause applied at the pause time on both;
   - the originator's tool receives the real result.
 Run: python MPFever/tests/test_lockstep.py
 """
-import os, sys, tempfile, shutil
+import os, sys, tempfile
+from pathlib import Path
 import lupa.lua52 as lupa
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -20,8 +21,13 @@ TAB = chr(9)
 STEP = 200
 
 MOCK = r'''
+-- Isolate every game from process environment and wall-clock timing.
+local realOpen = io.open
+io.open = function(path, mode) return realOpen(path:gsub(string.char(92), '/'), mode) end
+os.getenv = function(key) return TEST_ENV[key] end
+os.clock = function() return GAME and GAME.wall or 0 end
 -- world: entities from the save have the same ids everywhere; new ones start at GAME.nextEntity (differs per game)
-GAME = { time = 18600, speed = 0, applied = {}, guiQueue = {}, engine = false, inUpdate = false, nextEntity = 50000 }
+GAME = { time = 18600, wall = 0, stepBudget = 0, speed = 0, applied = {}, guiQueue = {}, engine = false, inUpdate = false, nextEntity = 50000 }
 WORLD = {
   [7] = { PLAYER = {} },
   [54] = { CONSTRUCTION = { fileName = "depot.con", transf = { [13] = 100, [14] = 200, [15] = 5 }, depots = { 55 }, stations = {} } },
@@ -30,9 +36,26 @@ WORLD = {
   [100] = { TOWN = { sizeFactors = { 1 } } },
 }
 local function newEntity(comps) GAME.nextEntity = GAME.nextEntity + 1; WORLD[GAME.nextEntity] = comps; return GAME.nextEntity end
+-- Both tool proposals and the script API allocate real mock nodes/edges, not dummy constructions.
+local function buildStreet(proposal)
+  local st = proposal.proposal or proposal.streetProposal or {}
+  local ids = {}
+  for _, n in ipairs(st.addedNodes or st.nodesToAdd or {}) do
+    ids[n.entity] = newEntity({ BASE_NODE = n.comp })
+  end
+  for _, e in ipairs(st.addedSegments or st.edgesToAdd or {}) do
+    local comp = {}
+    for k, v in pairs(e.comp) do comp[k] = v end
+    comp.node0, comp.node1 = ids[comp.node0] or comp.node0, ids[comp.node1] or comp.node1
+    assert(WORLD[comp.node0] and WORLD[comp.node0].BASE_NODE, "missing first road node")
+    assert(WORLD[comp.node1] and WORLD[comp.node1].BASE_NODE, "missing second road node")
+    newEntity({ BASE_EDGE = comp })
+  end
+end
 local function mk(name) return function(...) return { __cmd = name, args = { ... } } end end
 local function execute(cmd, cb)
   local name = cmd.__cmd
+  if name == "steps" then GAME.stepBudget = GAME.stepBudget + cmd.args[1]; return end
   if name == "makeGameSetSpeedCmd" then GAME.speed = cmd.args[1]; if cb then cb({}, true, {}) end return end
   if name == "makeScriptingSendEventCmd" then
     if cmd.args[1] == "mpfever" then SIM_EVENT(cmd.args[3], cmd.args[4]) end
@@ -66,6 +89,7 @@ local function execute(cmd, cb)
     if empty then
       rec = nil
     else
+      buildStreet(proposal)
       created = newEntity({ CONSTRUCTION = { fileName = "built.con", transf = { [13] = 1, [14] = 2, [15] = 3 }, depots = {}, stations = {} } })
     end
     if BUILD_EVENT then BUILD_EVENT("onPostBuildProposal", proposal, cmd.args[4] ~= false, created and { created } or {}) end
@@ -141,7 +165,22 @@ api = {
       },
       stationGroupSystem = { getStationGroup = function(s) return -1 end },
       lineSystem = { getLines = function() local r = {} for e, w in pairs(WORLD) do if w.LINE then r[#r + 1] = e end end table.sort(r) return r end },
-      streetSystem = { getEdgeForEdgeObject = function(o) return -1 end },
+      streetSystem = {
+        getEdgeForEdgeObject = function(o) return -1 end,
+        getNode2SegmentMap = function()
+          local map = {}
+          for e, w in pairs(WORLD) do if w.BASE_NODE then map[e] = {} end end
+          for e, w in pairs(WORLD) do
+            if w.BASE_EDGE then
+              for _, n in ipairs({ w.BASE_EDGE.node0, w.BASE_EDGE.node1 }) do
+                map[n] = map[n] or {}; map[n][#map[n] + 1] = e
+              end
+            end
+          end
+          for _, edges in pairs(map) do table.sort(edges) end
+          return map
+        end,
+      },
     },
   },
 }
@@ -161,12 +200,13 @@ STATE = { get = function() return STATE_DATA end, set = function(self, v) STATE_
 GSTATE = { subscribeToAllEvents = function() end }
 SIM_EVENT = function(name, param) MOD.handleEvent(nil, STATE, "mpfever", "mpfever", name, param) end
 BUILD_EVENT = function(name, proposal, playerInitiated, result) MOD.handleEvent(nil, STATE, "", "apply_command", name, { proposal, {}, result, playerInitiated }) end
-function FRAME() MOD.guiUpdate(nil, STATE, GSTATE) end
+function FRAME() GAME.wall = GAME.wall + 0.02; MOD.guiUpdate(nil, STATE, GSTATE) end
 function SIMSTEP()
   local q = GAME.guiQueue; GAME.guiQueue = {}
   GAME.engine = true
   for _, c in ipairs(q) do GAME_EXECUTE(c[1], c[2]) end
-  for i = 1, GAME.speed do
+  local count = GAME.speed + GAME.stepBudget; GAME.stepBudget = 0
+  for i = 1, count do
     for _, e in ipairs(GAME.deferred or {}) do WORLD[e] = { TRANSPORT_VEHICLE = {} } end
     GAME.deferred = {}
     GAME.time = GAME.time + 200
@@ -178,32 +218,40 @@ function SIMSTEP()
 end
 '''
 
-REQUIRE = '''ug_require = function(p)
-  if p == "mpfever_common.lua" then if not COMMON then COMMON = load(COMMON_SRC)() end return COMMON end
-  if p == "mpfever_refs.lua" then if not REFS then REFS = load(REFS_SRC)() end return REFS end
-  error("no " .. p)
-end'''
+REQUIRE = r'''
+MODULE_CACHE = {}
+ug_require = function(path)
+  local name = path:match("^mpfever_1::/(.+)$") or path
+  local src = MODULE_SOURCES[name]
+  if not src then error("mock has no engine module: " .. path) end
+  if not MODULE_CACHE[name] then
+    MODULE_CACHE[name] = assert(load(src, "@" .. name, "t", _G))()
+  end
+  return MODULE_CACHE[name]
+end
+'''
 
 
 class Game:
     def __init__(self, name, role, tmp, first_entity):
         self.name, self.dir = name, os.path.join(tmp, name)
         os.makedirs(self.dir)
-        open(os.path.join(self.dir, "in.log"), "w").close()
-        os.environ.update(MPFEVER_DIR=self.dir, MPFEVER_NAME=name, MPFEVER_ROLE=role)
-        common = open(os.path.join(CONTENT, "mpfever_common.lua"), encoding="utf-8").read()
-        refs = open(os.path.join(CONTENT, "mpfever_refs.lua"), encoding="utf-8").read()
-        ui_src = open(os.path.join(CONTENT, "mpfever_ui.script.lua"), encoding="utf-8").read()
-        ui_src = ui_src.replace("local M = {}", "local M = {}; U.stepping = true", 1)
-        ui_src = ui_src.replace("function data()", "POLL = function() pollBindings(); return pollResults() end" + chr(10) + "function data()", 1)
+        Path(self.dir, "in.log").touch()
+        ui_src = Path(CONTENT, "mpfever_ui.script.lua").read_text(encoding="utf-8")
+        # Expose only the real periodic hook; do not force U.stepping or bypass result handling.
+        assert ui_src.count("function data()") == 1, "UI instrumentation anchor changed"
+        ui_src = ui_src.replace("function data()", "POLL = function() tick(nil) end" + chr(10) + "function data()", 1)
         # UI state and game script state share one mocked world per game (they are views of the same engine)
         self.L = lupa.LuaRuntime(unpack_returned_tuples=True)
+        self.L.globals().TEST_ENV = self.L.table_from({"MPFEVER_DIR": self.dir, "MPFEVER_NAME": name, "MPFEVER_ROLE": role})
         self.L.execute(MOCK)
         self.L.execute("GAME.nextEntity = %d" % first_entity)
-        self.L.globals().COMMON_SRC = common
-        self.L.globals().REFS_SRC = refs
+        self.L.globals().MODULE_SOURCES = self.L.table_from({
+            n: Path(CONTENT, n).read_text(encoding="utf-8")
+            for n in ("mpfever_common.lua", "mpfever_refs.lua", "mpfever_co.lua")
+        })
         self.L.execute(REQUIRE)
-        self.L.execute(open(os.path.join(CONTENT, "mpfever_bridge.script.lua"), encoding="utf-8").read())
+        self.L.execute(Path(CONTENT, "mpfever_bridge.script.lua").read_text(encoding="utf-8"))
         self.L.execute(BRIDGE_HARNESS)
         self.L.execute("BRIDGE_DATA = data")
         # the UI script in its own environment (separate module state) but the same mocked engine
@@ -224,7 +272,7 @@ class Game:
 
     def read(self, f):
         p = os.path.join(self.dir, f)
-        return open(p, encoding="utf-8").read().splitlines() if os.path.exists(p) else []
+        return Path(p).read_text(encoding="utf-8").splitlines() if os.path.exists(p) else []
 
     def write(self, line):
         with open(os.path.join(self.dir, "in.log"), "a", encoding="utf-8", newline="\n") as f:
@@ -274,8 +322,18 @@ class Host:
             self.offsets[g.name] = len(lines)
 
 
+def unexpected_logs(logs):
+    # Engine-facing functions use pcall and may report failure instead of raising to Python.
+    markers = ("failed", "late action", "late native", "callback error", "count differs")
+    return [line for line in logs.splitlines() if any(m in line.lower() for m in markers)]
+
+
 def run():
-    tmp = tempfile.mkdtemp()
+    with tempfile.TemporaryDirectory() as tmp:
+        return run_scenarios(tmp)
+
+
+def run_scenarios(tmp):
     ok = True
 
     def check(cond, msg):
@@ -364,7 +422,7 @@ def run():
     a, b = A.applied(), B.applied()
     check(len(a) == before_a + 1 and len(b) == before_b + 1 and a[-1] == b[-1], "native road built on both at the same game time: %s / %s" % (a[-1:], b[-1:]))
     n0 = B.L.eval("(function() for i = #GAME.applied, 1, -1 do local x = GAME.applied[i] if x.name == 'build' and x.args[1].streetProposal then return x.args[1].streetProposal.edgesToAdd[1].comp.node0 end end end)()")
-    check(n0 == 60, "existing node reference resolved on the client (node0=%s)" % n0)
+    check(n0 == 60 and A.L.eval("#ug_require(\"mpfever_refs.lua\").allEdges()") == 1 and B.L.eval("#ug_require(\"mpfever_refs.lua\").allEdges()") == 1, "existing node reference resolved on the client (node0=%s)" % n0)
     shipped_b = len([l for l in B.read("out.log") if l.startswith("act")])
     check(shipped_b == 4, "the client did not ship its replay back (client shipped %d actions, its own 4)" % shipped_b)
 
@@ -384,11 +442,10 @@ def run():
     tick(30)
     check(A.L.eval("GAME.speed") == 2 and A.time() - t0 >= 30 * STEP * 1.5, "resumed at x2 (%d steps in 30 frames)" % ((A.time() - t0) // STEP))
     logs = chr(10).join(A.read("mod.log") + B.read("mod.log") + A.read("ui_mod.log") + B.read("ui_mod.log"))
-    bad = [l for l in logs.splitlines() if ("FAILED" in l or "LATE" in l)]
+    bad = unexpected_logs(logs)
     check(not bad, "no failure / late action in logs %s" % bad[:3])
     if not ok or os.environ.get("MPF_VERBOSE"):
         print(chr(10).join(l for l in logs.splitlines() if "session:" not in l)[-(400000 if os.environ.get("MPF_VERBOSE") else 4000):])
-    shutil.rmtree(tmp, ignore_errors=True)
     return 0 if ok else 1
 
 
