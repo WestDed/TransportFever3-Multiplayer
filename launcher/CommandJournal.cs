@@ -70,6 +70,7 @@ namespace MPFever
             if(message.Kind != "act") throw new InvalidDataException("Journal accepts actions only");
             string uid = ProtocolSchema.Text(data,"uid",128);
             int co=(int)ProtocolSchema.Integer(data,"co",1,4096);
+            ProtocolSchema.CheckPlayerReferences(ProtocolSchema.Table(ProtocolSchema.Get(data,"args"),"args"),co);
             string key=message.From+"\n"+uid;
             byte[] payloadBytes=Wire.Utf8.GetBytes(message.Payload);
             string digest=Digest(payloadBytes);
@@ -229,5 +230,38 @@ namespace MPFever
         public bool CanResume { get { lock(gate) return !failed && !running && ready.SetEquals(required); } }
         public void Fail() { lock(gate) failed=true; }
         public void Resume() { lock(gate) { if(!CanResume)throw new InvalidDataException("Recovery quorum incomplete or failed");running=true; } }
+    }
+
+    // In-memory replay frontier only. Persisting game effects and this frontier
+    // atomically, and asynchronous engine callbacks, are part of the engine adapter.
+    sealed class ReplayCursor
+    {
+        readonly object gate=new object();
+        readonly string epoch;
+        readonly Dictionary<long,string> recent=new Dictionary<long,string>();
+        long frontier;
+        bool faulted;
+        public ReplayCursor(string epoch,long frontier=0)
+        { if(!SnapshotLimits.Hex(epoch,32) || frontier<0)throw new InvalidDataException("Invalid replay cursor");this.epoch=epoch;this.frontier=frontier; }
+        public long Frontier { get { lock(gate)return frontier; } }
+        public bool Apply(OrderedCommand command,Action<OrderedCommand> apply)
+        {
+            lock(gate)
+            {
+                if(faulted || command.Epoch != epoch)throw new InvalidDataException("Faulted cursor or stale replay epoch");
+                string identity=command.Peer+"\n"+command.Uid+"\n"+command.Company+"\n"+command.Payload;
+                if(command.Sequence<=frontier)
+                {
+                    if(recent.TryGetValue(command.Sequence,out var old) && old!=identity)throw new InvalidDataException("Conflicting replay sequence");
+                    return false;
+                }
+                if(command.Sequence!=frontier+1)throw new InvalidDataException("Replay gap");
+                try { apply(command); }
+                catch { faulted=true;throw; } // effect may have happened: do not retry blindly
+                frontier=command.Sequence;recent[frontier]=identity;
+                recent.Remove(frontier-256);
+                return true;
+            }
+        }
     }
 }

@@ -98,7 +98,26 @@ namespace MPFever
                     Check(first.Select(c=>c.Peer+":"+c.Uid).Distinct().Count()==100,"one committed record per author uid");
                 }
                 using(var recovered=new CommandJournal(concurrent,epoch))
-                    Check(recovered.LastSequence==100 && ReadJournal(recovered,epoch).Count==100,"concurrent history survives process reopen");
+                {
+                    var history=ReadJournal(recovered,epoch);
+                    Check(recovered.LastSequence==100 && history.Count==100,"concurrent history survives process reopen");
+                    var cursor=new ReplayCursor(epoch);var effects=new List<string>();
+                    Reject<InvalidDataException>(()=>cursor.Apply(history[1],c=>effects.Add(c.Uid)),"replay gap cannot apply dependent command");
+                    Reject<InvalidDataException>(()=>cursor.Apply(new OrderedCommand(otherEpoch,1,"A","A:1",2,"{}"),c=>effects.Add(c.Uid)),"stale replay never mutates effects");
+                    cursor.Apply(history[0],c=>effects.Add(c.Uid));
+                    Check(!cursor.Apply(history[0],c=>effects.Add(c.Uid)) && effects.Count==1,"replayed duplicate invokes no second effect");
+                    Reject<InvalidDataException>(()=>cursor.Apply(new OrderedCommand(epoch,1,history[0].Peer,history[0].Uid,2,"changed"),c=>effects.Add(c.Uid)),"conflicting replay sequence refused");
+                    var faulted=new ReplayCursor(epoch);
+                    Reject<IOException>(()=>faulted.Apply(history[0],c=>{throw new IOException("callback failed");}),"failed application marks replay cursor faulted");
+                    Reject<InvalidDataException>(()=>faulted.Apply(history[0],c=>effects.Add(c.Uid)),"ambiguous effect cannot be retried without snapshot recovery");
+                    for(int i=1;i<=20;i++)
+                    {
+                        var reconnected=new ReplayCursor(epoch,50);var applied=new List<long>();
+                        foreach(var c in history.Skip(45))reconnected.Apply(c,x=>applied.Add(x.Sequence));
+                        foreach(var c in history.Skip(45))reconnected.Apply(c,x=>applied.Add(x.Sequence));
+                        Check(applied.SequenceEqual(Enumerable.Range(51,50).Select(x=>(long)x)) && reconnected.Frontier==100,"offline snapshot frontier plus duplicate replay cycle "+i);
+                    }
+                }
                 var barrier=new RecoveryBarrier(otherEpoch,100,hash,new[]{"Host","Client"});
                 Reject<InvalidDataException>(()=>barrier.Resume(),"recovery never resumes without ready peers");
                 foreach(var invalid in new Action[]{()=>barrier.Ready("intruder",otherEpoch,100,hash),()=>barrier.Ready("Host",epoch,100,hash),()=>barrier.Ready("Host",otherEpoch,99,hash),()=>barrier.Ready("Host",otherEpoch,100,new string('d',64))})
@@ -110,11 +129,6 @@ namespace MPFever
                 var failed=new RecoveryBarrier(otherEpoch,100,hash,new[]{"Host","Client"});failed.Ready("Host",otherEpoch,100,hash);failed.Fail();
                 Reject<InvalidDataException>(()=>failed.Ready("Client",otherEpoch,100,hash),"late acknowledgement cannot undo failed recovery");
                 Reject<InvalidDataException>(()=>failed.Resume(),"failed recovery stays frozen");
-                for(int i=1;i<=20;i++)
-                {
-                    var cycle=new RecoveryBarrier(Guid.NewGuid().ToString("N"),i,hash,new[]{"Host","Client"});
-                    Check(!cycle.CanResume,"offline recovery cycle starts frozen "+i);
-                }
             }
             finally { Directory.Delete(root,true); }
         }
