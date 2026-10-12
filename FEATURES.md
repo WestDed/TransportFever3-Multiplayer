@@ -1,5 +1,7 @@
 # Возможности и границы готовности
 
+Продолжение: [компании и протокол, PR #4](docs/STAGE1_COMPANIES_PROTOCOL.md). AUD-04 исправлен; reconnect credential, client schema, host-reported company binding и Repay terms добавлены. Steam authentication/engine ownership/central replay пока не приняты; ниже исторические состояния и предыдущие этапы.
+
 Продолжение этапа 1: [сеть и снимки, PR #3](docs/STAGE1_NETWORK_SNAPSHOTS.md). TCP/IPC ограничены, передача потоковая с SHA-256 и атомарной записью, Windows EXE/DLL собираются в обязательном CI. Далее исторические выводы аудита; оставшиеся identity/order/engine ограничения не сняты.
 
 Документ фиксирует исходный аудит 0.3.6. Изменения после него и текущие проверки: [результаты первой задачи этапа 1](docs/STAGE1_TESTS_DECODER.md). Сетевой Lua-декодер и тестовая среда исправлены; остальные ограничения аудита сохраняются.

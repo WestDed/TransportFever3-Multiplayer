@@ -1,5 +1,7 @@
 # Продолжение работы после аудита
 
+Продолжение: [компании и протокол, PR #4](docs/STAGE1_COMPANIES_PROTOCOL.md). AUD-04 исправлен; reconnect credential, client schema, host-reported company binding и Repay terms добавлены. Steam authentication/engine ownership/central replay пока не приняты; ниже исторические состояния и предыдущие этапы.
+
 PR #3 (`fix/network-bounds-snapshots`) зависит от #2, оба без автоматического merge. Прочитать [STAGE1_NETWORK_SNAPSHOTS](docs/STAGE1_NETWORK_SNAPSHOTS.md): bounded reads/outboxes, streamed SHA256 snapshots и full Windows build уже добавлены. Продолжать company identity/schema и epoch/order, не переделывать выполненную работу. Фактический финальный CI смотреть по head SHA PR.
 
 Актуальное продолжение: [PR #2](https://github.com/WestDed/TransportFever3-Multiplayer/pull/2), ветка `fix/offline-tests-safe-decoder` от main `6611e8f`. Сначала прочитать [STAGE1_TESTS_DECODER](docs/STAGE1_TESTS_DECODER.md): mock loader и декодеры уже исправлены, повторять эти работы не нужно. AUD-04, авторизация компаний, command schema, ограничения чтения, порядок и эпохи — следующий объём. Ниже сохранена информация о первичной публикации аудита.

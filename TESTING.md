@@ -1,5 +1,7 @@
 # Стратегия и результаты тестирования
 
+Продолжение: [компании и протокол, PR #4](docs/STAGE1_COMPANIES_PROTOCOL.md). AUD-04 исправлен; reconnect credential, client schema, host-reported company binding и Repay terms добавлены. Steam authentication/engine ownership/central replay пока не приняты; ниже исторические состояния и предыдущие этапы.
+
 Продолжение этапа 1: [сеть и снимки, PR #3](docs/STAGE1_NETWORK_SNAPSHOTS.md). TCP/IPC ограничены, передача потоковая с SHA-256 и атомарной записью, Windows EXE/DLL собираются в обязательном CI. Далее исторические выводы аудита; оставшиеся identity/order/engine ограничения не сняты.
 
 Актуальное продолжение 12.10.2026: [этап 1 — тесты и безопасный декодер](docs/STAGE1_TESTS_DECODER.md). Lockstep восстановлен. Обязательный suite: 44 теста (43 PASS, один expected failure AUD-04) на Linux и Windows; C# decoder — 46 checks на Windows. Workflow теперь строгий, известный translation debt разрешён только для трёх ключей. Далее сохранён **исторический результат аудита**, чтобы не путать прежние отказы с текущими.
