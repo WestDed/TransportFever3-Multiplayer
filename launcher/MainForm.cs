@@ -129,12 +129,12 @@ namespace MPFever
         // ---- host authority: resynchronisation by the host's savegame
         const double ResyncCooldownSeconds = 120;   // at most one resynchronisation every 2 minutes
         const string ResyncSaveName = "MPFever resync";
-        const int ResyncChunk = 256 * 1024;
         volatile bool resyncing;
+        volatile bool resyncFailed;
         double lastResync = -1e9;
         int resyncId;
         readonly HashSet<string> resyncWaiting = new HashSet<string>();
-        Dictionary<object, object> saveDone;
+        volatile Dictionary<object, object> saveDone;
         string lastDiffKeys = "";
         int diffStreak;
         int postResyncHashN = -1;
@@ -827,9 +827,9 @@ namespace MPFever
             lock (clocks) clocks.Clear();
             lock (hashes) hashes.Clear();
             lock (chatLog) { chatLog.Clear(); chatId = 0; }
-            lock (resyncParts) resyncParts.Clear();   // a host game half received in the session that ends
+            lock (snapshotReceivers) { foreach (var receiver in snapshotReceivers.Values) receiver.Dispose(); snapshotReceivers.Clear(); }
             hashN = 0; syncText = "—"; actsRelayed = actRefused = actFails = desyncs = 0;
-            resyncing = false; resyncWaiting.Clear(); ignoredParts.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = "";
+            resyncing = false; resyncFailed = false; resyncWaiting.Clear(); ignoredParts.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = "";
             joinPending = false;
             joinedAddr = null;
             if (steamConnect != null) { steamConnect = null; SteamCtl("clear", null); }
@@ -846,11 +846,11 @@ namespace MPFever
         }
 
         /// <summary>Host started from the menu: the session starts as soon as its game runs the savegame.</summary>
-        void AutoStart()
+        void AutoStart(int expectedGen, string expectedHost)
         {
-            WaitUntil(() => { lock (clocks) return hostName != null && clocks.ContainsKey(hostName); }, 120);
+            if (!WaitUntil(() => { lock (clocks) return expectedGen != sessionGen || clocks.ContainsKey(expectedHost); }, 120) || expectedGen != sessionGen) return;
             Thread.Sleep(1000);
-            if (started) return;
+            if (expectedGen != sessionGen || started || hostGame == null || !hostGame.InGame) return;
             StartSession();
             menuPhase = "ingame";
             menuText = T("Partie en cours.", "Game running."); MenuStatus();
@@ -1016,10 +1016,13 @@ namespace MPFever
 
         void StartHost(string name, bool launch, GameLink existing = null)
         {
+            companyBindings = new CompanyBindings();
             hostName = name;
-            relay = new Relay();
+            int hostGen = sessionGen;
+            var hostRelay = relay = new Relay();
             relay.Joined += p =>
             {
+                if (hostGen != sessionGen || relay != hostRelay) return;
                 Log.Ok(F("{0} a rejoint la session", "{0} joined the session", p.Name));
                 lock (leftAt) leftAt.Remove(BaseName(p.Name));
                 relay.DropOlder(p);
@@ -1033,6 +1036,7 @@ namespace MPFever
             };
             relay.Left += p =>
             {
+                if (hostGen != sessionGen || relay != hostRelay) return;
                 Log.Warn(F("{0} a quitté la session", "{0} left the session", p.Name));
                 lock (leftAt) leftAt[BaseName(p.Name)] = Now;
                 HostChat("left", BaseName(p.Name), "");
@@ -1040,20 +1044,21 @@ namespace MPFever
                 lock (clocks) clocks.Remove(p.Name);
                 HostSend(Msg.Make("peerleft", hostName, "{[\"name\"]=" + LuaLit.Quote(p.Name) + "}"));
             };
-            relay.Received += (p, m) => OnHostMessage(m, p);
+            relay.Received += (p, m) => { if (hostGen == sessionGen && relay == hostRelay && p.Joined) OnHostMessage(m, p); };
             relay.Start((int)portBox.Value);
 
             hostGame = existing ?? new GameLink(name, "host");
             if (!games.Contains(hostGame)) games.Add(hostGame);
             hostGame.FromGame += hostFromGame = (g, m) =>
             {
+                if (hostGen != sessionGen || relay != hostRelay || g != hostGame) return;
                 m.From = hostName;
                 if (m.Kind == "hello")
                 {
                     g.InGame = true;
                     g.ToGame(Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(hostName) + ",[\"role\"]=\"host\"}"));
                     BroadcastSession();
-                    if (menuMode && !started) new Thread(AutoStart) { IsBackground = true, Name = "Auto start" }.Start();
+                    if (menuMode && !started) new Thread(() => AutoStart(hostGen, name)) { IsBackground = true, Name = "Auto start" }.Start();
                 }
                 OnHostMessage(m, null);
             };
@@ -1067,6 +1072,7 @@ namespace MPFever
             var game = existing ?? new GameLink(name, "client");
             if (!games.Contains(game)) games.Add(game);
             Client current = null;
+            string resumeToken = null;
             clientCancelled = false;
             // a reconnect thread of an earlier session must not wake up in this one (issue #13)
             int gen = sessionGen;
@@ -1080,6 +1086,7 @@ namespace MPFever
             }
             game.FromGame += clientFromGame = (g, m) =>
             {
+                if (gen != sessionGen) return;
                 if (m.Kind == "hello") { g.InGame = true; if (menuMode) { menuPhase = "ingame"; menuText = T("En partie.", "In game."); MenuStatus(); } }
                 current?.Send(m);
             };
@@ -1088,7 +1095,9 @@ namespace MPFever
             {
                 client.Received += m =>
                 {
-                    if (m.Kind == "resync_file") { OnResyncFile(game, m); return; }
+                    if (gen != sessionGen) return;
+                    if (m.Kind == "connection") { resumeToken = client.ResumeToken; return; }
+                    if (m.Kind == "resync_begin" || m.Kind == "resync_file") { OnResyncFile(game, m, client); return; }
                     if (m.Kind == "mpstatus")
                     {
                         if (LuaLit.Parse(m.Payload) is Dictionary<object, object> st && st.TryGetValue("text", out var tx) && tx is string text)
@@ -1116,6 +1125,8 @@ namespace MPFever
                 };
                 client.Closed += () =>
                 {
+                    if (gen != sessionGen) return;
+                    lock (snapshotReceivers) { if (snapshotReceivers.TryGetValue(game, out var receiver)) { receiver.Dispose(); snapshotReceivers.Remove(game); } }
                     lock (clients) clients.Remove(client);
                     if (current == client) current = null;   // nothing is sent until reconnected
                     Log.Warn(F("[{0}] connexion à l'hôte perdue", "[{0}] connection to the host lost", name));
@@ -1135,7 +1146,7 @@ namespace MPFever
                             ClientStatus("lost", attempt);
                             Thread.Sleep(5000);
                             if (clientCancelled || gen != sessionGen) return;
-                            var c = new Client();
+                            var c = new Client { ResumeToken = resumeToken };
                             try
                             {
                                 wire(c);
@@ -1372,11 +1383,13 @@ namespace MPFever
             // every game just loaded the same savegame: a part already different now is a local measure
             postResyncHashN = hashN + 1;
             RequestHash();
-            new Thread(() => { Thread.Sleep(1500); SetSpeed(1, T("démarrage", "start")); }) { IsBackground = true }.Start();
+            int startGen=sessionGen;
+            new Thread(() => { Thread.Sleep(1500); if(startGen==sessionGen)SetSpeed(1, T("démarrage", "start")); }) { IsBackground = true }.Start();
         }
 
         void SetSpeed(int s, string who)
         {
+            if(s>0 && (resyncing || resyncFailed)) {Log.Warn("Resume denied while resynchronisation is pending or failed; finish recovery or restart the session");return;}
             if (!started) return;
             lock (sessionGate) { speed = Math.Max(1, Math.Min(4, s)); pauseAt = null; }
             Log.W(F("Vitesse : x{0} (demandée par {1})", "Speed: x{0} (asked by {1})", speed, who));
@@ -1446,14 +1459,37 @@ namespace MPFever
 
         void OnHostMessage(Msg m, Peer from)
         {
+            if (from != null)
+            {
+                try
+                {
+                    var data = ProtocolSchema.ValidateClient(m);
+                    if (m.Kind == "act")
+                    {
+                        if ((string)data["fn"] == "mpfCoJoin")
+                        {
+                            if (companyMode != "separate") throw new InvalidDataException("Company join is not allowed in shared mode");
+                            companyBindings.Join(from.Identity, ProtocolSchema.Table(data["args"],"args"), long.Parse(StartMoney(), CultureInfo.InvariantCulture));
+                        }
+                        else if (companyMode == "separate") companyBindings.Require(from.Identity,data);
+                    }
+                }
+                catch (InvalidDataException e) { Log.Warn("Rejected message from " + from.Name + ": " + e.Message); relay?.Close(from); return; }
+            }
             switch (m.Kind)
             {
+                case "co_roster":
+                    if (from == null) companyBindings.Report(m.Payload);
+                    break;
                 case "hello":
                     lock (players) players.Add(m.From);
                     Log.W(F("{0} : jeu prêt {1}", "{0}: game ready {1}", m.From, m.Payload));
                     // a game started again (resynchronisation): it needs its identity again
                     if (from != null) relay.Send(from, Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(from.Name) + ",[\"role\"]=\"client\"}"));
-                    lock (resyncWaiting) resyncWaiting.Remove(m.From);
+                    lock (resyncWaiting)
+                    {
+                        if (!resyncing || from == null || snapshotReceived.Contains(m.From)) resyncWaiting.Remove(m.From);
+                    }
                     break;
 
                 case "replay_failed":
@@ -1470,7 +1506,19 @@ namespace MPFever
                         break;
                     }
 
+                case "resync_received":
+                    lock (resyncWaiting)
+                    {
+                        if (from != null && snapshotTargets.TryGetValue(from.Name, out var target)
+                            && LuaLit.Parse(m.Payload) is Dictionary<object, object> receipt
+                            && receipt.TryGetValue("id", out var rid) && rid is double rd && rd == target.Id
+                            && receipt.TryGetValue("transfer", out var rt) && rt is string rs && rs == target.Transfer)
+                            snapshotReceived.Add(from.Name);
+                    }
+                    break;
+
                 case "save_done":
+                    if (from != null) { Log.Warn("Rejected remote save_done from " + from.Name); break; }
                     saveDone = LuaLit.Parse(m.Payload) as Dictionary<object, object> ?? new Dictionary<object, object>();
                     Log.W(F("{0} : sauvegarde de resynchronisation terminée {1}", "{0}: resynchronisation save done {1}", m.From, m.Payload));
                     break;
@@ -1707,98 +1755,132 @@ namespace MPFever
 
         void Resync(string reason)
         {
-            int id = Interlocked.Increment(ref resyncId);
+            resyncFailed=true;
+            int id = Interlocked.Increment(ref resyncId), gen = sessionGen;
+            Relay activeRelay = relay;
+            GameLink activeGame = hostGame;
             int prevSpeed; lock (sessionGate) prevSpeed = Math.Max(1, speed);
+            bool success = false;
             var t0 = DateTime.UtcNow;
+            bool Current() => gen == sessionGen && activeRelay == relay;
+            bool WaitCurrent(Func<bool> predicate, double seconds) => WaitUntil(() => !Current() || predicate(), seconds) && Current();
             try
             {
                 Log.W(F("=== Resynchronisation n°{0} sur la partie de l'hôte (écart : {1}) ===", "=== Resynchronisation #{0} on the host's game (difference: {1}) ===", id, reason));
-                // 1. every game stops at the same time
                 Pause(T("resynchronisation", "resynchronisation"));
                 long at; lock (sessionGate) at = pauseAt ?? 0;
-                bool stopped = WaitUntil(() => { lock (clocks) return clocks.Values.All(c => c.T >= at && c.Sp == 0); }, 120);
+                bool stopped = WaitCurrent(() => { lock (clocks) return clocks.Values.All(c => c.T >= at && c.Sp == 0); }, 120);
                 if (!stopped) { Log.Err(T("Resynchronisation abandonnée : les jeux ne se sont pas arrêtés.", "Resynchronisation cancelled: the games did not stop.")); return; }
-                // 2. the host saves
                 saveDone = null;
-                hostGame.ToGame(Msg.Make("resync_save", hostName, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(ResyncSaveName) + "}"));
-                if (!WaitUntil(() => saveDone != null, 180)) { Log.Err(T("Resynchronisation abandonnée : l'hôte n'a pas sauvegardé.", "Resynchronisation cancelled: the host did not save.")); return; }
+                activeGame.ToGame(Msg.Make("resync_save", hostName, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(ResyncSaveName) + "}"));
+                if (!WaitCurrent(() => saveDone != null && saveDone.TryGetValue("id", out var si) && si is double sd && sd == id, 180))
+                { Log.Err(T("Resynchronisation abandonnée : l'hôte n'a pas sauvegardé.", "Resynchronisation cancelled: the host did not save.")); return; }
                 if (!(saveDone.TryGetValue("ok", out var okv) && okv is bool ok && ok)) { Log.Err(T("Resynchronisation abandonnée : sauvegarde refusée.", "Resynchronisation cancelled: save refused.")); return; }
-                Thread.Sleep(1000);   // the file is closed by the game after its callback
+                Thread.Sleep(1000);
+                if (!Current()) return;
                 string file = GameInstall.FindSave(ResyncSaveName);
                 if (file == null || File.GetLastWriteTimeUtc(file) < t0.AddSeconds(-5))
+                { Log.Err(F("Resynchronisation abandonnée : fichier « {0}.sav » introuvable.", "Resynchronisation cancelled: file « {0}.sav » not found.", ResyncSaveName)); return; }
+                using (var source = new SnapshotSource(file, id))
                 {
-                    Log.Err(F("Resynchronisation abandonnée : fichier « {0}.sav » introuvable.", "Resynchronisation cancelled: file « {0}.sav » not found.", ResyncSaveName));
-                    return;
+                    Log.W("Host snapshot: " + source.Manifest.Bytes + " bytes, SHA-256 " + source.Manifest.Sha256);
+                    Peer[] peers = activeRelay.Peers();
+                    lock (resyncWaiting)
+                    {
+                        resyncWaiting.Clear(); snapshotTargets.Clear(); snapshotReceived.Clear();
+                        resyncWaiting.Add(hostName);
+                        foreach (var peer in peers) { resyncWaiting.Add(peer.Name); snapshotTargets[peer.Name] = source.Manifest; }
+                    }
+                    int cancelled = 0;
+                    var done = peers.Select(_ => new ManualResetEventSlim()).ToArray();
+                    var failures = new List<string>();
+                    for (int i = 0; i < peers.Length; i++)
+                    {
+                        int index = i;
+                        new Thread(() =>
+                        {
+                            try { source.SendTo(m => activeRelay.SendBulk(peers[index], m), hostName, () => !Current() || Volatile.Read(ref cancelled) != 0); }
+                            catch (Exception e) { lock (failures) failures.Add(peers[index].Name + ": " + e.Message); activeRelay.Close(peers[index]); }
+                            finally { done[index].Set(); }
+                        }) { IsBackground = true, Name = "Snapshot to " + peers[i].Name }.Start();
+                    }
+                    if (!WaitCurrent(() => done.All(d => d.IsSet), 600))
+                    {
+                        Interlocked.Exchange(ref cancelled, 1);
+                        foreach (var peer in peers) activeRelay.Close(peer);
+                        Log.Err("Snapshot sending cancelled or timed out; session remains paused"); return;
+                    }
+                    lock (failures) if (failures.Count > 0) { Log.Err(string.Join("; ", failures)); return; }
+                    activeGame.ToGame(Msg.Make("resync_load", hostName, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(ResyncSaveName) + "}"));
+                    if (!WaitCurrent(() => { lock (resyncWaiting) return resyncWaiting.Count == 0; }, 600))
+                    {
+                        lock (resyncWaiting) Log.Err("Snapshot load not acknowledged: " + string.Join(", ", resyncWaiting) + "; session remains paused");
+                        foreach (var peer in peers) { lock (resyncWaiting) if (resyncWaiting.Contains(peer.Name)) activeRelay.Close(peer); }
+                        return;
+                    }
                 }
-                byte[] bytes = File.ReadAllBytes(file);
-                Log.W(F("Sauvegarde de l'hôte : {0:0.0} Mo, envoi aux autres joueurs...", "Host savegame: {0:0.0} MB, sending it to the other players...", bytes.Length / 1048576.0));
-                // 3. every game (the host's too) reloads it; the others receive the file first
-                lock (resyncWaiting) { resyncWaiting.Clear(); lock (players) foreach (var p in players) resyncWaiting.Add(p); }
-                int parts = (bytes.Length + ResyncChunk - 1) / ResyncChunk;
-                for (int i = 0; i < parts; i++)
-                {
-                    int len = Math.Min(ResyncChunk, bytes.Length - i * ResyncChunk);
-                    string data = Convert.ToBase64String(bytes, i * ResyncChunk, len);
-                    relay?.Broadcast(Msg.Make("resync_file", hostName,
-                        "{[\"id\"]=" + id + ",[\"i\"]=" + i + ",[\"n\"]=" + parts + ",[\"data\"]=\"" + data + "\"}"));
-                }
-                hostGame.ToGame(Msg.Make("resync_load", hostName, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(ResyncSaveName) + "}"));
-                bool back = WaitUntil(() => { lock (resyncWaiting) return resyncWaiting.Count == 0; }, 600);
-                if (!back) { lock (resyncWaiting) Log.Warn(T("Resynchronisation : sans nouvelles de ", "Resynchronisation: no news from ") + string.Join(", ", resyncWaiting) + T(" (on reprend quand même).", " (resuming anyway).")); }
-                // 4. all games run the same savegame: check, then resume
                 Thread.Sleep(3000);
+                if (!Current()) return;
                 postResyncHashN = hashN + 1;
                 RequestHash();
                 Thread.Sleep(2000);
+                success = Current();
                 Log.W(F("=== Resynchronisation n°{0} terminée en {1:0} s ===", "=== Resynchronisation #{0} done in {1:0} s ===", id, (DateTime.UtcNow - t0).TotalSeconds));
             }
             catch (Exception e) { Log.Err(T("Resynchronisation : ", "Resynchronisation: ") + e.Message); }
             finally
             {
-                lastResync = Now;
-                diffStreak = 0;
-                resyncing = false;
-                SetSpeed(prevSpeed, T("fin de resynchronisation", "end of resynchronisation"));
+                if (Current())
+                {
+                    lastResync = Now; diffStreak = 0; resyncing = false;
+                    lock (resyncWaiting) { snapshotTargets.Clear(); snapshotReceived.Clear(); }
+                    if (success) {resyncFailed=false;SetSpeed(prevSpeed, T("fin de resynchronisation", "end of resynchronisation"));}
+                    else Log.Err("Resynchronisation failed; all games remain paused. Inspect the logs before restarting.");
+                }
             }
         }
 
         // client side: the host's savegame arrives in pieces; once complete it is written next to this player's
         // savegames and the game loads it
-        readonly Dictionary<int, string[]> resyncParts = new Dictionary<int, string[]>();
+        readonly Dictionary<GameLink, SnapshotReceiver> snapshotReceivers = new Dictionary<GameLink, SnapshotReceiver>();
+        readonly Dictionary<string, SnapshotManifest> snapshotTargets = new Dictionary<string, SnapshotManifest>();
+        readonly HashSet<string> snapshotReceived = new HashSet<string>();
+        CompanyBindings companyBindings = new CompanyBindings();
 
-        void OnResyncFile(GameLink game, Msg m)
+        void OnResyncFile(GameLink game, Msg m, Client client)
         {
-            var t = LuaLit.Parse(m.Payload) as Dictionary<object, object>;
-            if (t == null) return;
-            int id = (int)(double)t["id"], i = (int)(double)t["i"], n = (int)(double)t["n"];
-            string[] got;
-            lock (resyncParts)
+            SnapshotReceiver receiver;
+            lock (snapshotReceivers)
             {
-                if (!resyncParts.TryGetValue(id, out got)) resyncParts[id] = got = new string[n];
-                got[i] = t["data"] as string;
-                if (got.Any(x => x == null))
+                if (!snapshotReceivers.TryGetValue(game, out receiver))
+                    snapshotReceivers[game] = receiver = new SnapshotReceiver(Path.Combine(game.Dir, "snapshots"));
+            }
+            if (m.Kind == "resync_begin") { receiver.Begin(m.Payload); return; }
+            using (var completed = receiver.Add(m.Payload))
+            {
+                if (completed == null)
                 {
-                    if (menuMode && !game.InGame) { menuPhase = "downloading"; menuText = F("Réception de la partie de l'hôte : {0} %", "Receiving the host's game: {0} %", 100 * got.Count(x => x != null) / n); MenuStatus(); }
+                    if (menuMode && !game.InGame) { menuPhase = "downloading"; menuText = F("Réception de la partie de l'hôte : {0} %", "Receiving the host's game: {0} %", receiver.Percent); MenuStatus(); }
                     return;
                 }
-                resyncParts.Remove(id);
-            }
-            try
-            {
-                var bytes = got.SelectMany(Convert.FromBase64String).ToArray();
-                string name = ResyncSaveName + " " + new string(game.Name.Where(char.IsLetterOrDigit).ToArray());
-                foreach (var d in GameInstall.SaveDirs()) File.WriteAllBytes(Path.Combine(d, name + ".sav"), bytes);
-                Log.W(F("[{0}] partie de l'hôte reçue ({1:0.0} Mo) : chargement...", "[{0}] host game received ({1:0.0} MB): loading...", game.Name, bytes.Length / 1048576.0));
+                string name = ResyncSaveName + " " + new string(game.Name.Where(char.IsLetterOrDigit).Take(40).ToArray());
+                int saved = 0;
+                foreach (var d in GameInstall.SaveDirs())
+                {
+                    try { completed.CommitTo(d, name); saved++; }
+                    catch (IOException e) { Log.Warn("Snapshot destination " + d + ": " + e.Message); }
+                }
+                if (saved == 0) throw new IOException("No snapshot could be committed; game was not asked to load");
+                int id = completed.Manifest.Id;
+                client.Send(Msg.Make("resync_received", game.Name, "{[\"id\"]=" + id + ",[\"transfer\"]=" + LuaLit.Quote(completed.Manifest.Transfer) + "}"));
+                Log.W("[" + game.Name + "] host snapshot verified and committed: " + completed.Manifest.Bytes + " bytes");
                 if (menuMode && !game.InGame)
                 {
-                    // still in the main menu: its MPFever window loads the savegame
                     menuPhase = "loading"; menuText = T("Chargement de la partie de l'hôte...", "Loading the host's game..."); menuLoad = name; menuLoadSeq = "r" + id;
-                    MenuStatus();
-                    return;
+                    MenuStatus(); return;
                 }
                 game.ToGame(Msg.Make("resync_load", m.From, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(name) + "}"));
             }
-            catch (Exception e) { Log.Warn(F("[{0}] partie de l'hôte : {1}", "[{0}] host game: {1}", game.Name, e.Message)); }
         }
 
         void RunDeterminism()

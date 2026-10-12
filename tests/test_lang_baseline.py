@@ -1,15 +1,11 @@
-"""Allow only the three translation gaps recorded by the audit, never arbitrary failures."""
+"""All translation gaps have been filled; no failures are exempt."""
 import json
 import unittest
 import sys
 import test_lang
 from test_lang import LANGUAGES, LANG_FILE, code_keys, placeholders
 
-KNOWN_MISSING = frozenset({
-    '=== New connection: the previous session ends ===',
-    'Cancel during a resynchronisation: session kept.',
-    '=== Cancelled: the session ends ===',
-})
+KNOWN_MISSING = frozenset()
 
 
 def unexpected_translation_errors(keys, texts, languages):
@@ -30,18 +26,18 @@ class TranslationBaselineTests(unittest.TestCase):
         texts = json.loads(LANG_FILE.read_text(encoding='utf-8-sig'))['texts']
         self.assertEqual(unexpected_translation_errors(code_keys(), texts, LANGUAGES), [])
 
-    def test_known_gaps_are_explicitly_allowed(self):
-        self.assertEqual(unexpected_translation_errors(KNOWN_MISSING, {}, ['ru']), [])
+    def test_no_gaps_are_exempt(self):
+        self.assertEqual(KNOWN_MISSING, frozenset())
 
     def test_new_gap_fails(self):
         self.assertEqual(unexpected_translation_errors(['new text'], {}, ['ru']), ['ru: missing new text'])
 
-    def test_broken_placeholder_fails_even_for_allowed_key(self):
-        key = next(iter(KNOWN_MISSING))
+    def test_broken_placeholder_fails(self):
+        key = "=== Cancelled: the session ends ==="
         self.assertEqual(unexpected_translation_errors([key], {key: {'ru': '{0}'}}, ['ru']), [f'ru: broken placeholders {key}'])
 
-    def test_fixing_known_translation_does_not_fail(self):
-        key = next(iter(KNOWN_MISSING))
+    def test_valid_translation_does_not_fail(self):
+        key = "=== Cancelled: the session ends ==="
         self.assertEqual(unexpected_translation_errors([key], {key: {'ru': 'Исправлено'}}, ['ru']), [])
 
 
