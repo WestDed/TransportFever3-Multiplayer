@@ -277,7 +277,8 @@ namespace MPFever
             if (string.IsNullOrEmpty(line)) return null;
             var p = line.Split(new[] { '\t' }, 3);
             if (p.Length < 3) return null;
-            return new Msg { Kind = p[0], From = p[1], Payload = p[2] };
+            var m = new Msg { Kind = p[0], From = p[1], Payload = p[2] };
+            return Wire.ValidEnvelope(m) ? m : null;
         }
 
         public static Msg Make(string kind, string from, string payload = "{}") => new Msg { Kind = kind, From = from, Payload = payload };
@@ -457,7 +458,6 @@ namespace MPFever
         public volatile bool InGame;
         readonly string inPath, outPath;
         readonly object writeGate = new object();
-        long outOff;
         volatile bool stop;
         Thread poll;
         Process proc;
@@ -524,7 +524,7 @@ namespace MPFever
             }
         }
 
-        long chatOutOff;
+        BoundedFileTail chatTail;
 
         /// <summary>The messages written in the in-game chat since the last call (chat_out.txt, appended by the mod: one
         /// "seq TAB text" line per message).</summary>
@@ -535,24 +535,13 @@ namespace MPFever
             {
                 var f = Path.Combine(Dir, "chat_out.txt");
                 if (!File.Exists(f)) return res;
-                using (var fs = new FileStream(f, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                if (chatTail == null) chatTail = new BoundedFileTail(f, 16 * 1024);
+                foreach (var raw in chatTail.ReadLines())
                 {
-                    if (fs.Length < chatOutOff) chatOutOff = 0;
-                    if (fs.Length == chatOutOff) return res;
-                    fs.Seek(chatOutOff, SeekOrigin.Begin);
-                    var buf = new byte[fs.Length - chatOutOff];
-                    int n = 0;
-                    while (n < buf.Length) { int r = fs.Read(buf, n, buf.Length - n); if (r <= 0) break; n += r; }
-                    int last = n > 0 ? Array.LastIndexOf(buf, (byte)'\n', n - 1) : -1;
-                    if (last < 0) return res;   // a line still being written
-                    chatOutOff += last + 1;
-                    foreach (var raw in Utf8.GetString(buf, 0, last + 1).Split('\n'))
-                    {
-                        var line = raw.TrimEnd('\r');
-                        int tab = line.IndexOf('\t');
-                        if (tab >= 0) line = line.Substring(tab + 1);
-                        if (line.Trim().Length > 0) res.Add(line);
-                    }
+                    var line = raw;
+                    int tab = line.IndexOf('\t');
+                    if (tab >= 0) line = line.Substring(tab + 1);
+                    if (line.Trim().Length > 0) res.Add(line);
                 }
             }
             catch { }
@@ -579,7 +568,13 @@ namespace MPFever
             {
                 var f = Path.Combine(Dir, "menu_req.txt");
                 if (!File.Exists(f)) return null;
-                var line = File.ReadAllText(f, Utf8).Trim('\r', '\n');
+                string line;
+                using (var fs = new FileStream(f, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                {
+                    if (fs.Length > 16 * 1024) return null;
+                    line = new BoundedLineReader(fs, 16 * 1024).ReadLine();
+                    if (line == null) return null;
+                }
                 var parts = line.Split('\t');
                 return parts.Length >= 4 ? parts : null;
             }
@@ -592,7 +587,7 @@ namespace MPFever
         {
             lock (writeGate)
             {
-                var b = Utf8.GetBytes(m + "\n");
+                var b = Wire.Encode(m);
                 using (var fs = new FileStream(inPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
                     fs.Write(b, 0, b.Length);
             }
@@ -630,7 +625,7 @@ namespace MPFever
         void Poll()
         {
             // two producers inside the game: the game-script bridge (out.log) and the UI hook (ui.log)
-            var sources = new[] { new Tail(outPath) }; // the game script forwards the UI hook's actions itself, in order with its clock
+            var sources = new[] { new BoundedFileTail(outPath) }; // the game script forwards the UI hook's actions itself, in order with its clock
             while (!stop)
             {
                 foreach (var src in sources)
@@ -649,37 +644,6 @@ namespace MPFever
             }
         }
 
-        sealed class Tail
-        {
-            public readonly string Path;
-            long off;
-            readonly List<byte> pending = new List<byte>();
-            public Tail(string path) { Path = path; }
-
-            public IEnumerable<string> ReadLines()
-            {
-                var lines = new List<string>();
-                if (!File.Exists(Path)) return lines;
-                using (var fs = new FileStream(Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
-                {
-                    if (fs.Length < off) { off = 0; pending.Clear(); }
-                    if (fs.Length > off)
-                    {
-                        fs.Seek(off, SeekOrigin.Begin);
-                        var buf = new byte[fs.Length - off];
-                        int n = fs.Read(buf, 0, buf.Length);
-                        off += n;
-                        for (int k = 0; k < n; k++)
-                        {
-                            if (buf[k] == 10) { lines.Add(Utf8.GetString(pending.ToArray()).TrimEnd((char)13)); pending.Clear(); }
-                            else pending.Add(buf[k]);
-                        }
-                    }
-                }
-                return lines;
-            }
-        }
-
         public void Dispose() { stop = true; }
     }
 
@@ -688,8 +652,8 @@ namespace MPFever
         public int Id;
         public string Name;
         public TcpClient Tcp;
-        public StreamWriter Writer;
-        public readonly object Gate = new object();
+        public BoundedOutbox Outbox;
+        public bool Joined;
     }
 
     /// <summary>Host side: accepts TCP clients and relays every message to everybody else.</summary>
@@ -704,9 +668,12 @@ namespace MPFever
         public event Action<Peer> Joined, Left;
 
         public int Count { get { lock (peers) return peers.Count; } }
+        public int Port => ((IPEndPoint)listener.LocalEndpoint).Port;
 
         /// <summary>The players connected right now (name#id), including those whose game is not ready yet.</summary>
-        public string[] PeerNames() { lock (peers) return peers.Where(p => p.Name != null).Select(p => p.Name).ToArray(); }
+        public Peer[] Peers() { lock (peers) return peers.Where(p => p.Joined).ToArray(); }
+
+        public string[] PeerNames() { lock (peers) return peers.Where(p => p.Joined).Select(p => p.Name).ToArray(); }
 
         public void Start(int port)
         {
@@ -724,7 +691,10 @@ namespace MPFever
                 {
                     var c = listener.AcceptTcpClient();
                     c.NoDelay = true;
-                    var p = new Peer { Id = nextId++, Tcp = c, Writer = new StreamWriter(c.GetStream(), new UTF8Encoding(false)) { NewLine = "\n", AutoFlush = true } };
+                    c.SendTimeout = Wire.SendTimeoutMs;
+                    lock (peers) if (peers.Count >= Wire.MaxPeers) { c.Close(); continue; }
+                    var p = new Peer { Id = nextId++, Tcp = c };
+                    p.Outbox = new BoundedOutbox(c.GetStream(), () => c.Close(), "Relay send " + p.Id);
                     p.Name = "Player" + p.Id;
                     lock (peers) peers.Add(p);
                     Log.Dim(L.F("Connexion entrante de {0} (id {1})", "Incoming connection from {0} (id {1})", c.Client.RemoteEndPoint, p.Id));
@@ -738,14 +708,23 @@ namespace MPFever
         {
             try
             {
-                var r = new StreamReader(p.Tcp.GetStream(), new UTF8Encoding(false));
+                var r = new BoundedLineReader(p.Tcp.GetStream());
                 string line;
-                while ((line = r.ReadLine()) != null)
+                while ((line = r.ReadLine(p.Joined ? -1 : Wire.HandshakeMs)) != null)
                 {
                     var m = Msg.Parse(line);
-                    if (m == null) continue;
+                    if (m == null) throw new InvalidDataException("Invalid message envelope");
+                    if (!p.Joined && m.Kind != "join") throw new InvalidDataException("Expected join before other messages");
                     if (m.Kind == "join")
                     {
+                        var join = LuaLit.Parse(m.Payload) as Dictionary<object, object>;
+                        if (p.Joined || join == null || !join.TryGetValue("protocol", out var pv) || !(pv is double v) || v != Wire.Version)
+                        {
+                            var rejection = Wire.Encode(Msg.Make("reject", "MPFever", "{[\"reason\"]=\"Incompatible protocol; install the same MPFever build as the host\"}"));
+                            p.Tcp.GetStream().Write(rejection, 0, rejection.Length);
+                            throw new InvalidDataException("Repeated join or incompatible protocol");
+                        }
+                        p.Joined = true;
                         p.Name = Sanitize(m.From) + "#" + p.Id;
                         Joined?.Invoke(p);
                         continue;
@@ -755,8 +734,10 @@ namespace MPFever
                 }
             }
             catch (Exception e) { if (!stop) Log.W($"{p.Name} : {e.Message}"); }
+            p.Outbox.Dispose();
+            try { p.Tcp.Close(); } catch { }
             lock (peers) peers.Remove(p);
-            Left?.Invoke(p);
+            if (p.Joined) Left?.Invoke(p);
         }
 
         static string Sanitize(string s)
@@ -780,11 +761,15 @@ namespace MPFever
                 }
         }
 
-        public void Send(Peer p, Msg m)
+        public void Send(Peer p, Msg m) { if (!SendBulk(p, m, false)) Close(p); }
+
+        public bool SendBulk(Peer p, Msg m, bool wait = true)
         {
-            try { lock (p.Gate) p.Writer.WriteLine(m.ToString()); }
-            catch (Exception e) { Log.Warn(L.F("envoi vers {0} : {1}", "sending to {0}: {1}", p.Name, e.Message)); }
+            try { return p.Outbox.Enqueue(m, wait); }
+            catch (Exception e) { Log.Warn("sending to " + p.Name + ": " + e.Message); return false; }
         }
+
+        public void Close(Peer p) { p.Outbox.Dispose(); try { p.Tcp.Close(); } catch { } }
 
         public void Broadcast(Msg m, Peer except = null)
         {
@@ -797,7 +782,7 @@ namespace MPFever
         {
             stop = true;
             try { listener?.Stop(); } catch { }
-            lock (peers) foreach (var p in peers) try { p.Tcp.Close(); } catch { }
+            lock (peers) foreach (var p in peers) Close(p);
         }
     }
 
@@ -805,18 +790,17 @@ namespace MPFever
     sealed class Client : IDisposable
     {
         TcpClient tcp;
-        StreamWriter writer;
-        readonly object gate = new object();
+        BoundedOutbox outbox;
         volatile bool stop;
         public event Action<Msg> Received;
         public event Action Closed;
 
         public void Connect(string host, int port, string name)
         {
-            tcp = new TcpClient { NoDelay = true };
+            tcp = new TcpClient { NoDelay = true, SendTimeout = Wire.SendTimeoutMs };
             tcp.Connect(host, port);
-            writer = new StreamWriter(tcp.GetStream(), new UTF8Encoding(false)) { NewLine = "\n", AutoFlush = true };
-            Send(Msg.Make("join", name));
+            outbox = new BoundedOutbox(tcp.GetStream(), () => tcp.Close(), "Client send");
+            Send(Msg.Make("join", name, "{[\"protocol\"]=" + Wire.Version + "}"));
             new Thread(ReadLoop) { IsBackground = true, Name = "Client read" }.Start();
             Log.Ok(L.F("Client : connecté à {0}:{1}", "Client: connected to {0}:{1}", host, port));
         }
@@ -825,25 +809,29 @@ namespace MPFever
         {
             try
             {
-                var r = new StreamReader(tcp.GetStream(), new UTF8Encoding(false));
+                var r = new BoundedLineReader(tcp.GetStream());
                 string line;
                 while ((line = r.ReadLine()) != null)
                 {
                     var m = Msg.Parse(line);
-                    if (m != null) Received?.Invoke(m);
+                    if (m == null) throw new InvalidDataException("Invalid message envelope");
+                    if (m.Kind == "reject") throw new InvalidDataException(m.Payload);
+                    Received?.Invoke(m);
                 }
             }
             catch (Exception e) { if (!stop) Log.W("client : " + e.Message); }
+            outbox.Dispose();
+            try { tcp.Close(); } catch { }
             Closed?.Invoke();
         }
 
         public void Send(Msg m)
         {
-            try { lock (gate) writer.WriteLine(m.ToString()); }
+            try { if (!outbox.Enqueue(m)) Dispose(); }
             catch (Exception e) { Log.Warn(L.T("envoi vers l'hôte : ", "sending to the host: ") + e.Message); }
         }
 
-        public void Dispose() { stop = true; try { tcp?.Close(); } catch { } }
+        public void Dispose() { stop = true; outbox?.Dispose(); try { tcp?.Close(); } catch { } }
     }
 
     static class GameInstall

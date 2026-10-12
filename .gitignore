@@ -4,6 +4,8 @@ launcher/obj/
 native/out/
 release/
 bin/
+tests/offline/bin/
+tests/offline/obj/
 
 # internal reverse-engineering tools and caches (derived from the game binary)
 re/

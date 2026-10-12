@@ -44,3 +44,36 @@ jobs:
       - name: Compile and exercise the actual LuaLit from Core.cs (no game)
         shell: pwsh
         run: ./tests/test_lualit.ps1
+  network-components:
+    name: Real TCP and file components (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet run --project tests/offline/Offline.csproj --configuration Release
+  windows-build:
+    name: Full Windows EXE and native DLL build (no game)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build existing net48 launcher, freestanding DLL and package
+        shell: cmd
+        run: build.bat
+      - name: Verify x64 binaries, package and preserved license
+        shell: pwsh
+        run: ./tests/verify_windows_build.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: experimental-windows-build-not-game-tested
+          path: |
+            release/*.zip
+            release/build-manifest.json
+          if-no-files-found: error
