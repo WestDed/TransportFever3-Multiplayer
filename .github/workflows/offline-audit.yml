@@ -1,34 +1,46 @@
-name: Offline component audit
+name: Offline tests
 on:
   pull_request:
   push:
-    branches: ['audit/**']
+    branches: ['main', 'audit/**', 'fix/**']
 permissions:
   contents: read
 jobs:
-  pure-lua:
-    runs-on: ubuntu-latest
+  lua-and-fixtures:
+    name: Lua and lockstep (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: python -m pip install -r tests/requirements-offline.txt
-      - name: Pure Lua components (known defects reported as expected failures)
-        run: python tests/test_companies_offline.py
-      - name: Upstream baseline (report failures without hiding them)
+      - name: All discovered regression tests (including the complete original lockstep scenarios)
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+      - name: Known translation debt report (strict allowance checked by tests)
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p audit-results
-          set +e
-          python tests/test_lang.py > audit-results/lang.txt 2>&1
-          lang_rc=$?
-          python tests/test_lockstep.py > audit-results/lockstep.txt 2>&1
-          lockstep_rc=$?
-          echo "test_lang.py exit=$lang_rc" >> "$GITHUB_STEP_SUMMARY"
-          echo "test_lockstep.py exit=$lockstep_rc" >> "$GITHUB_STEP_SUMMARY"
-          cat audit-results/lang.txt audit-results/lockstep.txt
+          python tests/test_lang_baseline.py --report > audit-results/lang.txt 2>&1
+          cat audit-results/lang.txt
+          echo "Three audited translation gaps remain; test_lang_baseline.py rejects new gaps or broken placeholders." >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: upstream-baseline
+          name: translation-report-${{ matrix.os }}
           path: audit-results/
+  launcher-decoder:
+    name: C# launcher decoder
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and exercise the actual LuaLit from Core.cs (no game)
+        shell: pwsh
+        run: ./tests/test_lualit.ps1
