@@ -14,6 +14,7 @@ namespace MPFever
         public const int MaxFrameBytes = LuaLit.MaxBytes + 256;
         public const int MaxPeers = 8;
         public const int HandshakeReserve = 4;
+        public const int MaxHandshakeBytes = 4096;
         public const int HandshakeMs = 10000;
         public const int PartialFrameMs = 60000;
         public const int SendTimeoutMs = 60000;
@@ -67,11 +68,16 @@ namespace MPFever
         readonly LineAccumulator line;
         readonly byte[] buffer = new byte[8192];
         readonly int partialMs;
+        readonly int limit;
         int pos, count;
         public BoundedLineReader(Stream stream, int limit = Wire.MaxFrameBytes, int partialMs = Wire.PartialFrameMs)
-        { this.stream = stream; line = new LineAccumulator(limit); this.partialMs = partialMs; }
-        public string ReadLine(int idleMs = -1)
+        { this.stream = stream; this.limit = limit; line = new LineAccumulator(limit); this.partialMs = partialMs; }
+        // A smaller first-frame cap must keep this reader's already buffered bytes:
+        // replacing the reader after join could lose the next pipelined message.
+        public string ReadLine(int idleMs = -1, int? maxBytes = null)
         {
+            int frameLimit = maxBytes ?? limit;
+            if (frameLimit <= 0 || frameLimit > limit) throw new ArgumentOutOfRangeException(nameof(maxBytes));
             var idle = Stopwatch.StartNew();
             Stopwatch partial = null;
             while (true)
@@ -80,6 +86,7 @@ namespace MPFever
                 {
                     byte b = buffer[pos++];
                     if (b == 10) return line.Finish();
+                    if (line.Length >= frameLimit) throw new InvalidDataException("Line exceeds the byte limit");
                     if (partial == null) partial = Stopwatch.StartNew();
                     line.Add(b);
                 }

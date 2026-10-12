@@ -721,7 +721,7 @@ namespace MPFever
             {
                 var r = new BoundedLineReader(p.Tcp.GetStream());
                 string line;
-                while ((line = r.ReadLine(p.Joined ? -1 : Wire.HandshakeMs)) != null)
+                while ((line = r.ReadLine(p.Joined ? -1 : Wire.HandshakeMs, p.Joined ? (int?)null : Wire.MaxHandshakeBytes)) != null)
                 {
                     var m = Msg.Parse(line);
                     if (m == null) throw new InvalidDataException("Invalid message envelope");
@@ -733,6 +733,8 @@ namespace MPFever
                         {
                             throw new InvalidDataException("Incompatible protocol or repeated join; install the same MPFever build as the host");
                         }
+                        if (join.Keys.Any(k => !(k is string key) || key != "protocol" && key != "resume"))
+                            throw new InvalidDataException("Unknown join field");
                         string resume = null;
                         if (join.TryGetValue("resume", out var rv))
                         {
@@ -741,14 +743,19 @@ namespace MPFever
                         }
                         lock(peers)
                         {
+                            if (stop) throw new ObjectDisposedException(nameof(Relay));
                             if(resume==null && peers.Count(o=>o.Joined)>=Wire.MaxPeers)throw new InvalidDataException("Session player capacity reached");
                             p.Identity = identities.Join(Sanitize(m.From), resume);
                             if(peers.Count(o=>o.Joined)>=Wire.MaxPeers && !peers.Any(o=>o.Joined && o.Identity==p.Identity))throw new InvalidDataException("Session player capacity reached");
-                            p.Joined = true;
                             p.Name = p.Identity.Name + "#" + p.Identity.Id;
+                            // Queue the acceptance before publishing this peer to Broadcast.
+                            // The same lock protects the joined-peer snapshot; the socket writer
+                            // remains independent and never blocks this lock on network I/O.
+                            var accepted = Msg.Make("connection", "MPFever", "{[\"token\"]=" + LuaLit.Quote(p.Identity.Token) + ",[\"you\"]=" + LuaLit.Quote(p.Name) + "}");
+                            if (!p.Outbox.Enqueue(accepted)) throw new IOException("Cannot queue connection acceptance");
+                            p.Joined = true;
                             DropOlder(p);
                         }
-                        Send(p, Msg.Make("connection", "MPFever", "{[\"token\"]=" + LuaLit.Quote(p.Identity.Token) + ",[\"you\"]=" + LuaLit.Quote(p.Name) + "}"));
                         Joined?.Invoke(p);
                         continue;
                     }
@@ -801,6 +808,7 @@ namespace MPFever
 
         public bool SendBulk(Peer p, Msg m, bool wait = true)
         {
+            if (p == null || !p.Joined) return false;
             try { return p.Outbox.Enqueue(m, wait); }
             catch (Exception e) { Log.Warn("sending to " + p.Name + ": " + e.Message); return false; }
         }
@@ -810,7 +818,7 @@ namespace MPFever
         public void Broadcast(Msg m, Peer except = null)
         {
             Peer[] all;
-            lock (peers) all = peers.ToArray();
+            lock (peers) all = peers.Where(p => p.Joined).ToArray();
             foreach (var p in all) if (p != except) Send(p, m);
         }
 
@@ -846,7 +854,7 @@ namespace MPFever
                 outbox = new BoundedOutbox(tcp.GetStream(), () => tcp.Close(), "Client send");
                 Send(Msg.Make("join", name, "{[\"protocol\"]=" + Wire.Version + (ResumeToken == null ? "" : ",[\"resume\"]=" + LuaLit.Quote(ResumeToken)) + "}"));
                 var reader=new BoundedLineReader(tcp.GetStream());
-                var first=Msg.Parse(reader.ReadLine(Wire.HandshakeMs));
+                var first=Msg.Parse(reader.ReadLine(Wire.HandshakeMs, Wire.MaxHandshakeBytes));
                 if(first==null || first.Kind!="connection")throw new InvalidDataException(first?.Payload ?? "Host did not accept the connection");
                 var info=LuaLit.Parse(first.Payload) as Dictionary<object,object>;
                 if(info==null || !info.TryGetValue("token",out var tv) || !(tv is string token) || !SnapshotLimits.Hex(token,64) || !(ProtocolSchema.Get(info,"you") is string you) || you.Length>64)
