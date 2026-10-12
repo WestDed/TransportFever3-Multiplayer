@@ -1,6 +1,6 @@
 # Архитектура Transport Fever 3 Multiplayer
 
-Актуальная разработка: PR #2 → #3 → #4 → #5, без слияния в main. Основа — MPFever 0.3.6, MIT, автор arthur; upstream не изменяется. Игры и сохранений нет: работа компонентов проверена, игровая архитектура ещё не принята.
+Актуальная разработка: PR #2 → #3 → #4 → #5 → #6, без слияния в main. Основа — MPFever 0.3.6, MIT, автор arthur; upstream не изменяется. Игры и сохранений нет: работа компонентов проверена, игровая архитектура ещё не принята.
 
 ## Действующая схема
 
@@ -37,8 +37,8 @@ Snapshot — read-only source, chunks 256 KiB, SHA-256, bounded per-peer writers
 
 ## Протокол и доверие
 
-UTF-8 строки `kind TAB from TAB payload LF`, payload — ограниченные data-only Lua tables. Protocol 3 согласуется до принятия входа; sender определяется сокетом. До join, повторный join, host controls с клиента, malformed types/limits отказывают. Восемь TCP-клиентов (хост играет дополнительно) + четыре ограниченных handshakes, reconnect по credential допускается на полном сервере.
+UTF-8 строки `kind TAB from TAB payload LF`, payload — ограниченные data-only Lua tables. Protocol 3 согласуется до принятия входа; sender определяется сокетом. До принятия join сокет не получает Broadcast/адресные сообщения сессии. Подтверждение connection ставится в очередь до публикации Joined под общим lock; первый frame ограничен 4 КиБ, после него сохраняется общий лимит и уже buffered data. Повторный join, неизвестные join fields, host controls с клиента, malformed types/limits отказывают. Восемь TCP-клиентов (хост играет дополнительно) + четыре ограниченных handshakes, reconnect по credential допускается на полном сервере.
 
 Версия wire не проверяет одинаковость EXE/DLL/mods/game build. TCP не шифруется; initial admission и межсессионные claims остаются задачами. Для выпуска нужна подтверждённая identity и матрица game permissions/цены/refs.
 
-История и точные исправления: [декодер](docs/STAGE1_TESTS_DECODER.md), [сеть/снимки](docs/STAGE1_NETWORK_SNAPSHOTS.md), [компании](docs/STAGE1_COMPANIES_PROTOCOL.md), [восстановление/стенд](docs/STAGE1_OFFLINE_RECOVERY.md). Первичный [аудит архитектуры](https://github.com/WestDed/TransportFever3-Multiplayer/blob/6611e8f63e29e04aeb978bddd17877b461894edf/ARCHITECTURE.md) сохранён в Git history.
+История и точные исправления: [декодер](docs/STAGE1_TESTS_DECODER.md), [сеть/снимки](docs/STAGE1_NETWORK_SNAPSHOTS.md), [компании](docs/STAGE1_COMPANIES_PROTOCOL.md), [восстановление/стенд](docs/STAGE1_OFFLINE_RECOVERY.md), [изоляция рукопожатия](docs/STAGE1_HANDSHAKE_ISOLATION.md). Первичный [аудит архитектуры](https://github.com/WestDed/TransportFever3-Multiplayer/blob/6611e8f63e29e04aeb978bddd17877b461894edf/ARCHITECTURE.md) сохранён в Git history.

@@ -1,21 +1,23 @@
 # Тестирование и границы доказательства
 
-12.10.2026. TF3 не установлена, Steam/game API и настоящих сохранений нет. Локальная среда — Linux, Python 3.12, lupa 2.6 / Lua 5.2. C#/Windows/native проверки выполняются GitHub Actions; Windows/игра локально не запускались.
+13.10.2026. TF3 не установлена, Steam/game API и настоящих сохранений нет. Локальная среда — Linux, Python 3.12, lupa 2.6 / Lua 5.2. C#/Windows/native проверки выполняются GitHub Actions; Windows/игра локально не запускались.
 
 ## Фактические автоматические проверки
 
-На [run 38213663673](https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38213663673), head b3f7dbc2: все шесть jobs успешны. 67 Python/Lua tests без exemptions, 210 C# component checks на Ubuntu/Windows, 50 LuaLit checks, полный net48 EXE и x64 DLL/14 exports/ordinals/package/license. Новые последующие изменения проверяются по финальному head в PR #5; нельзя переносить результат старого SHA на изменённый код.
+На [run 38213663673](https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38213663673), head b3f7dbc2: все шесть jobs успешны. 67 Python/Lua tests без exemptions, 210 C# component checks на Ubuntu/Windows, 50 LuaLit checks, полный net48 EXE и x64 DLL/14 exports/ordinals/package/license. Новые последующие изменения проверяются по финальному head соответствующего PR; нельзя переносить результат старого SHA на изменённый код.
 
 | Проверка | Реальный код/среда | Не доказывает |
 |---|---|---|
 | Lockstep | Все 17 прежних assertions в исправленной harness, Lua bridge/ref/co | Native hooks, реальный темп/геометрия/callbacks |
 | Decoder | Real Lua/C# grammar, malformed/expressions/limits/control/byte escapes | Полную schema и цену engine commands |
 | Companies/permissions/Repay | Real modules/coLoanEvent с injected engine dependencies | PLAYER/ACCOUNT, формулу loan_util, progression/pathfinding |
-| TCP/session | Real Relay/Client, handshake/capacity/credential/sender/negative controls | WAN/NAT/TLS/Steam account verification |
+| TCP/session | Real Relay/Client, handshake ingress/pending isolation/first-frame ordering/pipelining/capacity/credential/sender/negative controls | WAN/NAT/TLS/Steam account verification |
 | Snapshots | Real source/queue/receiver/file, SHA/atomic/failure, 32 MiB x 1/4/8 | Игровой `.sav`, app.save/load и Gigantomaniac |
 | Journal/recovery | Real disk/concurrent authors/hash/torn tail/replay/frontier/quorum | Игровое применение и atomic effects/frontier; scheduler не подключён |
 | Windows build | Full existing VS build, AMD64 PE/exports/ordinals/ZIP/license | Исполнение DLL или правильность addresses/ABI в TF3 |
 | Translations | 227 используемых keys/11 локалей и placeholders | Визуальный UI и все новые диагностические сообщения |
+
+Изоляция и пределы рукопожатия: [STAGE1_HANDSHAKE_ISOLATION](docs/STAGE1_HANDSHAKE_ISOLATION.md); результаты нового C# кода по точному head/run в PR #6.
 
 ## Воспроизведение без игры
 

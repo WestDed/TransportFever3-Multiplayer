@@ -10,7 +10,9 @@
 - [PR #4](https://github.com/WestDed/TransportFever3-Multiplayer/pull/4), `fix/company-identity-schemas`, base #3. sid signature, credential reconnect, directions/schema/co binding, fleet/line policy, stored Repay. Head b3fc4108; run 38210479835, 6 jobs green, 60 Python tests без expectedFailure.
 - [PR #5](https://github.com/WestDed/TransportFever3-Multiplayer/pull/5), `fix/offline-order-recovery`, base #4. Lua IPC, durable journal/cursor/barrier foundation, real TCP bench/slow peer, full-server accepted reconnect, native export checks, translation gaps filled, allocation fixes and lifecycle guards. Точный итоговый head/run смотреть в PR, не считать прежний SHA доказательством позднего изменения.
 
-Прочитать ARCHITECTURE/FEATURES/ROADMAP/RISKS/TESTING, docs/STAGE1_*.md и ADR_0001_COMMAND_CUTOVER.md. Не повторять уже выполненные fixes. Все branches stack; для review порядок #2 → #3 → #4 → #5. После ручного слияния предыдущей ветки проверить diff следующего PR относительно актуальной main и при необходимости retarget; не force-push чужой head и не merge самостоятельно.
+- [PR #6](https://github.com/WestDed/TransportFever3-Multiplayer/pull/6), `fix/handshake-isolation`, base #5. Pending sockets не получают общие/адресные данные; connection enqueue до Joined; first-frame cap 4 КиБ без потери buffered traffic; real TCP regressions и 32 reconnect при concurrent broadcast. Точный CI head/run смотреть в PR. Initial identity/TLS не реализованы.
+
+Прочитать ARCHITECTURE/FEATURES/ROADMAP/RISKS/TESTING, docs/STAGE1_*.md и ADR_0001_COMMAND_CUTOVER.md. Не повторять уже выполненные fixes. Все branches stack; для review порядок #2 → #3 → #4 → #5 → #6. После ручного слияния предыдущей ветки проверить diff следующего PR относительно актуальной main и при необходимости retarget; не force-push чужой head и не merge самостоятельно.
 
 ## Граница завершения
 
