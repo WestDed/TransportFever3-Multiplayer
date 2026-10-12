@@ -1,0 +1,132 @@
+{
+  "schema": 1,
+  "date": "2026-10-12",
+  "gameTested": false,
+  "generatedSnapshotBytes": 33554432,
+  "network": "loopback TCP",
+  "baseline": {
+    "run": "https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38211947379",
+    "head": "2694b3b751b316a2cb5366e966e513cd9e26b9d8",
+    "linux": [
+      {
+        "Peers": 1,
+        "SnapshotBytes": 33554432,
+        "Seconds": 0.6526409,
+        "AggregateMiBPerSecond": 49.03155778315457,
+        "CpuSeconds": 0.9799999,
+        "PeakWorkingSetBytes": 109551616,
+        "Sha256": "08713679f11aa8df6578411a07ac9b38307b8e9df895bb24c3268760e676aa0e"
+      },
+      {
+        "Peers": 4,
+        "SnapshotBytes": 33554432,
+        "Seconds": 1.8593143,
+        "AggregateMiBPerSecond": 68.84258352662592,
+        "CpuSeconds": 5.11,
+        "PeakWorkingSetBytes": 338604032,
+        "Sha256": "08713679f11aa8df6578411a07ac9b38307b8e9df895bb24c3268760e676aa0e"
+      },
+      {
+        "Peers": 8,
+        "SnapshotBytes": 33554432,
+        "Seconds": 3.9791146,
+        "AggregateMiBPerSecond": 64.33592035775999,
+        "CpuSeconds": 11.03,
+        "PeakWorkingSetBytes": 538685440,
+        "Sha256": "08713679f11aa8df6578411a07ac9b38307b8e9df895bb24c3268760e676aa0e"
+      }
+    ],
+    "windows": [
+      {
+        "Peers": 1,
+        "SnapshotBytes": 33554432,
+        "Seconds": 1.0008506,
+        "AggregateMiBPerSecond": 31.972803932974614,
+        "CpuSeconds": 0.953125,
+        "PeakWorkingSetBytes": 81567744,
+        "Sha256": "08713679f11aa8df6578411a07ac9b38307b8e9df895bb24c3268760e676aa0e"
+      },
+      {
+        "Peers": 4,
+        "SnapshotBytes": 33554432,
+        "Seconds": 2.4657123,
+        "AggregateMiBPerSecond": 51.911976916366115,
+        "CpuSeconds": 5.03125,
+        "PeakWorkingSetBytes": 196624384,
+        "Sha256": "08713679f11aa8df6578411a07ac9b38307b8e9df895bb24c3268760e676aa0e"
+      },
+      {
+        "Peers": 8,
+        "SnapshotBytes": 33554432,
+        "Seconds": 4.9588518,
+        "AggregateMiBPerSecond": 51.624853963169464,
+        "CpuSeconds": 8.90625,
+        "PeakWorkingSetBytes": 602267648,
+        "Sha256": "08713679f11aa8df6578411a07ac9b38307b8e9df895bb24c3268760e676aa0e"
+      }
+    ]
+  },
+  "afterReducingCopies": {
+    "run": "https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38212739189",
+    "head": "e8ec7b3b9fb6d87b143d987983214a39f14a575d",
+    "linux": [
+      {
+        "Peers": 1,
+        "SnapshotBytes": 33554432,
+        "Seconds": 0.8353434,
+        "AggregateMiBPerSecond": 38.30759900658819,
+        "CpuSeconds": 0.61,
+        "PeakWorkingSetBytes": 94887936,
+        "Sha256": "08713679f11aa8df6578411a07ac9b38307b8e9df895bb24c3268760e676aa0e"
+      },
+      {
+        "Peers": 4,
+        "SnapshotBytes": 33554432,
+        "Seconds": 2.0243897,
+        "AggregateMiBPerSecond": 63.22893265066504,
+        "CpuSeconds": 3.01,
+        "PeakWorkingSetBytes": 388268032,
+        "Sha256": "08713679f11aa8df6578411a07ac9b38307b8e9df895bb24c3268760e676aa0e"
+      },
+      {
+        "Peers": 8,
+        "SnapshotBytes": 33554432,
+        "Seconds": 3.990418,
+        "AggregateMiBPerSecond": 64.15368014077723,
+        "CpuSeconds": 5.67,
+        "PeakWorkingSetBytes": 498167808,
+        "Sha256": "08713679f11aa8df6578411a07ac9b38307b8e9df895bb24c3268760e676aa0e"
+      }
+    ],
+    "windows": [
+      {
+        "Peers": 1,
+        "SnapshotBytes": 33554432,
+        "Seconds": 1.330245,
+        "AggregateMiBPerSecond": 24.055719059271038,
+        "CpuSeconds": 1.046875,
+        "PeakWorkingSetBytes": 71139328,
+        "Sha256": "08713679f11aa8df6578411a07ac9b38307b8e9df895bb24c3268760e676aa0e"
+      },
+      {
+        "Peers": 4,
+        "SnapshotBytes": 33554432,
+        "Seconds": 3.054876,
+        "AggregateMiBPerSecond": 41.900227701549916,
+        "CpuSeconds": 5.46875,
+        "PeakWorkingSetBytes": 377880576,
+        "Sha256": "08713679f11aa8df6578411a07ac9b38307b8e9df895bb24c3268760e676aa0e"
+      },
+      {
+        "Peers": 8,
+        "SnapshotBytes": 33554432,
+        "Seconds": 4.7364121,
+        "AggregateMiBPerSecond": 54.04935098447198,
+        "CpuSeconds": 7.890625,
+        "PeakWorkingSetBytes": 726642688,
+        "Sha256": "08713679f11aa8df6578411a07ac9b38307b8e9df895bb24c3268760e676aa0e"
+      }
+    ]
+  },
+  "limits": "Different hosted runs; RSS includes GC and the entire net8 process. No proven RSS reduction, no game/WAN benchmark."
+}

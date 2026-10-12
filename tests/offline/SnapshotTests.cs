@@ -18,6 +18,9 @@ namespace MPFever
             Directory.CreateDirectory(root);
             try
             {
+                for(int n=1;n<=6;n++)Check(SnapshotLimits.CanonicalBase64(Convert.ToBase64String(new byte[n]),n),"canonical base64 padding "+n);
+                foreach(var item in new[]{new{Text="AB==",Bytes=1},new{Text="AAB=",Bytes=2},new{Text="AA =",Bytes=2},new{Text="A===",Bytes=1}})
+                    Check(!SnapshotLimits.CanonicalBase64(item.Text,item.Bytes),"noncanonical base64 padding refused");
                 var bytes = new byte[SnapshotLimits.ChunkBytes * 2 + 3];
                 new Random(42).NextBytes(bytes);
                 var original = Path.Combine(root, "source.bin"); File.WriteAllBytes(original, bytes);

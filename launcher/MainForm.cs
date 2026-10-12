@@ -130,6 +130,7 @@ namespace MPFever
         const double ResyncCooldownSeconds = 120;   // at most one resynchronisation every 2 minutes
         const string ResyncSaveName = "MPFever resync";
         volatile bool resyncing;
+        volatile bool resyncFailed;
         double lastResync = -1e9;
         int resyncId;
         readonly HashSet<string> resyncWaiting = new HashSet<string>();
@@ -828,7 +829,7 @@ namespace MPFever
             lock (chatLog) { chatLog.Clear(); chatId = 0; }
             lock (snapshotReceivers) { foreach (var receiver in snapshotReceivers.Values) receiver.Dispose(); snapshotReceivers.Clear(); }
             hashN = 0; syncText = "—"; actsRelayed = actRefused = actFails = desyncs = 0;
-            resyncing = false; resyncWaiting.Clear(); ignoredParts.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = "";
+            resyncing = false; resyncFailed = false; resyncWaiting.Clear(); ignoredParts.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = "";
             joinPending = false;
             joinedAddr = null;
             if (steamConnect != null) { steamConnect = null; SteamCtl("clear", null); }
@@ -845,11 +846,11 @@ namespace MPFever
         }
 
         /// <summary>Host started from the menu: the session starts as soon as its game runs the savegame.</summary>
-        void AutoStart()
+        void AutoStart(int expectedGen, string expectedHost)
         {
-            WaitUntil(() => { lock (clocks) return hostName != null && clocks.ContainsKey(hostName); }, 120);
+            if (!WaitUntil(() => { lock (clocks) return expectedGen != sessionGen || clocks.ContainsKey(expectedHost); }, 120) || expectedGen != sessionGen) return;
             Thread.Sleep(1000);
-            if (started) return;
+            if (expectedGen != sessionGen || started || hostGame == null || !hostGame.InGame) return;
             StartSession();
             menuPhase = "ingame";
             menuText = T("Partie en cours.", "Game running."); MenuStatus();
@@ -1017,9 +1018,11 @@ namespace MPFever
         {
             companyBindings = new CompanyBindings();
             hostName = name;
-            relay = new Relay();
+            int hostGen = sessionGen;
+            var hostRelay = relay = new Relay();
             relay.Joined += p =>
             {
+                if (hostGen != sessionGen || relay != hostRelay) return;
                 Log.Ok(F("{0} a rejoint la session", "{0} joined the session", p.Name));
                 lock (leftAt) leftAt.Remove(BaseName(p.Name));
                 relay.DropOlder(p);
@@ -1033,6 +1036,7 @@ namespace MPFever
             };
             relay.Left += p =>
             {
+                if (hostGen != sessionGen || relay != hostRelay) return;
                 Log.Warn(F("{0} a quitté la session", "{0} left the session", p.Name));
                 lock (leftAt) leftAt[BaseName(p.Name)] = Now;
                 HostChat("left", BaseName(p.Name), "");
@@ -1040,20 +1044,21 @@ namespace MPFever
                 lock (clocks) clocks.Remove(p.Name);
                 HostSend(Msg.Make("peerleft", hostName, "{[\"name\"]=" + LuaLit.Quote(p.Name) + "}"));
             };
-            relay.Received += (p, m) => OnHostMessage(m, p);
+            relay.Received += (p, m) => { if (hostGen == sessionGen && relay == hostRelay && p.Joined) OnHostMessage(m, p); };
             relay.Start((int)portBox.Value);
 
             hostGame = existing ?? new GameLink(name, "host");
             if (!games.Contains(hostGame)) games.Add(hostGame);
             hostGame.FromGame += hostFromGame = (g, m) =>
             {
+                if (hostGen != sessionGen || relay != hostRelay || g != hostGame) return;
                 m.From = hostName;
                 if (m.Kind == "hello")
                 {
                     g.InGame = true;
                     g.ToGame(Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(hostName) + ",[\"role\"]=\"host\"}"));
                     BroadcastSession();
-                    if (menuMode && !started) new Thread(AutoStart) { IsBackground = true, Name = "Auto start" }.Start();
+                    if (menuMode && !started) new Thread(() => AutoStart(hostGen, name)) { IsBackground = true, Name = "Auto start" }.Start();
                 }
                 OnHostMessage(m, null);
             };
@@ -1081,6 +1086,7 @@ namespace MPFever
             }
             game.FromGame += clientFromGame = (g, m) =>
             {
+                if (gen != sessionGen) return;
                 if (m.Kind == "hello") { g.InGame = true; if (menuMode) { menuPhase = "ingame"; menuText = T("En partie.", "In game."); MenuStatus(); } }
                 current?.Send(m);
             };
@@ -1377,11 +1383,13 @@ namespace MPFever
             // every game just loaded the same savegame: a part already different now is a local measure
             postResyncHashN = hashN + 1;
             RequestHash();
-            new Thread(() => { Thread.Sleep(1500); SetSpeed(1, T("démarrage", "start")); }) { IsBackground = true }.Start();
+            int startGen=sessionGen;
+            new Thread(() => { Thread.Sleep(1500); if(startGen==sessionGen)SetSpeed(1, T("démarrage", "start")); }) { IsBackground = true }.Start();
         }
 
         void SetSpeed(int s, string who)
         {
+            if(s>0 && (resyncing || resyncFailed)) {Log.Warn("Resume denied while resynchronisation is pending or failed; finish recovery or restart the session");return;}
             if (!started) return;
             lock (sessionGate) { speed = Math.Max(1, Math.Min(4, s)); pauseAt = null; }
             Log.W(F("Vitesse : x{0} (demandée par {1})", "Speed: x{0} (asked by {1})", speed, who));
@@ -1747,6 +1755,7 @@ namespace MPFever
 
         void Resync(string reason)
         {
+            resyncFailed=true;
             int id = Interlocked.Increment(ref resyncId), gen = sessionGen;
             Relay activeRelay = relay;
             GameLink activeGame = hostGame;
@@ -1825,7 +1834,7 @@ namespace MPFever
                 {
                     lastResync = Now; diffStreak = 0; resyncing = false;
                     lock (resyncWaiting) { snapshotTargets.Clear(); snapshotReceived.Clear(); }
-                    if (success) SetSpeed(prevSpeed, T("fin de resynchronisation", "end of resynchronisation"));
+                    if (success) {resyncFailed=false;SetSpeed(prevSpeed, T("fin de resynchronisation", "end of resynchronisation"));}
                     else Log.Err("Resynchronisation failed; all games remain paused. Inspect the logs before restarting.");
                 }
             }
