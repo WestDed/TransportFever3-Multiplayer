@@ -70,6 +70,55 @@ function C.appendFile(path, text)
 	return true
 end
 
+-- Bounded file IPC, shared with the bridge. The read offset includes partial data;
+-- segments stay in memory up to the cap, and a bad line is skipped until LF.
+function C.readLines(path, state, key, limit, budget)
+	limit, budget = limit or (4 * 1024 * 1024 + 256), budget or (256 * 1024)
+	local f = C.IO and C.IO.open(path, "rb")
+	if not f then return {}, {} end
+	local tailKey = key .. "_tail"
+	local tail = state[tailKey] or { parts = {}, bytes = 0 }
+	state[tailKey] = tail
+	local size = f:seek("end")
+	if size < (state[key] or 0) then state[key] = 0; tail.parts = {}; tail.bytes = 0; tail.discard = false end
+	local offset = state[key] or 0
+	f:seek("set", offset)
+	local chunk = f:read(math.min(budget, math.max(0, size - offset))) or ""
+	f:close()
+	state[key] = offset + #chunk
+	local lines, ends, pos = {}, {}, 1
+	while pos <= #chunk do
+		local last = chunk:find(NL, pos, true)
+		local piece = chunk:sub(pos, last and last - 1 or #chunk)
+		if not tail.discard then
+			if tail.bytes + #piece > limit then tail.parts = {}; tail.bytes = 0; tail.discard = true; tail.bad = (tail.bad or 0) + 1
+			else tail.parts[#tail.parts + 1] = piece; tail.bytes = tail.bytes + #piece end
+		end
+		if not last then break end
+		if not tail.discard then
+			local line = table.concat(tail.parts)
+			if line:sub(-1) == CR then line = line:sub(1, -2) end
+			if #line > 0 then lines[#lines + 1] = line; ends[#ends + 1] = offset + last end
+		end
+		tail.parts = {}; tail.bytes = 0; tail.discard = false
+		pos = last + 1
+	end
+	return lines, ends
+end
+
+-- Scan control boundaries without ReadAllText; startup may still need to visit the
+-- whole historical log, but never allocates its whole size.
+function C.lastControl(path, kind)
+	local state, last = { offset = 0 }, nil
+	while true do
+		local before = state.offset
+		local lines, ends = C.readLines(path, state, "offset")
+		for i, line in ipairs(lines) do if line:sub(1, #kind + 1) == kind .. TAB then last = ends[i] end end
+		if state.offset == before then break end
+	end
+	return last
+end
+
 function C.logger(prefix, fileName)
 	return function(msg)
 		pcall(debugPrint, "[MPFEVER" .. prefix .. "] " .. msg)

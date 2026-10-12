@@ -1685,28 +1685,7 @@ local function send(kind, payload)
 end
 
 local function readLines(fileName, offKey)
-	local f = C.IO.open(C.DIR .. BS .. fileName, "rb")
-	if not f then return {} end
-	local size = f:seek("end")
-	local lines = {}
-	if size < G[offKey] then G[offKey] = 0 end
-	if size > G[offKey] then
-		f:seek("set", G[offKey])
-		local chunk = f:read(size - G[offKey]) or ""
-		local last, pos = nil, 1
-		while true do
-			local i = chunk:find(NL, pos, true)
-			if not i then break end
-			last = i
-			local line = chunk:sub(pos, i - 1)
-			if line:sub(-1) == CR then line = line:sub(1, -2) end
-			if #line > 0 then lines[#lines + 1] = line end
-			pos = i + 1
-		end
-		if last then G[offKey] = G[offKey] + last end
-	end
-	f:close()
-	return lines
+	return C.readLines(C.DIR .. BS .. fileName, G, offKey)
 end
 
 local function parseLine(line)
@@ -6870,22 +6849,10 @@ local function resumeAfterLoad(state)
 	-- A resynchronisation: what the launcher wrote after its order to load (resync_load) is for the game loaded now, although it
 	-- arrived while the game was loading (the companies other players announce, their first actions...): read from there.
 	pcall(function()
-		local f = C.IO.open(C.DIR .. BS .. "in.log", "rb")
-		if not f then return end
-		local s = f:read("*a") or ""
-		f:close()
-		local last, pos = nil, 1
-		while true do
-			local i = s:find("resync_load" .. TAB, pos, true)
-			if not i then break end
-			if i == 1 or s:sub(i - 1, i - 1) == NL then
-				local e = s:find(NL, i, true)
-				if e then last = e end
-			end
-			pos = i + 1
-		end
-		if last and last < #s then
-			log("resynchronisation: " .. (#s - last) .. " bytes of messages received during the load are read")
+		local last = C.lastControl(C.DIR .. BS .. "in.log", "resync_load")
+		local total = fileSize("in.log")
+		if last and last < total then
+			log("resynchronisation: " .. (total - last) .. " bytes of messages received during the load are read")
 			G.inOff = last
 		end
 	end)
