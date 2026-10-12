@@ -410,6 +410,8 @@ end
 -- (in a block: the main chunk of this script is at Lua's limit of 200 locals)
 local executeAction
 do
+local okP, P = pcall(ug_require, "mpfever_permissions.lua")
+if not okP then P = ug_require("mpfever_1::/mpfever_permissions.lua") end
 local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 	local result = { tok = a.tok, id = a.id, uid = a.uid, fn = a.fn, success = false }
 	-- companies mode: a new line takes its company's colour (a little darker for each line the company already has), so that the
@@ -455,6 +457,11 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 	if okm and #missing > 0 then
 		result.err = "DESYNC missing entities: " .. table.concat(missing, ",")
 		log("action " .. tostring(a.uid) .. " " .. tostring(a.fn) .. " SKIPPED, " .. result.err)
+		return result
+	end
+	local allowed, denied = P.check(R.CO, a, R.ownerOf)
+	if not allowed then
+		result.err = "permission: " .. tostring(denied)
 		return result
 	end
 	-- companies mode: a line stops only at its company's stations and at the stations another company shares
@@ -682,7 +689,8 @@ local function coLoanEvent(st, co, name, loans)
 		local idx = nil
 		for i, loan in ipairs(lt.obtainedLoans) do if loan.id == obtained.id then idx = i; break end end
 		if not idx then return false end
-		local amount = M.lu.getFullLoanAndInterestPayBack(obtained)
+		-- The packet supplies only the id; repayment terms come from saved state.
+		local amount = M.lu.getFullLoanAndInterestPayBack(lt.obtainedLoans[idx])
 		coBook(c.ent, M.lu.makeLoan(-amount, -1))
 		table.remove(lt.obtainedLoans, idx)
 		log("companies: company " .. co .. " repaid a loan")
