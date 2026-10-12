@@ -1,73 +1,48 @@
-# Стратегия и результаты тестирования
+# Тестирование и границы доказательства
 
-Продолжение: [компании и протокол, PR #4](docs/STAGE1_COMPANIES_PROTOCOL.md). AUD-04 исправлен; reconnect credential, client schema, host-reported company binding и Repay terms добавлены. Steam authentication/engine ownership/central replay пока не приняты; ниже исторические состояния и предыдущие этапы.
+12.10.2026. TF3 не установлена, Steam/game API и настоящих сохранений нет. Локальная среда — Linux, Python 3.12, lupa 2.6 / Lua 5.2. C#/Windows/native проверки выполняются GitHub Actions; Windows/игра локально не запускались.
 
-Продолжение этапа 1: [сеть и снимки, PR #3](docs/STAGE1_NETWORK_SNAPSHOTS.md). TCP/IPC ограничены, передача потоковая с SHA-256 и атомарной записью, Windows EXE/DLL собираются в обязательном CI. Далее исторические выводы аудита; оставшиеся identity/order/engine ограничения не сняты.
+## Фактические автоматические проверки
 
-Актуальное продолжение 12.10.2026: [этап 1 — тесты и безопасный декодер](docs/STAGE1_TESTS_DECODER.md). Lockstep восстановлен. Обязательный suite: 44 теста (43 PASS, один expected failure AUD-04) на Linux и Windows; C# decoder — 46 checks на Windows. Workflow теперь строгий, известный translation debt разрешён только для трёх ключей. Далее сохранён **исторический результат аудита**, чтобы не путать прежние отказы с текущими.
+На [run 38213663673](https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38213663673), head b3f7dbc2: все шесть jobs успешны. 67 Python/Lua tests без exemptions, 210 C# component checks на Ubuntu/Windows, 50 LuaLit checks, полный net48 EXE и x64 DLL/14 exports/ordinals/package/license. Новые последующие изменения проверяются по финальному head в PR #5; нельзя переносить результат старого SHA на изменённый код.
 
+| Проверка | Реальный код/среда | Не доказывает |
+|---|---|---|
+| Lockstep | Все 17 прежних assertions в исправленной harness, Lua bridge/ref/co | Native hooks, реальный темп/геометрия/callbacks |
+| Decoder | Real Lua/C# grammar, malformed/expressions/limits/control/byte escapes | Полную schema и цену engine commands |
+| Companies/permissions/Repay | Real modules/coLoanEvent с injected engine dependencies | PLAYER/ACCOUNT, формулу loan_util, progression/pathfinding |
+| TCP/session | Real Relay/Client, handshake/capacity/credential/sender/negative controls | WAN/NAT/TLS/Steam account verification |
+| Snapshots | Real source/queue/receiver/file, SHA/atomic/failure, 32 MiB x 1/4/8 | Игровой `.sav`, app.save/load и Gigantomaniac |
+| Journal/recovery | Real disk/concurrent authors/hash/torn tail/replay/frontier/quorum | Игровое применение и atomic effects/frontier; scheduler не подключён |
+| Windows build | Full existing VS build, AMD64 PE/exports/ordinals/ZIP/license | Исполнение DLL или правильность addresses/ABI в TF3 |
+| Translations | 227 используемых keys/11 локалей и placeholders | Визуальный UI и все новые диагностические сообщения |
 
-Дата: 12.10.2026. Среда текущего аудита: Linux, Python 3.12, lupa 2.6 / Lua 5.2. Установленной TF3, бинарника, сохранений и Steam-сессии нет. Windows C#/native сборка не выполнялась. Альтернативный Rust workspace не тестировался.
-
-## Выполнено без игры
+## Воспроизведение без игры
 
 ```sh
 python -m pip install -r tests/requirements-offline.txt
-python tests/test_companies_offline.py
-python tests/test_lang.py
+python -m unittest discover -s tests -p 'test_*.py' -v
 python tests/test_lockstep.py
+python tests/test_lang.py
+dotnet run --project tests/offline/Offline.csproj --configuration Release
+dotnet run --project tests/offline/Offline.csproj --configuration Release -- --bench
 ```
 
-| Проверка | Фактический результат | Что это означает |
-|---|---|---|
-| Новый набор чистого Lua | 16 тестов: 14 PASS, 2 expected failures, exit 0 | Реальные `mpfever_co.lua`/`mpfever_common.lua` выполняются через Lua 5.2; дефекты отдельно отражены |
-| Исходный test_lang.py | exit 1, 230/233 для каждой из 11 переводных локалей | Три новых английских ключа отсутствуют в lang.json, русский тоже неполон |
-| Исходный test_lockstep.py | exit 1 до начала сценариев | `LuaError: no mpfever_1::/mpfever_co.lua`, mock loader не поддерживает новый модуль |
+Windows: `./tests/test_lualit.ps1`; `cmd /c build.bat`; `./tests/verify_windows_build.ps1`. .NET 8 SDK — для console suite; VS C++/MSBuild/.NET 4.8 pack — production build. Нет continue-on-error, expectedFailure или разрешённых translation gaps. Любая новая неожиданная ошибка проваливает job; исправление тестовой среды должно быть отдельно объяснено, не замаскировано exemption.
 
-Новый набор проверяет: существующую компанию хоста, отдельную компанию клиента, повтор join, смену имени аккаунта, совпадение имён двух аккаунтов, reconnect после совпадения имён, неоднозначный Steam account, local entity mapping, сохранение через штатный Lua serializer, палитру, вложенные данные и спецсимволы. Отдельно фиксируется текущий возврат компании по имени при отсутствующем sid — это характеристика, не сертификат безопасности.
-
-Expected failures — требования, которые текущий код нарушает:
-- AUD-02: decoder должен принимать только данные, а сейчас принимает `(function() return 7 end)()`;
-- AUD-04: signature должна обнаруживать изменение sid, а сейчас его игнорирует.
-
-Тесты проверяют **действующие исходники**, не копию их алгоритма на Python. Ни один из них не создаёт настоящий ACCOUNT/PLAYER, не проверяет WinHTTP hooks, TCP-сбои, темп симуляции, pathfinding, кредитные правила, посещения станций или native save/load. Сериализация реестра в Lua — не испытание игрового сохранения.
-
-Три отсутствующих translation keys:
-- `=== New connection: the previous session ends ===`
-- `Cancel during a resynchronisation: session kept.`
-- `=== Cancelled: the session ends ===`
-
-## Автоматизация
-
-`.github/workflows/offline-audit.yml` запускает изолированный Lua-набор. Его unexpected failure или unexpected success проваливает job: после исправления дефекта expectedFailure надо убрать. Исходные lang/lockstep выполняются как диагностический baseline, их exit codes видны в summary, подробные логи — artifact. Зелёный job этого набора не означает, что исходные тесты зелёные, и не разрешает выпуск мода. Следующий этап должен устранить baseline failures и сделать их обязательными.
-
-Удалённый CI считается выполненным только после успешного GitHub Actions run, а не после записи workflow. Фактические локальные результаты приведены выше. Производственные Lua/C#/C++ не изменены.
-
-## Следующие проверки без игры
-
-| Область | Сценарии | Приёмка |
-|---|---|---|
-| Схема/парсер | malformed, выражение-функция, deep table, huge string, NaN/inf, неверный kind/co | Ограниченный отказ, без вычисления, state неизменен |
-| Авторизация | podмена co, чужая линия/станция/транспорт, name collision, старый identity | Peer определяет компанию; чужая мутация отвергнута |
-| Порядок | два одновременных автора, duplicate uid, dependent create/update, pause | Один порядок и одно выполнение на каждом mock |
-| Сессия | disconnect в act/save/chunk/load, old epoch, late ack, timeout | Нет потерянной принятой команды или старого replay |
-| Деньги | отказ стройки, недостаток средств, два займа, закрытый контракт | Один плательщик, отсутствие двойного списания; pure logic лишь предпроверка |
-| Snapshot | invalid i/n/base64/hash, повтор part, усечённый файл, disk failure | Ограниченная RAM, атомарная запись только полного валидного файла |
-| Windows compile | VS toolchain, .NET 4.8 targeting pack, DLL exports | EXE/DLL собираются; это не game compatibility test |
-
-Не исправлять loader только до исчезновения первого исключения и не объявлять lockstep восстановленным: выполнить все сценарии и отдельно обновить новый API/state компаний. Новые network tests должны использовать реальные извлечённые C# компоненты или настоящие sockets, а не игрушечную модель вместо протокола.
+Workflow запускается на PR, main, workflow_dispatch; obsolete run отменяется. Artifacts: translation reports, benchmark JSON, experimental ZIP, build-manifest (gameTested=false), native exports. Хранение исходников/документов — Git branches. Benchmark sampling/method/raw results — [STAGE1_OFFLINE_RECOVERY](docs/STAGE1_OFFLINE_RECOVERY.md).
 
 ## После приобретения игры
 
-1. Зафиксировать build/хеш игры и DLL, версии модов/DLC, карту, seed, машины, latency, сценарий, время и логи. Исходные saves хранить отдельно, работаем с копиями.
-2. Smoke: launch inactive/active, known/unknown build, host/client, общий и отдельный режим; сначала два процесса, затем два ПК.
-3. Приоритетные regressions: upstream #15–22, десять повторений каждого; snapshot/census до и после. Проверять туннель остаётся туннелем, станция и подходы удаляются согласованно, расходы совпадают без маскировки corrective money.
-4. Матрица компаний: host/client строят/изменяют/сносят, покупают/копируют/продают, создают/меняют линии, берут/гасят кредит, выполняют контракт; чужие объекты и недостаток денег, банкротство хоста.
-5. Конкуренция: общий завод/город, идентичные линии, разные интервалы/цены, пересадки между компаниями. Сверять stocks/onboard, доход по сегментам и отсутствие дублирования. Сравнить со штатными правилами того же мира.
-6. Платная станция: собственный/чужой транспорт, 0/100/другая цена, полный круг, перестановка stops, reroute, смена линии, reload. Одна оплата за одно посещение, нулевая сумма переводов.
-7. Сеть: latency 50/150/300 мс, jitter, bandwidth limit, TCP packet loss через netem/эквивалент; разрывы 5/30/300 секунд, slow consumer. Потери TCP означают задержки и разрыв, не произвольную перестановку доставленных сообщений.
-8. Save/load: join midgame, reconnect, crash процесса, разрыв на каждой стадии; 20 циклов. Принятые команды/платежи не исчезают и не удваиваются; неисправный peer остаётся вне согласованной игры.
-9. Длительность: 2 игрока 2 часа, 4 игрока 4 часа, затем 8 часов перед релизом; x1/x4, пауза и одновременная стройка. Ноль crash/необъяснённого desync, counters corrective money не должны скрывать неверные действия.
-10. Масштаб: карты от небольших до реальной Gigantomaniac; измерить step/s vs single-player, checksum p50/p95, RAM/peak, snapshot bytes/transfer/load time, upload хоста, время pause/resync. Пороговые цели ROADMAP — предварительные, окончательная конфигурация согласуется после замеров.
+1. Записать game build/hash, DLL/EXE/mod/DLC hashes, save/seed, hardware, roles, network и дату. Исходный save сохранить отдельно. [Шаблон протокола](docs/GAME_TEST_RECORD.md).
+2. Два процесса одного ПК, затем два ПК: inactive/active launch, known/unknown build, host/client, shared/separate. Unknown hooks отказывают, не дают частичную синхронизацию.
+3. Upstream #15–22, по десять повторений: station deletion, tunnel/bridge/signals, modular edits, copied vehicle, line callbacks; pause/x1/x4, simultaneous/dependent builds. Census геометрии/owners/balances и callbacks.
+4. Company matrix own/foreign build/edit/delete/fleet/routes/loans/contracts/progression/bankruptcy. Проверить месячную историю, источник дохода и плательщика без скрытого corrective money.
+5. Две компании у одного завода/города: цены, интервалы, пересадки, stocks/onboard/deliveries/revenues; сопоставить штатному pathfinding того же мира.
+6. Плата за инфраструктуру: own/foreign vehicle, zero/100/custom fee, полный круг, reorder/reroute/line switch/owner change/reload. Один visit/payment, сумма transfers ноль.
+7. WAN latency 50/150/300 мс, jitter, bandwidth/loss через сетевой стенд; disconnect 5/30/300 с, full server, slow client. TCP loss даёт задержку/разрыв, не произвольную перестановку доставленных байтов.
+8. Разрыв/crash на request/flush/replay/callback/save/chunk/load; 20 настоящих reconnect/resync. Old epoch/late ack, потерянный accepted command или double payment — fail. Failed peer не resumes.
+9. Два игрока/2 часа, четыре/4 часа, затем 8-часовой soak. Ноль crash/unexplained desync; доказанная семантика, не только checksum.
+10. Карты до Gigantomaniac: game steps/s vs solo, checksum p50/p95, RSS/peak, save/transfer/load time и host upload. Caps/пороговые цели пересмотреть по замерам.
 
-Протокол испытания содержит и неуспех: event/epoch/step, company, ожидаемые и фактические владельцы/геометрия/проводки, число resync и их длительность. Принятие функции требует результатов именно игрового сценария, а не PASS мока. Не выпускать стабильный multiplayer лишь на основании совпавшего checksum или короткого запуска.
+Минимальная запись неуспеха: scenario, epoch/sequence/step/company, expected/actual geometry/owner/journal/payment, logs, число resync и длительность. PASS мока и compiled DLL не заменяют PASS игрового сценария.
