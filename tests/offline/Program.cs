@@ -30,6 +30,7 @@ namespace MPFever
                 SnapshotTests();
                 IdentityTests();
                 SchemaTests();
+                JournalTests();
                 Console.WriteLine("Offline C# components: " + checks + " checks passed; no game was run.");
                 return 0;
             }
