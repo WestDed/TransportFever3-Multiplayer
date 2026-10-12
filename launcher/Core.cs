@@ -662,7 +662,7 @@ namespace MPFever
         public string Name;
         public TcpClient Tcp;
         public BoundedOutbox Outbox;
-        public bool Joined;
+        public volatile bool Joined;
         public PeerIdentity Identity;
     }
 
@@ -703,7 +703,7 @@ namespace MPFever
                     var c = listener.AcceptTcpClient();
                     c.NoDelay = true;
                     c.SendTimeout = Wire.SendTimeoutMs;
-                    lock (peers) if (peers.Count >= Wire.MaxPeers) { c.Close(); continue; }
+                    lock (peers) if (peers.Count >= Wire.MaxPeers + Wire.HandshakeReserve) { c.Close(); continue; }
                     var p = new Peer { Id = nextId++, Tcp = c };
                     p.Outbox = new BoundedOutbox(c.GetStream(), () => c.Close(), "Relay send " + p.Id);
                     p.Name = "Player" + p.Id;
@@ -731,9 +731,7 @@ namespace MPFever
                         var join = LuaLit.Parse(m.Payload) as Dictionary<object, object>;
                         if (p.Joined || join == null || !join.TryGetValue("protocol", out var pv) || !(pv is double v) || v != Wire.Version)
                         {
-                            var rejection = Wire.Encode(Msg.Make("reject", "MPFever", "{[\"reason\"]=\"Incompatible protocol; install the same MPFever build as the host\"}"));
-                            p.Tcp.GetStream().Write(rejection, 0, rejection.Length);
-                            throw new InvalidDataException("Repeated join or incompatible protocol");
+                            throw new InvalidDataException("Incompatible protocol or repeated join; install the same MPFever build as the host");
                         }
                         string resume = null;
                         if (join.TryGetValue("resume", out var rv))
@@ -741,9 +739,15 @@ namespace MPFever
                             if (!(rv is string rs)) throw new InvalidDataException("Invalid resume credential type");
                             resume = rs;
                         }
-                        p.Identity = identities.Join(Sanitize(m.From), resume);
-                        p.Joined = true;
-                        p.Name = p.Identity.Name + "#" + p.Identity.Id;
+                        lock(peers)
+                        {
+                            if(resume==null && peers.Count(o=>o.Joined)>=Wire.MaxPeers)throw new InvalidDataException("Session player capacity reached");
+                            p.Identity = identities.Join(Sanitize(m.From), resume);
+                            if(peers.Count(o=>o.Joined)>=Wire.MaxPeers && !peers.Any(o=>o.Joined && o.Identity==p.Identity))throw new InvalidDataException("Session player capacity reached");
+                            p.Joined = true;
+                            p.Name = p.Identity.Name + "#" + p.Identity.Id;
+                            DropOlder(p);
+                        }
                         Send(p, Msg.Make("connection", "MPFever", "{[\"token\"]=" + LuaLit.Quote(p.Identity.Token) + ",[\"you\"]=" + LuaLit.Quote(p.Name) + "}"));
                         Joined?.Invoke(p);
                         continue;
@@ -753,7 +757,12 @@ namespace MPFever
                     Received?.Invoke(p, m);
                 }
             }
-            catch (Exception e) { if (!stop) Log.W($"{p.Name} : {e.Message}"); }
+            catch (Exception e)
+            {
+                if(!p.Joined && !stop)
+                    try {var rejection=Wire.Encode(Msg.Make("reject","MPFever","{[\"reason\"]="+LuaLit.Quote(e.Message)+"}"));p.Tcp.GetStream().Write(rejection,0,rejection.Length);}catch(Exception){} // best-effort rejection on a possibly closed socket
+                if (!stop) Log.W($"{p.Name} : {e.Message}");
+            }
             p.Outbox.Dispose();
             try { p.Tcp.Close(); } catch { }
             bool notify;
@@ -776,9 +785,12 @@ namespace MPFever
         public void DropOlder(Peer p)
         {
             Peer[] all;
-            lock (peers) all = peers.ToArray();
+            lock (peers)
+            {
+                all = peers.Where(o=>o != p && p.Identity != null && o.Identity == p.Identity && o.Joined).ToArray();
+                foreach(var old in all)old.Joined=false;
+            }
             foreach (var o in all)
-                if (o != p && p.Identity != null && o.Identity == p.Identity)
                 {
                     Log.Warn(L.F("{0} : ancienne connexion fermée (reconnexion)", "{0}: old connection closed (reconnection)", o.Name));
                     try { o.Tcp.Close(); } catch { }
@@ -823,18 +835,34 @@ namespace MPFever
         public void Connect(string host, int port, string name)
         {
             tcp = new TcpClient { NoDelay = true, SendTimeout = Wire.SendTimeoutMs };
-            tcp.Connect(host, port);
-            outbox = new BoundedOutbox(tcp.GetStream(), () => tcp.Close(), "Client send");
-            Send(Msg.Make("join", name, "{[\"protocol\"]=" + Wire.Version + (ResumeToken == null ? "" : ",[\"resume\"]=" + LuaLit.Quote(ResumeToken)) + "}"));
-            new Thread(ReadLoop) { IsBackground = true, Name = "Client read" }.Start();
-            Log.Ok(L.F("Client : connecté à {0}:{1}", "Client: connected to {0}:{1}", host, port));
+            try
+            {
+                var connect=tcp.BeginConnect(host,port,null,null);
+                using(var wait=connect.AsyncWaitHandle)
+                {
+                    if(!wait.WaitOne(Wire.HandshakeMs))throw new IOException("TCP connection deadline exceeded");
+                    tcp.EndConnect(connect);
+                }
+                outbox = new BoundedOutbox(tcp.GetStream(), () => tcp.Close(), "Client send");
+                Send(Msg.Make("join", name, "{[\"protocol\"]=" + Wire.Version + (ResumeToken == null ? "" : ",[\"resume\"]=" + LuaLit.Quote(ResumeToken)) + "}"));
+                var reader=new BoundedLineReader(tcp.GetStream());
+                var first=Msg.Parse(reader.ReadLine(Wire.HandshakeMs));
+                if(first==null || first.Kind!="connection")throw new InvalidDataException(first?.Payload ?? "Host did not accept the connection");
+                var info=LuaLit.Parse(first.Payload) as Dictionary<object,object>;
+                if(info==null || !info.TryGetValue("token",out var tv) || !(tv is string token) || !SnapshotLimits.Hex(token,64) || !(ProtocolSchema.Get(info,"you") is string you) || you.Length>64)
+                    throw new InvalidDataException("Invalid connection credential");
+                ResumeToken=token;
+                Received?.Invoke(first);
+                new Thread(()=>ReadLoop(reader)) { IsBackground = true, Name = "Client read" }.Start();
+                Log.Ok(L.F("Client : connecté à {0}:{1}", "Client: connected to {0}:{1}", host, port));
+            }
+            catch {Dispose();throw;}
         }
 
-        void ReadLoop()
+        void ReadLoop(BoundedLineReader r)
         {
             try
             {
-                var r = new BoundedLineReader(tcp.GetStream());
                 string line;
                 while ((line = r.ReadLine()) != null)
                 {
@@ -843,10 +871,7 @@ namespace MPFever
                     if (m.Kind == "reject") throw new InvalidDataException(m.Payload);
                     if (m.Kind == "connection")
                     {
-                        var info = LuaLit.Parse(m.Payload) as Dictionary<object, object>;
-                        if (info == null || !info.TryGetValue("token", out var tv) || !(tv is string token) || !SnapshotLimits.Hex(token, 64))
-                            throw new InvalidDataException("Invalid connection credential");
-                        ResumeToken = token;
+                        throw new InvalidDataException("Unexpected repeated connection credential");
                     }
                     Received?.Invoke(m);
                 }

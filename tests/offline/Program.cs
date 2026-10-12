@@ -115,7 +115,7 @@ namespace MPFever
                 {
                     var b = Wire.Encode(Msg.Make("chat", "spoof")); c.GetStream().Write(b,0,b.Length);
                     c.ReceiveTimeout = 5000;
-                    Check(c.GetStream().ReadByte() == -1 && joined == 0 && received == 0, "message before join closes without dispatch");
+                    Check(Msg.Parse(new BoundedLineReader(c.GetStream()).ReadLine(5000)).Kind=="reject" && joined == 0 && received == 0, "message before join rejected without dispatch");
                 }
                 using (var c = new TcpClient("127.0.0.1", relay.Port))
                 {

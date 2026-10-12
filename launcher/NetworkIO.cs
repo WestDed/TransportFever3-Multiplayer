@@ -13,6 +13,7 @@ namespace MPFever
         public const int Version = 3;
         public const int MaxFrameBytes = LuaLit.MaxBytes + 256;
         public const int MaxPeers = 8;
+        public const int HandshakeReserve = 4;
         public const int HandshakeMs = 10000;
         public const int PartialFrameMs = 60000;
         public const int SendTimeoutMs = 60000;

@@ -43,9 +43,28 @@ namespace MPFever
                 {
                     var b = Wire.Encode(Msg.Make("join","same","{[\"protocol\"]="+Wire.Version+",[\"resume\"]=\""+new string('0',64)+"\"}"));
                     forged.GetStream().Write(b,0,b.Length); forged.ReceiveTimeout = 5000;
-                    Check(forged.GetStream().ReadByte() == -1,"real TCP forged credential rejected before joining");
+                    Check(Msg.Parse(new BoundedLineReader(forged.GetStream()).ReadLine(5000)).Kind=="reject","real TCP forged credential rejected before joining");
                 }
                 Check(relay.PeerNames().Length == 2,"forged reconnect cannot remove actual players");
+            }
+            using(var relay=new Relay())
+            {
+                relay.Start(0);var clients=new System.Collections.Generic.List<Client>();
+                try
+                {
+                    for(int i=0;i<Wire.MaxPeers;i++){var c=new Client();clients.Add(c);c.Connect("127.0.0.1",relay.Port,"slot"+i);}
+                    Check(relay.Peers().Length==8,"eight authenticated player slots fill server");
+                    using(var ninth=new Client())
+                        Reject<InvalidDataException>(()=>ninth.Connect("127.0.0.1",relay.Port,"ninth"),"ninth distinct player rejected during Connect, not reported connected");
+                    using(var replacement=new Client{ResumeToken=clients[0].ResumeToken})
+                    {
+                        replacement.Connect("127.0.0.1",relay.Port,"slot0");
+                        Check(relay.Peers().Length==8 && replacement.ResumeToken==clients[0].ResumeToken,"full server admits authenticated replacement without ninth player");
+                    }
+                    using(var forged=new Client{ResumeToken=new string('0',64)})
+                        Reject<InvalidDataException>(()=>forged.Connect("127.0.0.1",relay.Port,"slot1"),"failed resume does not count bare TCP as success");
+                }
+                finally {foreach(var c in clients)c.Dispose();}
             }
         }
     }
