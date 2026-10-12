@@ -119,6 +119,8 @@ namespace MPFever
                     }
                 }
                 var barrier=new RecoveryBarrier(otherEpoch,100,hash,new[]{"Host","Client"});
+                Reject<InvalidDataException>(()=>new RecoveryBarrier(otherEpoch,100,hash,new[]{"Host","Host"}),"duplicate peers cannot shrink recovery quorum");
+                Reject<InvalidDataException>(()=>new RecoveryBarrier(otherEpoch,100,hash,new string[0]),"empty quorum cannot authorize resume");
                 Reject<InvalidDataException>(()=>barrier.Resume(),"recovery never resumes without ready peers");
                 foreach(var invalid in new Action[]{()=>barrier.Ready("intruder",otherEpoch,100,hash),()=>barrier.Ready("Host",epoch,100,hash),()=>barrier.Ready("Host",otherEpoch,99,hash),()=>barrier.Ready("Host",otherEpoch,100,new string('d',64))})
                     Reject<InvalidDataException>(invalid,"stale or incorrect recovery acknowledgement");

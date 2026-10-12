@@ -100,7 +100,7 @@ namespace MPFever
                 catch
                 {
                     faulted=true; // no more accepts even if rollback itself fails
-                    try { file.SetLength(offset); file.Flush(true); } catch(IOException) { }
+                    try { file.SetLength(offset); file.Flush(true); } catch { }
                     throw;
                 }
                 var entry=new Entry {Offset=offset,Sequence=command.Sequence,Digest=digest,Previous=lastHash};
@@ -216,8 +216,9 @@ namespace MPFever
         public RecoveryBarrier(string epoch,long frontier,string hash,IEnumerable<string> peers)
         {
             if(!SnapshotLimits.Hex(epoch,32) || !SnapshotLimits.Hex(hash,64) || frontier < 0) throw new InvalidDataException("Invalid recovery frontier");
-            this.epoch=epoch;this.frontier=frontier;this.hash=hash;required=new HashSet<string>(peers);
-            if(required.Count == 0 || required.Count > Wire.MaxPeers+1 || required.Any(string.IsNullOrEmpty)) throw new InvalidDataException("Invalid recovery peer set");
+            this.epoch=epoch;this.frontier=frontier;this.hash=hash;
+            var all=peers.ToArray();required=new HashSet<string>(all);
+            if(required.Count == 0 || required.Count != all.Length || required.Count > Wire.MaxPeers+1 || required.Any(p=>string.IsNullOrEmpty(p) || p.Length>64 || p.Any(char.IsControl))) throw new InvalidDataException("Invalid recovery peer set");
         }
         public void Ready(string peer,string ackEpoch,long ackFrontier,string ackHash)
         {
@@ -249,7 +250,8 @@ namespace MPFever
             lock(gate)
             {
                 if(faulted || command.Epoch != epoch)throw new InvalidDataException("Faulted cursor or stale replay epoch");
-                string identity=command.Peer+"\n"+command.Uid+"\n"+command.Company+"\n"+command.Payload;
+                string identity;
+                using(var sha=SHA256.Create()) identity=Convert.ToBase64String(sha.ComputeHash(Wire.Utf8.GetBytes(command.Peer+"\n"+command.Uid+"\n"+command.Company+"\n"+command.Payload)));
                 if(command.Sequence<=frontier)
                 {
                     if(recent.TryGetValue(command.Sequence,out var old) && old!=identity)throw new InvalidDataException("Conflicting replay sequence");
