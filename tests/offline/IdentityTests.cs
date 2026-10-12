@@ -11,7 +11,8 @@ namespace MPFever
         static void IdentityTests()
         {
             var identities = new PeerIdentities();
-            var first = identities.Join("A",null), other = identities.Join("A",null);
+            var first = identities.Join("A",null);
+            var other = identities.Join("A",null);
             Check(first.Id != other.Id && first.Token != other.Token && SnapshotLimits.Hex(first.Token,64), "equal names receive different random identities");
             Check(identities.Join("renamed",first.Token) == first, "credential preserves identity and name across reconnect");
             Reject<InvalidDataException>(() => identities.Join("A",new string('0',64)), "forged credential cannot claim name");
