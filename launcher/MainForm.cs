@@ -1015,6 +1015,7 @@ namespace MPFever
 
         void StartHost(string name, bool launch, GameLink existing = null)
         {
+            companyBindings = new CompanyBindings();
             hostName = name;
             relay = new Relay();
             relay.Joined += p =>
@@ -1450,8 +1451,28 @@ namespace MPFever
 
         void OnHostMessage(Msg m, Peer from)
         {
+            if (from != null)
+            {
+                try
+                {
+                    var data = ProtocolSchema.ValidateClient(m);
+                    if (m.Kind == "act")
+                    {
+                        if ((string)data["fn"] == "mpfCoJoin")
+                        {
+                            if (companyMode != "separate") throw new InvalidDataException("Company join is not allowed in shared mode");
+                            companyBindings.Join(from.Identity, ProtocolSchema.Table(data["args"],"args"), long.Parse(StartMoney(), CultureInfo.InvariantCulture));
+                        }
+                        else if (companyMode == "separate") companyBindings.Require(from.Identity,data);
+                    }
+                }
+                catch (InvalidDataException e) { Log.Warn("Rejected message from " + from.Name + ": " + e.Message); relay?.Close(from); return; }
+            }
             switch (m.Kind)
             {
+                case "co_roster":
+                    if (from == null) companyBindings.Report(m.Payload);
+                    break;
                 case "hello":
                     lock (players) players.Add(m.From);
                     Log.W(F("{0} : jeu prêt {1}", "{0}: game ready {1}", m.From, m.Payload));
@@ -1815,6 +1836,7 @@ namespace MPFever
         readonly Dictionary<GameLink, SnapshotReceiver> snapshotReceivers = new Dictionary<GameLink, SnapshotReceiver>();
         readonly Dictionary<string, SnapshotManifest> snapshotTargets = new Dictionary<string, SnapshotManifest>();
         readonly HashSet<string> snapshotReceived = new HashSet<string>();
+        CompanyBindings companyBindings = new CompanyBindings();
 
         void OnResyncFile(GameLink game, Msg m, Client client)
         {

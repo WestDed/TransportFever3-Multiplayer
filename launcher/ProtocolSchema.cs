@@ -1,0 +1,175 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+
+namespace MPFever
+{
+    static class ProtocolSchema
+    {
+        public const long MaxInteger = 9007199254740991L;
+        public static readonly HashSet<string> ClientKinds = new HashSet<string> {
+            "hello", "clock", "act", "speed_req", "sync_hash", "chat", "replay_failed", "act_fail", "act_refused",
+            "det_hash", "autotest_done", "area_done", "nat_pending", "nat_cancel", "resync_received" };
+        public static readonly HashSet<string> ClientCommands = new HashSet<string> {
+            "makeVehicleBuyCmd", "makeVehicleSellCmd", "makeVehicleSetLineCmd", "makeVehicleSendToDepotCmd", "makeVehicleReverseCmd",
+            "makeVehicleReplaceCmd", "makeVehicleSetStoppedByUserCmd", "makeVehicleTryToDepartCmd", "makeVehicleSetManualDepartureCmd",
+            "makeVehicleSetModifiersCmd", "makeLineCreateCmd", "makeLineUpdateCmd", "makeLineDestroyCmd", "makeEntitySetNameCmd",
+            "makeEntitySetColorCmd", "makeWorldBuildProposalCmd", "makeScriptingSendEventCmd", "mpfCoJoin", "assetBuild", "terrainEdit" };
+        public static Dictionary<object, object> Table(object value, string field)
+        { if (!(value is Dictionary<object, object> t)) throw new InvalidDataException("Expected table: " + field); return t; }
+        public static object Get(Dictionary<object, object> t, object key) { t.TryGetValue(key, out var v); return v; }
+        public static long Integer(Dictionary<object, object> t, object key, long min = 0, long max = MaxInteger)
+        {
+            var value = Get(t, key);
+            if (!(value is double d) || double.IsNaN(d) || double.IsInfinity(d) || d < min || d > max || Math.Truncate(d) != d)
+                throw new InvalidDataException("Expected bounded integer: " + key);
+            return (long)d;
+        }
+        public static string Text(Dictionary<object, object> t, object key, int max)
+        {
+            if (!(Get(t,key) is string s) || s.Length == 0 || s.Length > max || s.Any(char.IsControl)) throw new InvalidDataException("Expected bounded string: " + key);
+            return s;
+        }
+        static void OptionalBool(Dictionary<object, object> t, string key)
+        { if (t.ContainsKey(key) && !(t[key] is bool)) throw new InvalidDataException("Expected boolean: " + key); }
+        public static Dictionary<object, object> ValidateClient(Msg m)
+        {
+            if (!Wire.ValidEnvelope(m) || !ClientKinds.Contains(m.Kind)) throw new InvalidDataException("Client cannot send this message kind: " + m?.Kind);
+            var t = Table(LuaLit.Parse(m.Payload), "payload");
+            switch (m.Kind)
+            {
+                case "act": Action(t,m.From); break;
+                case "clock":
+                    Integer(t,"t"); Speed(t,"sp");
+                    if (t.ContainsKey("ah")) Integer(t,"ah",0,1200);
+                    if (t.ContainsKey("tl")) Integer(t,"tl",0,2);
+                    break;
+                case "speed_req": Speed(t,"speed"); break;
+                case "chat":
+                    if (!(Get(t,"text") is string text) || text.Length > 4096) throw new InvalidDataException("Invalid chat text");
+                    break;
+                case "sync_hash": Integer(t,"n",1,int.MaxValue); Table(Get(t,"parts"),"parts"); break;
+                case "det_hash": Integer(t,"round",0,int.MaxValue); Table(Get(t,"parts"),"parts"); break;
+                case "nat_pending": Integer(t,"at"); goto case "nat_cancel";
+                case "nat_cancel":
+                    Integer(t,"id",1,int.MaxValue);
+                    if (Text(t,"origin",64) != m.From) throw new InvalidDataException("Forged native origin");
+                    break;
+                case "resync_received": Integer(t,"id",1,int.MaxValue); if (!SnapshotLimits.Hex(Text(t,"transfer",32),32)) throw new InvalidDataException("Invalid receipt"); break;
+                case "area_done": Integer(t,"n",0,int.MaxValue); break;
+            }
+            return t;
+        }
+        static void Speed(Dictionary<object, object> t, string key)
+        { long speed = Integer(t,key,0,4); if (speed != 0 && speed != 1 && speed != 2 && speed != 4) throw new InvalidDataException("Unsupported speed"); }
+        public static void Action(Dictionary<object, object> t, string from)
+        {
+            string fn = Text(t,"fn",64);
+            if (!ClientCommands.Contains(fn)) throw new InvalidDataException("Unapproved client command: " + fn);
+            long seq = Integer(t,"oseq",1); Integer(t,"at");
+            if (Text(t,"origin",64) != from || Text(t,"uid",128) != from + ":" + seq.ToString(CultureInfo.InvariantCulture)) throw new InvalidDataException("Forged action identity");
+            if (t.ContainsKey("co")) Integer(t,"co",1,4096);
+            OptionalBool(t,"native"); OptionalBool(t,"paused");
+            var args = Table(Get(t,"args"),"args");
+            if (fn == "mpfCoJoin")
+            {
+                Text(args,"key",128); Text(args,"name",128); Text(args,"cname",256);
+                if (!(Get(args,"host") is bool) || Get(args,"mode") as string != "separate") throw new InvalidDataException("Invalid company join");
+                Integer(args,"start",0,MaxInteger);
+                if (args.ContainsKey("sid") && !(Get(args,"sid") is string sid && sid.Length == 17 && sid.All(c => c >= '0' && c <= '9'))) throw new InvalidDataException("Invalid declared Steam id");
+                return;
+            }
+            if (fn == "makeScriptingSendEventCmd")
+            {
+                Text(args,1L,512); string id = Text(args,2L,64), name = Text(args,3L,64);
+                Table(Get(args,4L),"event parameters");
+                bool allowed = id == "Loan" && (name == "Obtain" || name == "Repay") || id == "Subvention" && (name == "onAccept" || name == "onDecline") || id == "mpfever" && name == "share";
+                if (!allowed) throw new InvalidDataException("Unapproved scripting event");
+            }
+            else if (fn == "makeWorldBuildProposalCmd") { Table(Get(args,1L),"proposal"); Table(Get(args,2L),"context"); }
+            else if (fn == "makeVehicleBuyCmd" || fn == "makeVehicleReplaceCmd") Table(Get(args,fn == "makeVehicleBuyCmd" ? 3L : 2L),"vehicle config");
+            else if (fn == "makeLineCreateCmd" || fn == "makeLineUpdateCmd") Table(Get(args,fn == "makeLineCreateCmd" ? 4L : 2L),"line");
+            else if (fn == "terrainEdit")
+            {
+                Integer(args,"w",1,8192); Integer(args,"h",1,8192);
+                if (!(Get(args,"blob") is string blob) || blob.Length > LuaLit.MaxString) throw new InvalidDataException("Invalid terrain blob");
+            }
+        }
+        public static void CheckPlayerReferences(Dictionary<object, object> t, int company)
+        {
+            if (Get(t,"__ref") is bool isRef && isRef && Get(t,"k") as string == "player" && Integer(t,"co",1,4096) != company)
+                throw new InvalidDataException("Foreign player reference");
+            foreach (var v in t.Values) if (v is Dictionary<object, object> child) CheckPlayerReferences(child,company);
+        }
+    }
+
+    // Only the HOST GameLink can report roster entries. A peer's own co claim is
+    // checked against that report; bindings survive socket replacement in this session.
+    sealed class CompanyBindings
+    {
+        sealed class Claim { public string Key, Sid; public int Company; }
+        sealed class Company { public int Id; public string Key, Sid; public bool Ready; }
+        readonly object gate = new object();
+        readonly Dictionary<int,Claim> claims = new Dictionary<int,Claim>();
+        readonly Dictionary<int,int> owners = new Dictionary<int,int>();
+        List<Company> roster = new List<Company>();
+        public void Join(PeerIdentity peer, Dictionary<object, object> args, long start)
+        {
+            string key = ProtocolSchema.Text(args,"key",128);
+            if ((bool)args["host"] || key != AsciiLower(peer.Name) || ProtocolSchema.Integer(args,"start") != start)
+                throw new InvalidDataException("Peer cannot claim the host role, another name or starting money");
+            string sid = ProtocolSchema.Get(args,"sid") as string;
+            lock (gate)
+            {
+                if (roster.Any(c => c.Id == 1 && (c.Key == key || sid != null && c.Sid == sid))) throw new InvalidDataException("Host company is reserved");
+                if (claims.TryGetValue(peer.Id,out var existing))
+                { if (existing.Key != key || existing.Sid != sid) throw new InvalidDataException("Company identity cannot change during a session"); return; }
+                var claim = new Claim {Key=key,Sid=sid};
+                Resolve(peer.Id,claim);
+                claims.Add(peer.Id,claim);
+            }
+        }
+        public void Report(string payload)
+        {
+            var t = ProtocolSchema.Table(LuaLit.Parse(payload),"host roster");
+            var rows = ProtocolSchema.Table(ProtocolSchema.Get(t,"list"),"company list");
+            if (rows.Count > 4096) throw new InvalidDataException("Company roster too large");
+            var next = new List<Company>(); var ids = new HashSet<int>();
+            foreach (var row in rows.Values)
+            {
+                var r = ProtocolSchema.Table(row,"company");
+                int id = (int)ProtocolSchema.Integer(r,"id",1,4096);
+                string key = ProtocolSchema.Get(r,"key") as string;
+                if (key == null || key.Length > 128 || !ids.Add(id) || !(ProtocolSchema.Get(r,"ready") is bool ready)) throw new InvalidDataException("Invalid company roster row");
+                next.Add(new Company { Id=id,Key=key,Sid=ProtocolSchema.Get(r,"sid") as string,Ready=ready });
+            }
+            lock (gate)
+            {
+                roster = next;
+                foreach (var entry in claims) Resolve(entry.Key,entry.Value);
+            }
+        }
+        void Resolve(int peer, Claim claim)
+        {
+            var exact = roster.Where(c=>c.Ready && c.Key == claim.Key && (c.Sid == null || c.Sid == claim.Sid)).ToArray();
+            var candidates = exact.Length > 0 ? exact : roster.Where(c=>c.Ready && claim.Sid != null && c.Sid == claim.Sid && c.Id != 1).ToArray();
+            if (candidates.Length != 1) return;
+            int co = candidates[0].Id;
+            if (co == 1 || owners.TryGetValue(co,out var owner) && owner != peer) throw new InvalidDataException("Company is already bound to another session identity");
+            if (claim.Company != 0 && claim.Company != co) throw new InvalidDataException("Host roster changed an established company binding");
+            owners[co] = peer; claim.Company = co;
+        }
+        public void Require(PeerIdentity peer, Dictionary<object,object> action)
+        {
+            int co = (int)ProtocolSchema.Integer(action,"co",2,4096);
+            lock (gate)
+            {
+                if (!claims.TryGetValue(peer.Id,out var claim) || claim.Company != co || !roster.Any(c=>c.Id == co && c.Ready)) throw new InvalidDataException("Company claim is not confirmed by the host");
+            }
+            ProtocolSchema.CheckPlayerReferences(ProtocolSchema.Table(ProtocolSchema.Get(action,"args"),"args"),co);
+        }
+        public static string AsciiLower(string s) => new string(s.Select(c=>c >= 'A' && c <= 'Z' ? (char)(c+32) : c).ToArray());
+    }
+}

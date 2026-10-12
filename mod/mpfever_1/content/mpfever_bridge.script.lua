@@ -6958,6 +6958,11 @@ local function coGui(st)
 		local txt = table.concat(lines, NL) .. NL
 		if txt ~= G.coFile then
 			G.coFile = txt
+			if C.ROLE == "host" then
+				local rows = {}
+				for _, c in ipairs(st.co.list) do rows[#rows + 1] = { id = c.id, key = c.key or "", sid = c.sid, ready = c.ent ~= nil } end
+				send("co_roster", { list = rows })
+			end
 			local f = C.IO.open(C.DIR .. BS .. "companies.txt", "wb")
 			if f then f:write(txt); f:close() end
 		end
