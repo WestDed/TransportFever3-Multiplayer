@@ -37,7 +37,7 @@ Snapshot — read-only source, chunks 256 KiB, SHA-256, bounded per-peer writers
 
 ## Протокол и доверие
 
-UTF-8 строки `kind TAB from TAB payload LF`, payload — ограниченные data-only Lua tables. Protocol 3 согласуется до принятия входа; sender определяется сокетом. До join, повторный join, host controls с клиента, malformed types/limits отказывают. Восемь игроков + четыре ограниченных handshakes, reconnect по credential допускается на полном сервере.
+UTF-8 строки `kind TAB from TAB payload LF`, payload — ограниченные data-only Lua tables. Protocol 3 согласуется до принятия входа; sender определяется сокетом. До join, повторный join, host controls с клиента, malformed types/limits отказывают. Восемь TCP-клиентов (хост играет дополнительно) + четыре ограниченных handshakes, reconnect по credential допускается на полном сервере.
 
 Версия wire не проверяет одинаковость EXE/DLL/mods/game build. TCP не шифруется; initial admission и межсессионные claims остаются задачами. Для выпуска нужна подтверждённая identity и матрица game permissions/цены/refs.
 
