@@ -740,6 +740,7 @@ namespace MPFever
                         continue;
                     }
                     m.From = p.Name; // the relay decides who is speaking; the host decides who receives it
+                    ProtocolSchema.ValidateClient(m);
                     Received?.Invoke(p, m);
                 }
             }

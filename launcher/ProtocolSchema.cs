@@ -75,6 +75,7 @@ namespace MPFever
             var args = Table(Get(t,"args"),"args");
             if (fn == "mpfCoJoin")
             {
+                if (!(Get(t,"native") is bool native) || !native || t.ContainsKey("co")) throw new InvalidDataException("Company join must be an unbound native action");
                 Text(args,"key",128); Text(args,"name",128); Text(args,"cname",256);
                 if (!(Get(args,"host") is bool) || Get(args,"mode") as string != "separate") throw new InvalidDataException("Invalid company join");
                 Integer(args,"start",0,MaxInteger);
