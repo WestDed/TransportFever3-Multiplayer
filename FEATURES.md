@@ -1,12 +1,13 @@
 # Состояние функций
 
-12.10.2026. «Реализовано в коде» и «проверено без игры» не означают готовность функции в Transport Fever 3. Установленной игры, Steam-сессии и настоящих saves нет. Стабильный выпуск не подготовлен.
+13.10.2026. «Реализовано в коде» и «проверено без игры» не означают готовность функции в Transport Fever 3. Установленной игры, Steam-сессии и настоящих saves нет. Стабильный выпуск не подготовлен.
 
 | Область | Состояние кода | Подтверждение и предел |
 |---|---|---|
 | Хост одновременно играет/служит сервером | Существующая архитектура MPFever | Relay/Client и сборка испытаны; игра/WAN/NAT не испытаны |
 | Безопасный декодер | Исправлено | Реальные Lua/C# parser tests, limits; Lua expressions не исполняются |
 | TCP/IPC и медленный peer | Ограничены | Настоящие sockets, fragmented/oversized/timeout, independent queues; memory budget игры не принят |
+| Граница принятия TCP-клиента | Broadcast/адресная отправка только Joined; connection первым; 4 КиБ handshake | Real TCP regressions в PR #6; initial identity/TLS ещё отсутствуют |
 | Снимок мира | Потоковый hash/atomic commit/cleanup | Сгенерированный файл 32 MiB, 1/4/8 peers; настоящий save/load не испытан |
 | Переподключение | Credential, accepted handshake, full-server replacement | Real TCP; только текущая host session, без Steam proof/host migration |
 | Реестр отдельных компаний | Upstream + исправленный sid/start signature | Pure Lua match/join/serialize/collision tests; PLAYER entities в игре не проверялись |
@@ -22,4 +23,4 @@
 | Локализация | 33 gaps заполнены | 227 используемых catalog keys в 11 локалях, placeholders проверяются; диагностика новых компонентов может быть на английском |
 | Gigantomaniac | Цель будущего этапа | Ни карты, ни saves/RAM/game step profiling нет |
 
-PR: [#2](https://github.com/WestDed/TransportFever3-Multiplayer/pull/2) → [#3](https://github.com/WestDed/TransportFever3-Multiplayer/pull/3) → [#4](https://github.com/WestDed/TransportFever3-Multiplayer/pull/4) → [#5](https://github.com/WestDed/TransportFever3-Multiplayer/pull/5). Документы продолжения находятся в docs/STAGE1_*.md. Исторический [аудит функций](https://github.com/WestDed/TransportFever3-Multiplayer/blob/6611e8f63e29e04aeb978bddd17877b461894edf/FEATURES.md) остаётся доступен.
+PR: [#2](https://github.com/WestDed/TransportFever3-Multiplayer/pull/2) → [#3](https://github.com/WestDed/TransportFever3-Multiplayer/pull/3) → [#4](https://github.com/WestDed/TransportFever3-Multiplayer/pull/4) → [#5](https://github.com/WestDed/TransportFever3-Multiplayer/pull/5) → [#6](https://github.com/WestDed/TransportFever3-Multiplayer/pull/6). Документы продолжения находятся в docs/STAGE1_*.md. Исторический [аудит функций](https://github.com/WestDed/TransportFever3-Multiplayer/blob/6611e8f63e29e04aeb978bddd17877b461894edf/FEATURES.md) остаётся доступен.
