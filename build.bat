@@ -28,6 +28,6 @@ copy /y LICENSE "%DIST%\" >nul || exit /b 1
 for %%f in (README INSTALL ROADMAP CHANGELOG) do copy /y docs\%%f.txt "%DIST%\" >nul || exit /b 1
 xcopy /e /i /q /y mod\mpfever_1 "%DIST%\mod\mpfever_1" >nul || exit /b 1
 if exist "release\MPFever-%VERSION%.zip" del "release\MPFever-%VERSION%.zip"
-rem standard zip entries (forward slashes), unlike Compress-Archive of Windows PowerShell 5
-powershell -NoProfile -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path 'release\dist\MPFever'), (Join-Path (Resolve-Path 'release') 'MPFever-%VERSION%.zip'), 'Optimal', $true)" || exit /b 1
+rem explicit forward-slash zip entries, also on the older framework used by PowerShell 5
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\package.ps1 || exit /b 1
 echo BUILD OK: release\MPFever-%VERSION%.zip
