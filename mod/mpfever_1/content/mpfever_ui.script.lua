@@ -1198,7 +1198,7 @@ local function pollResults()
 			pos = i + 1
 			local payload = line:match("^result" .. C.TAB .. "[^" .. C.TAB .. "]*" .. C.TAB .. "(.*)$")
 			local r = payload and C.deser(payload)
-			if r and r.tok == U.tok and U.pending[r.id] then
+			if type(r) == "table" and r.tok == U.tok and U.pending[r.id] then
 				local p = U.pending[r.id]
 				U.pending[r.id] = nil
 				U.stats.answered = U.stats.answered + 1
@@ -1312,7 +1312,12 @@ local function pollControl()
 			if kind == "resync_save" or kind == "resync_load" then
 				-- the game script bridge may handle it first (it runs every frame, even paused): wait for its claim
 				U.resyncQueue = U.resyncQueue or {}
-				U.resyncQueue[#U.resyncQueue + 1] = { kind = kind, p = C.deser(payload) or {}, t = os.clock() }
+				local p = C.deser(payload)
+				if type(p) == "table" then
+					U.resyncQueue[#U.resyncQueue + 1] = { kind = kind, p = p, t = os.clock() }
+				else
+					log("rejected non-data control: " .. kind)
+				end
 			end
 		end
 		U.ctlOff = U.ctlOff + consumed

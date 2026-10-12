@@ -288,84 +288,139 @@ namespace MPFever
     /// <summary>Tiny parser for the Lua table literals produced by the mod serializer.</summary>
     static class LuaLit
     {
+        // Data grammar only; mirrors C.deser. Bounds are checked before recursive allocation.
+        public const int MaxBytes = 4 * 1024 * 1024, MaxDepth = 40, MaxEntries = 100000, MaxString = 1024 * 1024;
         public static object Parse(string s)
         {
-            int i = 0;
-            var v = Value(s, ref i);
-            return v;
-        }
-
-        static void Ws(string s, ref int i) { while (i < s.Length && char.IsWhiteSpace(s[i])) i++; }
-
-        static object Value(string s, ref int i)
-        {
-            Ws(s, ref i);
-            if (i >= s.Length) return null;
-            char c = s[i];
-            if (c == '{') return Table(s, ref i);
-            if (c == '"') return Str(s, ref i);
-            if (s.Substring(i).StartsWith("true")) { i += 4; return true; }
-            if (s.Substring(i).StartsWith("false")) { i += 5; return false; }
-            if (s.Substring(i).StartsWith("nil")) { i += 3; return null; }
-            int st = i;
-            while (i < s.Length && "+-0123456789.eE".IndexOf(s[i]) >= 0) i++;
-            double.TryParse(s.Substring(st, i - st), NumberStyles.Float, CultureInfo.InvariantCulture, out var d);
-            return d;
-        }
-
-        static Dictionary<object, object> Table(string s, ref int i)
-        {
-            var t = new Dictionary<object, object>();
-            i++; // {
-            while (true)
+            if (s == null || s.Length > MaxBytes || Encoding.UTF8.GetByteCount(s) > MaxBytes) return null;
+            try
             {
-                Ws(s, ref i);
-                if (i >= s.Length) return t;
-                if (s[i] == '}') { i++; return t; }
-                if (s[i] == ',') { i++; continue; }
-                if (s[i] == '[')
-                {
-                    i++;
-                    var k = Value(s, ref i);
-                    Ws(s, ref i);
-                    if (i < s.Length && s[i] == ']') i++;
-                    Ws(s, ref i);
-                    if (i < s.Length && s[i] == '=') i++;
-                    var v = Value(s, ref i);
-                    if (k != null) t[Norm(k)] = v;
-                }
-                else { Value(s, ref i); }
+                var reader = new DataReader(s);
+                var value = reader.Value(0);
+                reader.Ws();
+                if (!reader.End) return null;
+                return value;
             }
+            catch (FormatException) { return null; }
         }
 
-        static object Norm(object k) => k is double d && d == Math.Floor(d) ? (object)(long)d : k;
-
-        static string Str(string s, ref int i)
+        sealed class DataReader
         {
-            var sb = new StringBuilder();
-            i++; // opening quote
-            while (i < s.Length && s[i] != '"')
+            readonly string text;
+            int index, entries;
+            public DataReader(string text) { this.text = text; }
+            public bool End => index >= text.Length;
+            char Peek => End ? '\0' : text[index];
+            static bool Digit(char c) => c >= '0' && c <= '9';
+            static FormatException Invalid() => new FormatException("Invalid or oversized data literal");
+            public void Ws() { while (!End && (Peek == ' ' || Peek == '\t' || Peek == '\r' || Peek == '\n')) index++; }
+            void Take(char c) { Ws(); if (End || Peek != c) throw Invalid(); index++; }
+            bool Word(string word)
             {
-                if (s[i] == '\\' && i + 1 < s.Length)
+                if (text.Length - index < word.Length || string.CompareOrdinal(text, index, word, 0, word.Length) != 0) return false;
+                index += word.Length;
+                return true;
+            }
+            public object Value(int depth)
+            {
+                Ws();
+                if (End) throw Invalid();
+                if (Peek == '{') return Table(depth);
+                if (Peek == '"' || Peek == '\'') return Str();
+                if (Word("true")) return true;
+                if (Word("false")) return false;
+                if (Word("nil")) return null;
+                int start = index, digits = 0;
+                if (Peek == '-') index++;
+                while (!End && Digit(Peek)) { index++; digits++; }
+                if (!End && Peek == '.')
                 {
-                    i++;
-                    char e = s[i];
-                    if (e == 'n') sb.Append('\n');
-                    else if (e == 'r') sb.Append('\r');
-                    else if (char.IsDigit(e))
+                    index++;
+                    while (!End && Digit(Peek)) { index++; digits++; }
+                }
+                if (digits == 0) throw Invalid();
+                if (!End && (Peek == 'e' || Peek == 'E'))
+                {
+                    index++;
+                    if (!End && (Peek == '-' || Peek == '+')) index++;
+                    if (End || !Digit(Peek)) throw Invalid();
+                    while (!End && Digit(Peek)) index++;
+                }
+                if (index - start > 128) throw Invalid();
+                if (!double.TryParse(text.Substring(start, index - start), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+                    || double.IsNaN(value) || double.IsInfinity(value)) throw Invalid();
+                return value;
+            }
+            object Table(int depth)
+            {
+                if (depth >= MaxDepth) throw Invalid();
+                index++;
+                var table = new Dictionary<object, object>();
+                var seen = new HashSet<object>();
+                Ws();
+                if (!End && Peek == '}') { index++; return table; }
+                while (true)
+                {
+                    if (++entries > MaxEntries) throw Invalid();
+                    Take('[');
+                    var key = Value(depth + 1);
+                    if (!(key is string || key is double || key is bool)) throw Invalid();
+                    key = Norm(key);
+                    if (!seen.Add(key)) throw Invalid();
+                    Take(']'); Take('=');
+                    var value = Value(depth + 1);
+                    if (value != null) table[key] = value; // nil removes the field, as in Lua
+                    Ws();
+                    if (!End && Peek == '}') { index++; return table; }
+                    Take(',');
+                    Ws();
+                    if (!End && Peek == '}') { index++; return table; }
+                }
+            }
+            static object Norm(object key)
+            {
+                if (key is double d && d == Math.Floor(d) && d >= long.MinValue && d < 9223372036854775808d) return (long)d;
+                return key;
+            }
+            string Str()
+            {
+                char quote = Peek;
+                index++;
+                var sb = new StringBuilder();
+                while (!End)
+                {
+                    char c = text[index++];
+                    if (c == quote) return sb.ToString();
+                    if (c < 32 || c == 127) throw Invalid();
+                    if (c == '\\')
                     {
-                        int st = i;
-                        while (i < s.Length && i - st < 3 && char.IsDigit(s[i])) i++;
-                        sb.Append((char)int.Parse(s.Substring(st, i - st)));
-                        continue;
+                        if (End) throw Invalid();
+                        c = text[index++];
+                        if (Digit(c))
+                        {
+                            int value = c - '0', count = 1;
+                            while (!End && count < 3 && Digit(Peek)) { value = value * 10 + text[index++] - '0'; count++; }
+                            if (value > 255) throw Invalid();
+                            c = (char)value;
+                        }
+                        else switch (c)
+                        {
+                            case 'a': c = '\a'; break;
+                            case 'b': c = '\b'; break;
+                            case 'f': c = '\f'; break;
+                            case 'n': c = '\n'; break;
+                            case 'r': c = '\r'; break;
+                            case 't': c = '\t'; break;
+                            case 'v': c = '\v'; break;
+                            case '\\': case '"': case '\'': break;
+                            default: throw Invalid();
+                        }
                     }
-                    else sb.Append(e);
-                    i++;
+                    if (sb.Length >= MaxString) throw Invalid();
+                    sb.Append(c);
                 }
-                else { sb.Append(s[i]); i++; }
+                throw Invalid();
             }
-            i++; // closing quote
-            return sb.ToString();
         }
 
         public static string Show(object v)

@@ -3523,7 +3523,7 @@ local function stampHeld()
 	for _, line in ipairs(readLines("ui.log", "uiOff")) do
 		local kind, _, payload = parseLine(line)
 		local p = payload and C.deser(payload)
-		if p and kind == "act_req" then
+		if type(p) == "table" and kind == "act_req" then
 			local now = gameTime()
 			G.oseq = G.oseq + 1
 			local paused = G.session.pauseAt ~= nil and now >= G.session.pauseAt and gameSpeed() == 0
@@ -3531,9 +3531,9 @@ local function stampHeld()
 				uid = G.me .. ":" .. G.oseq, at = paused and pausedStamp(now) or stampFor(now), paused = paused or nil }
 			send("act", a)
 			queueLocal(a)
-		elseif p and (kind == "speed_req" or kind == "act_fail" or kind == "save_done") then
+		elseif type(p) == "table" and (kind == "speed_req" or kind == "act_fail" or kind == "save_done") then
 			send(kind, p)
-		elseif p and kind == "terrain_tool" then
+		elseif type(p) == "table" and kind == "terrain_tool" then
 			terrainLead("tool " .. tostring(p.tool))
 		end
 	end
@@ -7078,8 +7078,13 @@ local function guiUpdate(userParams, state, guiState)
 		if kind then
 			local h = H[kind]
 			if h then
-				local ok, err = pcall(h, from, C.deser(payload) or {})
-				if not ok then log("handler " .. kind .. " failed: " .. tostring(err)) end
+				local p = C.deser(payload)
+				if type(p) == "table" then
+					local ok, err = pcall(h, from, p)
+					if not ok then log("handler " .. kind .. " failed: " .. tostring(err)) end
+				else
+					log("rejected non-data message: " .. kind)
+				end
 			end
 		end
 	end
