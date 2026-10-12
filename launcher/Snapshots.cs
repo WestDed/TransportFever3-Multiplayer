@@ -18,6 +18,19 @@ namespace MPFever
             using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
         }
         public static bool Hex(string s, int n) => s != null && s.Length == n && s.All(c => c >= '0' && c <= '9' || c >= 'a' && c <= 'f');
+        public static bool CanonicalBase64(string data,int bytes)
+        {
+            if(bytes<1 || data==null || data.Length!=4*((bytes+2)/3))return false;
+            int pad=(3-bytes%3)%3,end=data.Length-pad,last=0;
+            for(int i=0;i<end;i++)
+            {
+                char c=data[i];
+                if(c>='A' && c<='Z')last=c-'A';else if(c>='a' && c<='z')last=c-'a'+26;
+                else if(c>='0' && c<='9')last=c-'0'+52;else if(c=='+')last=62;else if(c=='/')last=63;else return false;
+            }
+            for(int i=end;i<data.Length;i++)if(data[i]!='=')return false;
+            return !(pad==2 && (last&15)!=0 || pad==1 && (last&3)!=0);
+        }
         public static long Integer(Dictionary<object, object> t, string key, long min, long max)
         {
             if (!t.TryGetValue(key, out var v) || !(v is double d) || double.IsNaN(d) || double.IsInfinity(d) || d < min || d > max || d != Math.Truncate(d))
@@ -77,7 +90,7 @@ namespace MPFever
                     int wanted = (int)Math.Min(buffer.Length, Manifest.Bytes - (long)i * buffer.Length), n = 0;
                     while (n < wanted) { int r = reader.Read(buffer, n, wanted - n); if (r == 0) throw new IOException("Snapshot source truncated"); n += r; }
                     string payload = "{[\"id\"]=" + Manifest.Id + ",[\"transfer\"]=" + LuaLit.Quote(Manifest.Transfer) + ",[\"i\"]=" + i
-                        + ",[\"n\"]=" + Manifest.Parts + ",[\"data\"]=" + LuaLit.Quote(Convert.ToBase64String(buffer, 0, n)) + "}";
+                        + ",[\"n\"]=" + Manifest.Parts + ",[\"data\"]=\"" + Convert.ToBase64String(buffer, 0, n) + "\"}";
                     if (cancelled() || !send(Msg.Make("resync_file", from, payload))) throw new IOException("Snapshot transfer cancelled or peer too slow");
                 }
             }
@@ -166,11 +179,11 @@ namespace MPFever
                 if (id != manifest.Id || n != manifest.Parts || SnapshotLimits.Text(t, "transfer") != manifest.Transfer) throw new InvalidDataException("Part does not belong to active snapshot");
                 string data = SnapshotLimits.Text(t, "data");
                 int wanted = (int)Math.Min(SnapshotLimits.ChunkBytes, manifest.Bytes - (long)i * SnapshotLimits.ChunkBytes);
-                if (data.Length != 4 * ((wanted + 2) / 3)) throw new InvalidDataException("Incorrect encoded part size");
+                if (!SnapshotLimits.CanonicalBase64(data,wanted)) throw new InvalidDataException("Incorrect or noncanonical encoded part");
                 byte[] bytes;
                 try { bytes = Convert.FromBase64String(data); }
                 catch (FormatException e) { throw new InvalidDataException("Invalid part base64", e); }
-                if (bytes.Length != wanted || Convert.ToBase64String(bytes) != data) throw new InvalidDataException("Noncanonical base64 or incorrect part size");
+                if (bytes.Length != wanted) throw new InvalidDataException("Incorrect decoded part size");
                 file.Position = (long)i * SnapshotLimits.ChunkBytes;
                 if (seen[i])
                 {

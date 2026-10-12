@@ -49,6 +49,7 @@ public static class LuaLitTests
         Check(((Dictionary<object, object>)LuaLit.Parse("{[\"data\"]=\"" + chunk + "\"}"))["data"].Equals(chunk), "save chunk");
         var bigKey = LuaLit.Parse("{[1e30]=1}") as Dictionary<object,object>;
         Check(bigKey != null && bigKey.ContainsKey(1e30), "large finite key not cast to long");
+        foreach(var bad in new[]{"\"a\0b\"","\"a\tb\"","\"a\u007fb\""}) Check(LuaLit.Parse(bad)==null,"fast string rejects raw control");
         Console.WriteLine("C# decoder: " + checks + " checks passed (no game)");
     }
 }

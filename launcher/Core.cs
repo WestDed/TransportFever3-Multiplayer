@@ -387,6 +387,15 @@ namespace MPFever
             {
                 char quote = Peek;
                 index++;
+                // Large base64 strings normally contain no escapes. Validate the
+                // same controls/length, then take one substring without a builder.
+                for (int scan=index;scan<text.Length;scan++)
+                {
+                    char c=text[scan];
+                    if(c==quote) {string value=text.Substring(index,scan-index);index=scan+1;return value;}
+                    if(c=='\\')break;
+                    if(c<32 || c==127 || scan-index>=MaxString)throw Invalid();
+                }
                 var sb = new StringBuilder();
                 while (!End)
                 {

@@ -20,18 +20,18 @@ namespace MPFever
 
         public static bool ValidEnvelope(Msg m)
         {
-            if (m == null || string.IsNullOrEmpty(m.Kind) || m.Kind.Length > 32 || m.From == null || m.From.Length > 64 || m.Payload == null) return false;
+            if (m == null || string.IsNullOrEmpty(m.Kind) || m.Kind.Length > 32 || m.From == null || m.From.Length > 64 || m.Payload == null || m.Payload.Length > LuaLit.MaxBytes) return false;
             foreach (char c in m.Kind) if (!(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_')) return false;
             foreach (char c in m.From) if (char.IsControl(c)) return false;
             if (m.Payload.IndexOfAny(new[] { '\r', '\n', '\t' }) >= 0) return false;
-            try { return Utf8.GetByteCount(m.Payload) <= LuaLit.MaxBytes && Utf8.GetByteCount(m.ToString()) <= MaxFrameBytes; }
+            try { int bytes=Utf8.GetByteCount(m.Payload);return bytes<=LuaLit.MaxBytes && m.Kind.Length+Utf8.GetByteCount(m.From)+2+bytes<=MaxFrameBytes; }
             catch (EncoderFallbackException) { return false; }
         }
 
         public static byte[] Encode(Msg m)
         {
             if (!ValidEnvelope(m)) throw new InvalidDataException("Invalid or oversized message envelope");
-            return Utf8.GetBytes(m + "\n");
+            return Utf8.GetBytes(m.Kind+"\t"+m.From+"\t"+m.Payload+"\n");
         }
     }
 
