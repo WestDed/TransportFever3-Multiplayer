@@ -1,8 +1,8 @@
-"""Keep the audit's single known failure from becoming a blanket exemption."""
+"""No project failures are exempt after AUD-04 has been fixed."""
 from pathlib import Path
 import unittest
 
-KNOWN_EXPECTED_FAILURE = 'test_companies_offline.CompaniesOffline.test_signature_should_detect_account_binding_change'
+KNOWN_EXPECTED_FAILURES = set()
 
 
 def expected_failure_ids(suite):
@@ -18,9 +18,9 @@ def expected_failure_ids(suite):
 
 
 class CiPolicyTests(unittest.TestCase):
-    def test_only_the_audited_identity_failure_is_exempt(self):
+    def test_no_expected_failures_are_exempt(self):
         suite = unittest.defaultTestLoader.discover(str(Path(__file__).resolve().parent), pattern='test_*.py')
-        self.assertEqual(expected_failure_ids(suite), {KNOWN_EXPECTED_FAILURE})
+        self.assertEqual(expected_failure_ids(suite), KNOWN_EXPECTED_FAILURES)
 
     def test_unknown_expected_failure_is_identified(self):
         class Example(unittest.TestCase):
@@ -28,7 +28,7 @@ class CiPolicyTests(unittest.TestCase):
             def test_unknown(self):
                 self.fail('new error')
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(Example)
-        self.assertNotEqual(expected_failure_ids(suite), {KNOWN_EXPECTED_FAILURE})
+        self.assertNotEqual(expected_failure_ids(suite), KNOWN_EXPECTED_FAILURES)
         self.assertEqual(len(expected_failure_ids(suite)), 1)
 
 

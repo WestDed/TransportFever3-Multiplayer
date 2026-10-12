@@ -410,6 +410,8 @@ end
 -- (in a block: the main chunk of this script is at Lua's limit of 200 locals)
 local executeAction
 do
+local okP, P = pcall(ug_require, "mpfever_permissions.lua")
+if not okP then P = ug_require("mpfever_1::/mpfever_permissions.lua") end
 local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 	local result = { tok = a.tok, id = a.id, uid = a.uid, fn = a.fn, success = false }
 	-- companies mode: a new line takes its company's colour (a little darker for each line the company already has), so that the
@@ -455,6 +457,11 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 	if okm and #missing > 0 then
 		result.err = "DESYNC missing entities: " .. table.concat(missing, ",")
 		log("action " .. tostring(a.uid) .. " " .. tostring(a.fn) .. " SKIPPED, " .. result.err)
+		return result
+	end
+	local allowed, denied = P.check(R.CO, a, R.ownerOf)
+	if not allowed then
+		result.err = "permission: " .. tostring(denied)
 		return result
 	end
 	-- companies mode: a line stops only at its company's stations and at the stations another company shares
@@ -682,7 +689,8 @@ local function coLoanEvent(st, co, name, loans)
 		local idx = nil
 		for i, loan in ipairs(lt.obtainedLoans) do if loan.id == obtained.id then idx = i; break end end
 		if not idx then return false end
-		local amount = M.lu.getFullLoanAndInterestPayBack(obtained)
+		-- The packet supplies only the id; repayment terms come from saved state.
+		local amount = M.lu.getFullLoanAndInterestPayBack(lt.obtainedLoans[idx])
 		coBook(c.ent, M.lu.makeLoan(-amount, -1))
 		table.remove(lt.obtainedLoans, idx)
 		log("companies: company " .. co .. " repaid a loan")
@@ -1677,28 +1685,7 @@ local function send(kind, payload)
 end
 
 local function readLines(fileName, offKey)
-	local f = C.IO.open(C.DIR .. BS .. fileName, "rb")
-	if not f then return {} end
-	local size = f:seek("end")
-	local lines = {}
-	if size < G[offKey] then G[offKey] = 0 end
-	if size > G[offKey] then
-		f:seek("set", G[offKey])
-		local chunk = f:read(size - G[offKey]) or ""
-		local last, pos = nil, 1
-		while true do
-			local i = chunk:find(NL, pos, true)
-			if not i then break end
-			last = i
-			local line = chunk:sub(pos, i - 1)
-			if line:sub(-1) == CR then line = line:sub(1, -2) end
-			if #line > 0 then lines[#lines + 1] = line end
-			pos = i + 1
-		end
-		if last then G[offKey] = G[offKey] + last end
-	end
-	f:close()
-	return lines
+	return C.readLines(C.DIR .. BS .. fileName, G, offKey)
 end
 
 local function parseLine(line)
@@ -6862,22 +6849,10 @@ local function resumeAfterLoad(state)
 	-- A resynchronisation: what the launcher wrote after its order to load (resync_load) is for the game loaded now, although it
 	-- arrived while the game was loading (the companies other players announce, their first actions...): read from there.
 	pcall(function()
-		local f = C.IO.open(C.DIR .. BS .. "in.log", "rb")
-		if not f then return end
-		local s = f:read("*a") or ""
-		f:close()
-		local last, pos = nil, 1
-		while true do
-			local i = s:find("resync_load" .. TAB, pos, true)
-			if not i then break end
-			if i == 1 or s:sub(i - 1, i - 1) == NL then
-				local e = s:find(NL, i, true)
-				if e then last = e end
-			end
-			pos = i + 1
-		end
-		if last and last < #s then
-			log("resynchronisation: " .. (#s - last) .. " bytes of messages received during the load are read")
+		local last = C.lastControl(C.DIR .. BS .. "in.log", "resync_load")
+		local total = fileSize("in.log")
+		if last and last < total then
+			log("resynchronisation: " .. (total - last) .. " bytes of messages received during the load are read")
 			G.inOff = last
 		end
 	end)
@@ -6958,6 +6933,11 @@ local function coGui(st)
 		local txt = table.concat(lines, NL) .. NL
 		if txt ~= G.coFile then
 			G.coFile = txt
+			if C.ROLE == "host" then
+				local rows = {}
+				for _, c in ipairs(st.co.list) do rows[#rows + 1] = { id = c.id, key = c.key or "", sid = c.sid, ready = c.ent ~= nil } end
+				send("co_roster", { list = rows })
+			end
 			local f = C.IO.open(C.DIR .. BS .. "companies.txt", "wb")
 			if f then f:write(txt); f:close() end
 		end

@@ -1,32 +1,27 @@
-# Риски и ограничения
+# Риски и текущие ограничения
 
-Документ фиксирует исходный аудит 0.3.6. Изменения после него и текущие проверки: [результаты первой задачи этапа 1](docs/STAGE1_TESTS_DECODER.md). Сетевой Lua-декодер и тестовая среда исправлены; остальные ограничения аудита сохраняются.
+Результаты offline tests не подтверждают работу Transport Fever 3. Ни игровые бинарники, ни saves не использовались. Исправленные memory/code-execution risks и изоляция незавершённых TCP-подключений описаны в STAGE1 docs; ниже остающиеся ограничения.
 
+| Риск | Наблюдение по исходникам/стенду | Что нужно для снятия |
+|---|---|---|
+| Разные симуляции мира | Каждый ПК рассчитывает мир; не полный authoritative world server | Same build/mods, game census, action-free drift и длительность |
+| Premature native apply | Автор мог применить стройку до server verdict | Hold/release/replay автору и engine gate ADR 0001 |
+| Save/load boundary | Нет production epoch/frontier transaction и drain всех callbacks | Привязать snapshot к applied frontier; crash/reconnect игровые сценарии |
+| Shared progression | Upstream читает прогресс savegame компании | Engine feasibility независимых state/permits; не считать fallback решением |
+| Финансы | CorrectMoney, частичный loan/contract routing; Obtain ещё принимает недоказанные terms | Штатный loan_util/API, ledger history/owners/insufficient funds в игре |
+| Station billing | Per-stop index не является stable visit ID | Loop/reroute/stop reorder/reload, одна оплата/нулевая сумма transfers |
+| Identity | Имя/sid не являются серверным Steam proof; bearer credential только session | Подтверждённый account/initial admission, persistent claim/migration |
+| Открытая сеть | TCP не шифруется; наблюдатель может получить credential | Выбор/проверка защищённого транспорта и доверия хосту до публичного использования |
+| Недостаточная schema | Whitelist/shape/co policy не знают всю engine Proposal/ref/price структуру | Actual API и native ownership matrix; новые mod events явными schemas |
+| Hooks/версии | Native addresses/ABI определены авторами для отдельных builds | Game hash/build gate, byte checks и каждый hook на реальной версии |
+| Version ≠ compatibility | Protocol 3 не проверяет все EXE/DLL/mod/game hashes | Fingerprint одинакового пакета и полного engine/mod set |
+| Память | 8 x 32 MiB loopback: RSS до ~693 MiB на одном hosted прогоне | Budget production/net48/игры, sustained profiling; меньше копий не равно меньше RSS |
+| Размер/скорость снимка | 1 GiB/4096 parts, 600-секундное ожидание sending/loading, bounded queue timeouts | Параметры по настоящим saves/WAN; не обещать Gigantomaniac по этим caps |
+| Disk durability | Flush(true)/atomic replace проверены обычными файлами | Power loss/filesystem/game save closure; дисковая ошибка сохраняет old save и pause |
+| Journal foundation | Durable input order, но эффекты+frontier не атомарны в игре; компонент не активирован | Engine adapter/async callbacks/quorum по реальному состоянию |
+| Lifecycle | Generation checks уменьшают stale callbacks, но не заменяют atomic session fence | Быстрая смена сессии/menu/late callbacks и cancellation в игре |
+| Host failure | Нет host migration; credentials в памяти не переживают restart | Recovery последнего согласованного snapshot/journal и confirmed ownership |
 
-Классы доказательств: **К** — прочитано в коде, **Т** — наш тест без игры, **О** — сообщение upstream, **Г** — гипотеза для игровой проверки. Ниже нет наших игровых результатов.
+Hash снимка обнаруживает повреждение байтов, а не неправильную стройку/грузопотоки/финансовые проводки. Совпадающий hash ошибочного мира не является успехом. Реальный negative test проверяет код компонентов, но injected owner/loan facts не являются измерением двигателя.
 
-| Риск | Доказательство | Влияние | Снижение / точка проверки |
-|---|---|---|---|
-| Повторение стройки искажает мир | О #15–20; К `removalPlan`, `engineReplay` | Crash, исчезновение/изменение инфраструктуры, неверная стоимость | P0 fixtures, exact context, завершение зависимых действий; игровые сценарии до экономики |
-| Resync сохраняет ошибочный мир хоста | К `Resync`; О #16 | Все получают согласованный, но неправильный мир | Проверять семантику и геометрию команды до подтверждения, не только hash |
-| Действие пересекает save/load | О #17; К отправителю не эхоятся act | Потерянное изменение и новое расхождение | Эпохи, запрет приёма стройки, drain команд, новый frontier |
-| Бинарные адреса | К `BuildAddrs`, UI_SITES, byte checks | После обновления игра ломает hooks | Hash/build gate, fail closed, отдельная таблица и игровые тесты каждого build |
-| Детерминизм мира | К seed фикс для 40420; О #7; Г моды/потоки | Разные города/грузы/доходы | Одинаковые builds/mods, census/сверка на x4 и длительных играх |
-| Финансовая независимость неполна | К `patchProgression`, `correctMoney` | Общий прогресс; debt/history может отличаться при одинаковом балансе | Аудит списка платежей и владельцев, независимый прогресс; engine feasibility gate |
-| Непроверенная сетевой identity | К имя/поле sid; Т fallback по имени | Чужая компания или ошибка возврата | Подтверждённый identity, связь peer→company, отказ/миграция неясных записей |
-| Выполнение Lua при декодировании | К/Т `C.deser` | Sandbox не ограничивает функцию/циклы; DoS | Data-only parser и лимиты; тест безопасного конечного выражения не запускает бесконечный цикл |
-| Неограниченный input и slow peer | К ReadLine, OnResyncFile array n, синхронные записи | RAM exhaustion, зависший relay | До public internet — лимиты, bounded queues, timeouts/rate limits |
-| Коррекция баланса скрывает первопричину | К/О #20 | «Совпали деньги» при неверном сносе | Сохранить диагностические delta/геометрию, запрет принимать по balance alone |
-| Слабые digests | К countsHash/owners/loan summary, подпись без sid Т | Пропущено расхождение, поздний crash | Digest семантических записей, проверка identity; диагностический census |
-| Сборы по индексу остановки | К/Г `chargeShares` | Повтор/пропуск при смене маршрута, полном круге, reload | Стабильное visit ID, очистка/миграция local entity keys; игровые проверки |
-| NAT/CGNAT | К TCP IP listener; О #6 | Игроки не подключатся через Steam invite | LAN/direct TCP/VPN на первом этапе; P2P отдельно без обязательного внешнего сервера |
-| Хост прекращает работу | К хост хранит authority и Relay | Сессия останавливается | Атомарный save, recovery guide; миграция вне первого выпуска |
-| Gigantomaniac | К полные обходы/трансфер base64; Г нагрузка | Каждый ПК хранит и считает весь мир, OOM, большие паузы | Профилировать TF3, потоковый snapshot, dirty scans, RAM/upload budget |
-| Разные моды/DLC | Г + зависимость от игровых модулей К | Нельзя одинаково повторить команды/загрузить мир | Manifest build/mod/DLC, запрет старта при различии, лицензии игроков |
-| Авторы активно меняют код | GitHub срез | Аудит устаревает | SHA pin, обновление только с повторным просмотром diff и проверками |
-
-Поддержка 40408 не равна полноте функций 40420: seed и player-read hooks имеют ограничения. Не включать «best effort» мультиплеер на неизвестной сборке только потому, что DLL оставила её без патча.
-
-Штатные экономика и маршрутизация остаются закрытой частью движка. Без игры нельзя доказать независимый прогресс, смешанные выплаты, совместимость сохранений, количество компаний и предельный размер карты. Значения из `alternative/docs/BIGMAPS.md` относятся прежде всего к TF2 и не переносятся на TF3 как измерения.
-
-Лицензии MIT позволяют отдельную разработку с сохранением уведомлений. Лицензия проекта не покрывает игровые ресурсы, внутренние скрипты и чужие assets. На первом этапе такие файлы не получали и не распространяли.
+Upstream bugs #15–22 и первоначальные доказательства/гипотезы доступны в [историческом аудите](https://github.com/WestDed/TransportFever3-Multiplayer/blob/6611e8f63e29e04aeb978bddd17877b461894edf/RISKS.md). Стабильный release запрещён до TESTING.md/ROADMAP игровых критериев.

@@ -105,12 +105,20 @@ function CO.join(reg, key, name, isHost, newName, sid)
 	return c, true
 end
 
--- what the state check compares: the same on every game (entities left out)
+-- Canonical length-prefixed fields: separators in names/keys cannot alias another
+-- registry. Account binding and starting money are shared state; ent/canon are local.
+local function signatureField(value)
+	if value == nil then return "n;" end
+	local text = tostring(value)
+	return type(value):sub(1, 1) .. #text .. ":" .. text
+end
 function CO.signature(reg)
 	if not reg then return "none" end
-	local t = { reg.mode or "?" }
-	for _, c in ipairs(reg.list) do t[#t + 1] = c.id .. ":" .. tostring(c.key) .. ":" .. tostring(c.name) .. ":" .. tostring(c.color) end
-	return table.concat(t, "|")
+	local t = { "co2", signatureField(reg.mode), signatureField(reg.start), signatureField(#reg.list) }
+	for _, c in ipairs(reg.list) do
+		for _, key in ipairs({ "id", "key", "name", "color", "sid" }) do t[#t + 1] = signatureField(c[key]) end
+	end
+	return table.concat(t)
 end
 
 -- ---------------------------------------------------------------------------------------------------------------- game modules

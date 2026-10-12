@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../launcher/Core.cs" Link="Core.cs" />
+    <Compile Include="../../launcher/NetworkIO.cs" Link="NetworkIO.cs" />
+    <Compile Include="../../launcher/Snapshots.cs" Link="Snapshots.cs" />
+    <Compile Include="../../launcher/PeerIdentity.cs" Link="PeerIdentity.cs" />
+    <Compile Include="../../launcher/ProtocolSchema.cs" Link="ProtocolSchema.cs" />
+    <Compile Include="../../launcher/CommandJournal.cs" Link="CommandJournal.cs" />
+  </ItemGroup>
+</Project>
