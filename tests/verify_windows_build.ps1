@@ -26,7 +26,7 @@ try {
 finally { $zip.Dispose() }
 $manifest = [ordered]@{
     sourceCommit = $env:GITHUB_SHA
-    protocolVersion = 2
+    protocolVersion = [int]([regex]::Match([IO.File]::ReadAllText((Join-Path $root 'launcher/NetworkIO.cs')), 'const int Version = (\d+)').Groups[1].Value)
     experimental = $true
     gameTested = $false
     binaries = @('launcher/bin/Release/MPFever.exe','native/out/winhttp.dll') | ForEach-Object {

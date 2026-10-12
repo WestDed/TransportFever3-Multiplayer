@@ -55,10 +55,25 @@ class CompaniesOffline(unittest.TestCase):
         # The unique Steam-account fallback correctly resolves this collision.
         self.check('CO.join(reg,"guest","Guest",false,nil,"B"); local a=CO.join(reg,"guest","Guest",false,nil,"C"); local b,n=CO.join(reg,"guest","Guest",false,nil,"C"); assert(a==b and not n and #reg.list==3)')
 
-    @unittest.expectedFailure
     def test_signature_should_detect_account_binding_change(self):
-        # AUD-04: identity sid is omitted from CO.signature.
+        # AUD-04 regression: account changes must alter the shared digest.
         self.check('reg.list[1].sid="A"; local before=CO.signature(reg); reg.list[1].sid="B"; assert(CO.signature(reg)~=before)')
+
+    def test_signature_detects_starting_money(self):
+        self.check('local before=CO.signature(reg); reg.start=3; assert(CO.signature(reg)~=before)')
+
+    def test_signature_nil_is_not_the_string_nil(self):
+        self.check('local before=CO.signature(reg); reg.list[1].sid="nil"; assert(CO.signature(reg)~=before)')
+
+    def test_signature_has_unambiguous_field_boundaries(self):
+        self.check('reg.list[1].key="a:b"; reg.list[1].name="c"; local before=CO.signature(reg); reg.list[1].key="a"; reg.list[1].name="b:c"; assert(CO.signature(reg)~=before)')
+
+    def test_signature_ignores_local_canonical_entity(self):
+        self.check('local before=CO.signature(reg); reg.canon=990; assert(CO.signature(reg)==before)')
+
+    def test_signature_roundtrip_preserves_account_identity(self):
+        self.lua.globals().C = self.lua.execute((CONTENT / 'mpfever_common.lua').read_text(encoding='utf-8'))
+        self.check('CO.join(reg,"guest","Guest",false,nil,"B"); local before=CO.signature(reg); reg=C.deser(C.ser(reg)); assert(CO.signature(reg)==before)')
 
 
 class CommonOffline(unittest.TestCase):

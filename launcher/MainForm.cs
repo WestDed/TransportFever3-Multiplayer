@@ -1066,6 +1066,7 @@ namespace MPFever
             var game = existing ?? new GameLink(name, "client");
             if (!games.Contains(game)) games.Add(game);
             Client current = null;
+            string resumeToken = null;
             clientCancelled = false;
             // a reconnect thread of an earlier session must not wake up in this one (issue #13)
             int gen = sessionGen;
@@ -1088,6 +1089,7 @@ namespace MPFever
                 client.Received += m =>
                 {
                     if (gen != sessionGen) return;
+                    if (m.Kind == "connection") { resumeToken = client.ResumeToken; return; }
                     if (m.Kind == "resync_begin" || m.Kind == "resync_file") { OnResyncFile(game, m, client); return; }
                     if (m.Kind == "mpstatus")
                     {
@@ -1137,7 +1139,7 @@ namespace MPFever
                             ClientStatus("lost", attempt);
                             Thread.Sleep(5000);
                             if (clientCancelled || gen != sessionGen) return;
-                            var c = new Client();
+                            var c = new Client { ResumeToken = resumeToken };
                             try
                             {
                                 wire(c);

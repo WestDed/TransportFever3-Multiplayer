@@ -654,6 +654,7 @@ namespace MPFever
         public TcpClient Tcp;
         public BoundedOutbox Outbox;
         public bool Joined;
+        public PeerIdentity Identity;
     }
 
     /// <summary>Host side: accepts TCP clients and relays every message to everybody else.</summary>
@@ -661,6 +662,7 @@ namespace MPFever
     {
         TcpListener listener;
         readonly List<Peer> peers = new List<Peer>();
+        readonly PeerIdentities identities = new PeerIdentities();
         int nextId = 1;
         volatile bool stop;
 
@@ -724,8 +726,16 @@ namespace MPFever
                             p.Tcp.GetStream().Write(rejection, 0, rejection.Length);
                             throw new InvalidDataException("Repeated join or incompatible protocol");
                         }
+                        string resume = null;
+                        if (join.TryGetValue("resume", out var rv))
+                        {
+                            if (!(rv is string rs)) throw new InvalidDataException("Invalid resume credential type");
+                            resume = rs;
+                        }
+                        p.Identity = identities.Join(Sanitize(m.From), resume);
                         p.Joined = true;
-                        p.Name = Sanitize(m.From) + "#" + p.Id;
+                        p.Name = p.Identity.Name + "#" + p.Identity.Id;
+                        Send(p, Msg.Make("connection", "MPFever", "{[\"token\"]=" + LuaLit.Quote(p.Identity.Token) + ",[\"you\"]=" + LuaLit.Quote(p.Name) + "}"));
                         Joined?.Invoke(p);
                         continue;
                     }
@@ -736,8 +746,13 @@ namespace MPFever
             catch (Exception e) { if (!stop) Log.W($"{p.Name} : {e.Message}"); }
             p.Outbox.Dispose();
             try { p.Tcp.Close(); } catch { }
-            lock (peers) peers.Remove(p);
-            if (p.Joined) Left?.Invoke(p);
+            bool notify;
+            lock (peers)
+            {
+                peers.Remove(p);
+                notify = p.Joined && !peers.Any(o => o.Joined && o.Identity == p.Identity);
+            }
+            if (notify) Left?.Invoke(p);
         }
 
         static string Sanitize(string s)
@@ -746,15 +761,14 @@ namespace MPFever
             return t.Length == 0 ? "Player" : (t.Length > 24 ? t.Substring(0, 24) : t);
         }
 
-        /// <summary>A player who comes back (reconnection) under the same name: the old connection, which may still look
-        /// alive after a network cut, is closed.</summary>
+        /// <summary>Only a proven session credential can replace its previous connection.
+        /// An equal public name cannot disconnect another player.</summary>
         public void DropOlder(Peer p)
         {
-            string Base(string n) { int i = n.LastIndexOf('#'); return i < 0 ? n : n.Substring(0, i); }
             Peer[] all;
             lock (peers) all = peers.ToArray();
             foreach (var o in all)
-                if (o != p && Base(o.Name) == Base(p.Name))
+                if (o != p && p.Identity != null && o.Identity == p.Identity)
                 {
                     Log.Warn(L.F("{0} : ancienne connexion fermée (reconnexion)", "{0}: old connection closed (reconnection)", o.Name));
                     try { o.Tcp.Close(); } catch { }
@@ -794,13 +808,14 @@ namespace MPFever
         volatile bool stop;
         public event Action<Msg> Received;
         public event Action Closed;
+        public string ResumeToken { get; set; }
 
         public void Connect(string host, int port, string name)
         {
             tcp = new TcpClient { NoDelay = true, SendTimeout = Wire.SendTimeoutMs };
             tcp.Connect(host, port);
             outbox = new BoundedOutbox(tcp.GetStream(), () => tcp.Close(), "Client send");
-            Send(Msg.Make("join", name, "{[\"protocol\"]=" + Wire.Version + "}"));
+            Send(Msg.Make("join", name, "{[\"protocol\"]=" + Wire.Version + (ResumeToken == null ? "" : ",[\"resume\"]=" + LuaLit.Quote(ResumeToken)) + "}"));
             new Thread(ReadLoop) { IsBackground = true, Name = "Client read" }.Start();
             Log.Ok(L.F("Client : connecté à {0}:{1}", "Client: connected to {0}:{1}", host, port));
         }
@@ -816,6 +831,13 @@ namespace MPFever
                     var m = Msg.Parse(line);
                     if (m == null) throw new InvalidDataException("Invalid message envelope");
                     if (m.Kind == "reject") throw new InvalidDataException(m.Payload);
+                    if (m.Kind == "connection")
+                    {
+                        var info = LuaLit.Parse(m.Payload) as Dictionary<object, object>;
+                        if (info == null || !info.TryGetValue("token", out var tv) || !(tv is string token) || !SnapshotLimits.Hex(token, 64))
+                            throw new InvalidDataException("Invalid connection credential");
+                        ResumeToken = token;
+                    }
                     Received?.Invoke(m);
                 }
             }
