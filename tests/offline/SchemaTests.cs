@@ -39,7 +39,7 @@ namespace MPFever
             var playerRef = ProtocolSchema.ValidateClient(Msg.Make("act","Peer#1",Act(args:"{[1]={[\"__ref\"]=true,[\"k\"]=\"player\",[\"co\"]=1}}")));
             Reject<InvalidDataException>(()=>bindings.Require(peer,playerRef),"nested foreign player reference");
             var reconnect = identities.Join("Peer",peer.Token); bindings.Require(reconnect,action); Check(true,"binding survives authenticated socket reconnect");
-            foreach (var bad in new[] {"host","other"})
+            foreach (var bad in new[] {"host","peer"})
             { join["key"]=bad; Reject<InvalidDataException>(()=>bindings.Join(other,join,2000000),"cannot claim another peer or host name"); }
             join["key"]="other"; join["host"]=true;
             Reject<InvalidDataException>(()=>bindings.Join(other,join,2000000),"client cannot claim host role");
