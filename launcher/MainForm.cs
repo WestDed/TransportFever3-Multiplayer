@@ -130,6 +130,7 @@ namespace MPFever
         const double ResyncCooldownSeconds = 120;   // at most one resynchronisation every 2 minutes
         const string ResyncSaveName = "MPFever resync";
         volatile bool resyncing;
+        volatile bool resyncFailed;
         double lastResync = -1e9;
         int resyncId;
         readonly HashSet<string> resyncWaiting = new HashSet<string>();
@@ -828,7 +829,7 @@ namespace MPFever
             lock (chatLog) { chatLog.Clear(); chatId = 0; }
             lock (snapshotReceivers) { foreach (var receiver in snapshotReceivers.Values) receiver.Dispose(); snapshotReceivers.Clear(); }
             hashN = 0; syncText = "—"; actsRelayed = actRefused = actFails = desyncs = 0;
-            resyncing = false; resyncWaiting.Clear(); ignoredParts.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = "";
+            resyncing = false; resyncFailed = false; resyncWaiting.Clear(); ignoredParts.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = "";
             joinPending = false;
             joinedAddr = null;
             if (steamConnect != null) { steamConnect = null; SteamCtl("clear", null); }
@@ -1382,11 +1383,13 @@ namespace MPFever
             // every game just loaded the same savegame: a part already different now is a local measure
             postResyncHashN = hashN + 1;
             RequestHash();
-            new Thread(() => { Thread.Sleep(1500); SetSpeed(1, T("démarrage", "start")); }) { IsBackground = true }.Start();
+            int startGen=sessionGen;
+            new Thread(() => { Thread.Sleep(1500); if(startGen==sessionGen)SetSpeed(1, T("démarrage", "start")); }) { IsBackground = true }.Start();
         }
 
         void SetSpeed(int s, string who)
         {
+            if(s>0 && (resyncing || resyncFailed)) {Log.Warn("Resume denied while resynchronisation is pending or failed; finish recovery or restart the session");return;}
             if (!started) return;
             lock (sessionGate) { speed = Math.Max(1, Math.Min(4, s)); pauseAt = null; }
             Log.W(F("Vitesse : x{0} (demandée par {1})", "Speed: x{0} (asked by {1})", speed, who));
@@ -1752,6 +1755,7 @@ namespace MPFever
 
         void Resync(string reason)
         {
+            resyncFailed=true;
             int id = Interlocked.Increment(ref resyncId), gen = sessionGen;
             Relay activeRelay = relay;
             GameLink activeGame = hostGame;
@@ -1830,7 +1834,7 @@ namespace MPFever
                 {
                     lastResync = Now; diffStreak = 0; resyncing = false;
                     lock (resyncWaiting) { snapshotTargets.Clear(); snapshotReceived.Clear(); }
-                    if (success) SetSpeed(prevSpeed, T("fin de resynchronisation", "end of resynchronisation"));
+                    if (success) {resyncFailed=false;SetSpeed(prevSpeed, T("fin de resynchronisation", "end of resynchronisation"));}
                     else Log.Err("Resynchronisation failed; all games remain paused. Inspect the logs before restarting.");
                 }
             }
