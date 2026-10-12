@@ -2,7 +2,15 @@
 
 Основной репозиторий: https://github.com/WestDed/TransportFever3-Multiplayer. Пользователь разрешил автономную работу без игры, отдельные ветки и PR, без автоматического merge. GitHub write доступ восстановлен; Desktop не требуется. Авторские репозитории не изменяем, MIT copyright arthur сохранён.
 
-## Сохранённая работа
+## Состояние после слияний 13.10.2026
+
+PR #1–#6 закрыты слиянием заказчиком. PR #2 вошёл в main; #3–#6 вошли в промежуточные ветки. При проверке main `9de017ed0f8cb126b91608d5ac6a8b3ae779a9f3` содержит только #2. Все последующие исправления сохранены в `8d4684dee7e2e413d0ac454fa79234ace7a2bd81`, tree `1813ca14d7beb649270bb8e1ae570b71e8e6ec73` — точно такое же содержимое, как у проверенного head #6.
+
+[PR #7](https://github.com/WestDed/TransportFever3-Multiplayer/pull/7), `integrate/stage1-reviewed-fixes`, создан от актуальной main и направлен **прямо в main**. Merge всей принятой работы выполнен без конфликтов, с сохранением истории; затем менялись только Markdown документы. Точный итоговый head/run смотреть в PR #7. [Проверка слияний](docs/INTEGRATION_STAGE1.md).
+
+Первое действие при продолжении — проверить состояние #7 и актуальную main через GitHub. Если #7 слит, новые задачи начинать отдельной веткой от актуальной main с PR в main. Если открыт, не считать его изменения уже находящимися в main. Повторно сливать #2–#6 не требуется; прежний совет о последовательном merge цепочки больше не применяется. Не force-push и не объединять PR автоматически.
+
+## История сохранённой работы
 
 - PR #1 — аудит, объединён заказчиком. Main базы: 6611e8f63e29e04aeb978bddd17877b461894edf; upstream 0.3.6: 0c4a6d35bb5fd22f2ef851d8089e4c6f2cde6773.
 - [PR #2](https://github.com/WestDed/TransportFever3-Multiplayer/pull/2), `fix/offline-tests-safe-decoder`, base main. Реальные 17 lockstep assertions, no Lua eval, bounded C# parser, strict CI. Head 99ccf249; 44 Python tests с тогдашним AUD-04, 46 C# checks.
@@ -12,7 +20,7 @@
 
 - [PR #6](https://github.com/WestDed/TransportFever3-Multiplayer/pull/6), `fix/handshake-isolation`, base #5. Pending sockets не получают общие/адресные данные; connection enqueue до Joined; first-frame cap 4 КиБ без потери buffered traffic; real TCP regressions и 32 reconnect при concurrent broadcast. Точный CI head/run смотреть в PR. Initial identity/TLS не реализованы.
 
-Прочитать ARCHITECTURE/FEATURES/ROADMAP/RISKS/TESTING, docs/STAGE1_*.md и ADR_0001_COMMAND_CUTOVER.md. Не повторять уже выполненные fixes. Все branches stack; для review порядок #2 → #3 → #4 → #5 → #6. После ручного слияния предыдущей ветки проверить diff следующего PR относительно актуальной main и при необходимости retarget; не force-push чужой head и не merge самостоятельно.
+Прочитать ARCHITECTURE/FEATURES/ROADMAP/RISKS/TESTING, docs/STAGE1_*.md и ADR_0001_COMMAND_CUTOVER.md. Не повторять уже выполненные fixes. Предыдущие branches/heads/runs выше — исторические доказательства; текущий путь review — один PR #7 в main. Исходный итоговый head #6 683328da прошёл run 38318567426: 67 Python/Lua, 276 C# checks на Ubuntu/Windows, 50 LuaLit, full Windows build; 6 jobs green.
 
 ## Граница завершения
 

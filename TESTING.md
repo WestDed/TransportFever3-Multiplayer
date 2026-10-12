@@ -4,7 +4,7 @@
 
 ## Фактические автоматические проверки
 
-На [run 38213663673](https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38213663673), head b3f7dbc2: все шесть jobs успешны. 67 Python/Lua tests без exemptions, 210 C# component checks на Ubuntu/Windows, 50 LuaLit checks, полный net48 EXE и x64 DLL/14 exports/ordinals/package/license. Новые последующие изменения проверяются по финальному head соответствующего PR; нельзя переносить результат старого SHA на изменённый код.
+На [run 38318567426](https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38318567426), head 683328da (PR #6): все шесть jobs успешны. 67 Python/Lua tests без exemptions, 276 C# component checks на Ubuntu/Windows, 50 LuaLit checks, полный net48 EXE и x64 DLL/14 exports/ordinals/package/license. Интеграция в [PR #7](https://github.com/WestDed/TransportFever3-Multiplayer/pull/7) сохраняет исходники/тесты/workflow этой версии; CI итогового integration head фиксируется в PR #7. Нельзя переносить результат старого SHA на изменённый код.
 
 | Проверка | Реальный код/среда | Не доказывает |
 |---|---|---|
