@@ -108,12 +108,137 @@ function C.ser(v, depth)
 	return "nil"
 end
 
+-- Only the data grammar emitted by C.ser and LuaLit.Quote is accepted. Never compile a message.
+-- The same limits apply to local copies made through C.ser/C.deser; limits are per complete value.
+C.DESER_LIMITS = { bytes = 4 * 1024 * 1024, depth = 40, entries = 100000, stringBytes = 1024 * 1024 }
+do
+local LIMITS = C.DESER_LIMITS
+local ESCAPES = { a = string.char(7), b = string.char(8), f = string.char(12), n = NL,
+	r = CR, t = TAB, v = string.char(11), [BS] = BS, ['"'] = '"', ["'"] = "'" }
+local function decodeData(s)
+	local i, n, entries = 1, #s, 0
+	local function reject() error("invalid or oversized data literal", 0) end
+	local function ws()
+		while i <= n do
+			local c = s:byte(i)
+			if c ~= 32 and c ~= 9 and c ~= 10 and c ~= 13 then break end
+			i = i + 1
+		end
+	end
+	local function take(c)
+		ws()
+		if s:sub(i, i) ~= c then reject() end
+		i = i + 1
+	end
+	local function quoted()
+		local quote = s:sub(i, i)
+		i = i + 1
+		local chunks, bytes = {}, 0
+		local function add(v)
+			bytes = bytes + #v
+			if bytes > LIMITS.stringBytes then reject() end
+			chunks[#chunks + 1] = v
+		end
+		local special = "[" .. quote .. BS .. BS .. "%c]"
+		while i <= n do
+			local p = s:find(special, i)
+			if not p then reject() end
+			if p > i then add(s:sub(i, p - 1)) end
+			local c = s:sub(p, p)
+			i = p + 1
+			if c == quote then return table.concat(chunks) end
+			if c ~= BS or i > n then reject() end
+			local e = s:sub(i, i)
+			if e:match("%d") then
+				local start = i
+				repeat i = i + 1 until i > n or i - start == 3 or not s:sub(i, i):match("%d")
+				local value = tonumber(s:sub(start, i - 1))
+				if value > 255 then reject() end
+				add(string.char(value))
+			else
+				local value = ESCAPES[e]
+				if value == nil then reject() end
+				add(value)
+				i = i + 1
+			end
+		end
+		reject()
+	end
+	local function digit()
+		local b = s:byte(i)
+		return b and b >= 48 and b <= 57
+	end
+	local function number()
+		local start, digits = i, 0
+		if s:sub(i, i) == "-" then i = i + 1 end
+		while digit() do i = i + 1; digits = digits + 1 end
+		if s:sub(i, i) == "." then
+			i = i + 1
+			while digit() do i = i + 1; digits = digits + 1 end
+		end
+		if digits == 0 then reject() end
+		local c = s:sub(i, i)
+		if c == "e" or c == "E" then
+			i = i + 1
+			c = s:sub(i, i)
+			if c == "-" or c == "+" then i = i + 1 end
+			if not digit() then reject() end
+			while digit() do i = i + 1 end
+		end
+		if i - start > 128 then reject() end
+		local v = tonumber(s:sub(start, i - 1))
+		if not v or v ~= v or v == math.huge or v == -math.huge then reject() end
+		return v
+	end
+	local value
+	value = function(depth)
+		ws()
+		local c = s:sub(i, i)
+		if c == '"' or c == "'" then return quoted() end
+		if c == "{" then
+			if depth >= LIMITS.depth then reject() end
+			i = i + 1
+			local t, seen = {}, {}
+			ws()
+			if s:sub(i, i) == "}" then i = i + 1; return t end
+			while true do
+				entries = entries + 1
+				if entries > LIMITS.entries then reject() end
+				take("[")
+				local k = value(depth + 1)
+				local kt = type(k)
+				if kt ~= "string" and kt ~= "number" and kt ~= "boolean" then reject() end
+				if seen[k] then reject() end
+				seen[k] = true
+				take("]"); take("=")
+				t[k] = value(depth + 1)
+				ws()
+				c = s:sub(i, i)
+				if c == "}" then i = i + 1; return t end
+				take(",")
+				ws()
+				if s:sub(i, i) == "}" then i = i + 1; return t end
+			end
+		end
+		for _, literal in ipairs({ "true", "false", "nil" }) do
+			if s:sub(i, i + #literal - 1) == literal then
+				i = i + #literal
+				if literal == "true" then return true elseif literal == "false" then return false else return nil end
+			end
+		end
+		return number()
+	end
+	local v = value(0)
+	ws()
+	if i <= n then reject() end
+	return v
+end
 function C.deser(s)
-	local chunk = load("return " .. s, "msg", "t", {})
-	if not chunk then return nil end
-	local ok, v = pcall(chunk)
+	if type(s) ~= "string" or #s > LIMITS.bytes then return nil end
+	local ok, v = pcall(decodeData, s)
 	if ok then return v end
 	return nil
+end
 end
 
 function C.dump(v)

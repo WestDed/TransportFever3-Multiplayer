@@ -72,9 +72,8 @@ class CommonOffline(unittest.TestCase):
     def test_malformed_literal_returns_nil(self):
         self.assertIsNone(self.lua.eval('C.deser("{")'))
 
-    @unittest.expectedFailure
     def test_decoder_should_accept_data_only(self):
-        # AUD-02: empty environment still allows a function expression to execute.
+        # AUD-02: expression payload must be rejected without execution.
         self.assertIsNone(self.lua.eval('C.deser("(function() return 7 end)()")'))
 
 

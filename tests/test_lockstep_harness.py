@@ -48,9 +48,31 @@ class HarnessTests(unittest.TestCase):
 
     def test_diagnostics_gate_sees_errors_caught_by_lua(self):
         samples = ['simulation apply failed: bad reference', 'callback error: missing id',
-                   'LATE action x', 'NATIVE REPLAY x SEGMENT COUNT DIFFERS']
+                   'LATE action x', 'NATIVE REPLAY x SEGMENT COUNT DIFFERS', 'action x SKIPPED, DESYNC unresolved: depot#1234']
         self.assertEqual(unexpected_logs('\n'.join(samples)), samples)
-        self.assertEqual(unexpected_logs('action x SKIPPED, DESYNC unresolved: depot#9999'), [])
+        self.assertEqual(unexpected_logs('action Client:4 makeVehicleBuyCmd SKIPPED, DESYNC unresolved: depot#9999'), [])
+
+    def test_bad_session_payload_is_not_empty_session(self):
+        game = self.game
+        game.L.execute('FRAME(); UI.POLL(); SIMSTEP()')
+        game.write('welcome\tHote\t{["you"]="HarnessHost",["role"]="host"}')
+        game.write('session\tHote\t{["started"]=true,["speed"]=1}')
+        game.L.execute('FRAME(); UI.POLL(); SIMSTEP()')
+        for payload in ['{', 'true', '7', '(function() return {} end)()']:
+            game.write('session\tHote\t' + payload)
+            game.L.execute('FRAME(); UI.POLL(); SIMSTEP()')
+            self.assertEqual(game.L.eval('GAME.speed'), 1)
+        self.assertEqual(len([s for s in game.read('mod.log') if 'rejected non-data message' in s]), 4)
+
+    def test_bad_results_and_resync_controls_are_not_applied(self):
+        game = self.game
+        game.L.execute('FRAME(); UI.POLL(); SIMSTEP()')
+        game.write('resync_save\tHote\ttrue')
+        game.L.execute('ug_require("mpfever_common.lua").appendFile(os.getenv("MPFEVER_DIR").."/results.log","result"..string.char(9).."x"..string.char(9).."true"..string.char(10))')
+        for _ in range(100):
+            game.L.execute('FRAME(); UI.POLL(); SIMSTEP()')
+        self.assertEqual(unexpected_logs('\n'.join(game.read('ui_mod.log'))), [])
+        self.assertTrue(any('rejected non-data control' in s for s in game.read('ui_mod.log')))
 
     def test_all_original_scenarios(self):
         out = io.StringIO()

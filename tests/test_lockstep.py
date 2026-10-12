@@ -324,8 +324,9 @@ class Host:
 
 def unexpected_logs(logs):
     # Engine-facing functions use pcall and may report failure instead of raising to Python.
-    markers = ("failed", "late action", "late native", "callback error", "count differs")
-    return [line for line in logs.splitlines() if any(m in line.lower() for m in markers)]
+    markers = ("failed", "late action", "late native", "callback error", "count differs", "skipped, desync")
+    return [line for line in logs.splitlines() if any(m in line.lower() for m in markers)
+            and not line.endswith("action Client:4 makeVehicleBuyCmd SKIPPED, DESYNC unresolved: depot#9999")]
 
 
 def run():
@@ -407,7 +408,7 @@ def run_scenarios(tmp):
     B.L.execute("local api = UI.api; api.cmd.sendCommand(api.cmd.makeVehicleBuyCmd(7, 9999, { vehicles = {} }), function() end)")
     tick(40, lagB=True)
     na = len([x for x in A.applied() if x.startswith("makeVehicleBuyCmd")])
-    check(na == 1, "a purchase in a depot unknown to the host is skipped on the host (no crash)")
+    check(na == 1 and len([line for line in A.read("mod.log") if "SKIPPED, DESYNC unresolved: depot#9999" in line]) == 1, "a purchase in a depot unknown to the host is skipped on the host (no crash)")
 
     # the host player builds a road natively (no veto, no button): applied at once on the host, captured by the
     # engine event, rebuilt by the client at the same game time; the client's replay is not shipped back
