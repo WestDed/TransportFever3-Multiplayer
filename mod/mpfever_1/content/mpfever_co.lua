@@ -5,8 +5,8 @@
 --   company = { id = n, key = "<player>" ("" while nobody has claimed it), name = "...", color = <palette index>, ent = <entity> }
 -- Only `ent` (the player entity of the company IN THIS GAME) is local to a machine: entity ids can differ between games, so
 -- every message carries the company id (1, 2, 3...) and each game maps it to its own entity.
--- Company 1 is the company of the savegame (the host's); a new player gets a new company the first time its name is seen, and
--- finds it again under the same name after a reconnection (or a later session on the same savegame).
+-- Company 1 is the company of the savegame (the host's). Production identifies an owner by a permanent key fingerprint,
+-- proved by the launcher; display names and declared Steam IDs do not establish company ownership.
 
 local CO = {}
 
@@ -85,6 +85,10 @@ local function validOwner(owner)
 end
 CO.validOwner = validOwner
 
+local function validWorld(world)
+	return type(world) == "string" and #world == 32 and world:match("^[0-9a-f]+$") ~= nil
+end
+
 function CO.match(reg, key, sid, isHost, owner)
 	if not reg then return nil end
 	if owner == nil then
@@ -121,7 +125,7 @@ function CO.join(reg, key, name, isHost, newName, sid, owner, world)
 			local first=reg.list[1]
 			if first.owner and first.owner ~= owner then error("host ownership profile changed; restore its backup") end
 			if not reg.world then
-				if type(world) ~= "string" or #world ~= 32 or not world:match("^[0-9a-f]+$") then error("host world id is required") end
+				if not validWorld(world) then error("host world id is required") end
 				reg.world=world
 			end
 			first.key=key; first.sid=sid; first.owner=owner; reg.ownershipVersion=2
@@ -144,7 +148,10 @@ end
 -- Host-only migration: a saved world id prevents a request for another map;
 -- an existing proven owner cannot be replaced by a legacy migration request.
 function CO.assignOwner(reg, id, owner, world, approver)
-	if not reg or reg.world ~= world or not validOwner(owner) or approver ~= reg.list[1].owner then error("invalid host ownership assignment") end
+	local first = type(reg) == "table" and type(reg.list) == "table" and reg.list[1] or nil
+	-- Equality of two missing fields is not proof of host authority or world scope.
+	if not first or not validWorld(world) or reg.world ~= world or not validOwner(owner)
+		or not validOwner(first.owner) or not validOwner(approver) or approver ~= first.owner then error("invalid host ownership assignment") end
 	local c=CO.find(reg,id)
 	if not c or id == 1 then error("invalid legacy company") end
 	if c.owner and c.owner ~= owner then error("company already has a confirmed owner") end
