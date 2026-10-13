@@ -118,8 +118,9 @@ namespace MPFever
         readonly Dictionary<int,int> owners = new Dictionary<int,int>();
         List<Company> roster = new List<Company>();
         string world;
+        bool reportRejected;
         public string World { get { lock(gate) return world; } }
-        public string OwnershipSummary { get { lock(gate) return string.Join("; ",roster.Select(c=>c.Id + " " + c.Key + " owner=" + (c.Owner ?? "UNASSIGNED") + " ready=" + c.Ready)); } }
+        public string OwnershipSummary { get { lock(gate) return reportRejected ? "INVALID HOST ROSTER; company actions blocked" : string.Join("; ",roster.Select(c=>c.Id + " " + c.Key + " owner=" + (c.Owner ?? "UNASSIGNED") + " ready=" + c.Ready)); } }
         public void Join(PeerIdentity peer, Dictionary<object, object> args, long start)
         {
             string key = ProtocolSchema.Text(args,"key",128);
@@ -130,56 +131,82 @@ namespace MPFever
             if (permanent != peer.Owner || !SnapshotLimits.Hex(permanent,64)) throw new InvalidDataException("Company owner must match the proven connection key");
             lock (gate)
             {
+                if (reportRejected) throw new InvalidDataException("Host company roster has not recovered from an invalid report");
                 if (roster.Any(c => c.Id == 1 && c.Owner == permanent)) throw new InvalidDataException("Host company is reserved");
                 if (!roster.Any(c=>c.Owner==permanent) && roster.Any(c=>c.Id!=1 && c.Owner==null && (c.Key==key || sid!=null && c.Sid==sid))) throw new InvalidDataException("Legacy company requires explicit assignment by the host; name and Steam id are not ownership proof");
                 if (claims.TryGetValue(peer.Id,out var existing))
-                { if (existing.Key != key || existing.Sid != sid || existing.Owner != permanent) throw new InvalidDataException("Company identity cannot change during a session"); return; }
+                {
+                    if (existing.Key != key || existing.Owner != permanent) throw new InvalidDataException("Company identity cannot change during a session");
+                    // Steam metadata may become available later or change after a
+                    // reload. Only the proven private key establishes ownership.
+                    existing.Sid = sid;
+                    return;
+                }
                 var claim = new Claim {Key=key,Sid=sid,Owner=permanent};
-                Resolve(peer.Id,claim);
+                claim.Company = Resolve(peer.Id,claim,roster,owners);
+                if (claim.Company != 0) owners[claim.Company] = peer.Id;
                 claims.Add(peer.Id,claim);
             }
         }
         public void Report(string payload)
         {
-            var t = ProtocolSchema.Table(LuaLit.Parse(payload),"host roster");
-            var rows = ProtocolSchema.Table(ProtocolSchema.Get(t,"list"),"company list");
-            string reportedWorld=ProtocolSchema.Get(t,"world") as string;
-            if (t.ContainsKey("world") && !SnapshotLimits.Hex(reportedWorld,32)) throw new InvalidDataException("Invalid world ownership scope");
-            if (rows.Count > 4096) throw new InvalidDataException("Company roster too large");
-            var next = new List<Company>(); var ids = new HashSet<int>();
-            foreach (var row in rows.Values)
-            {
-                var r = ProtocolSchema.Table(row,"company");
-                int id = (int)ProtocolSchema.Integer(r,"id",1,4096);
-                string key = ProtocolSchema.Get(r,"key") as string;
-                if (key == null || key.Length > 128 || !ids.Add(id) || !(ProtocolSchema.Get(r,"ready") is bool ready)) throw new InvalidDataException("Invalid company roster row");
-                string owner=ProtocolSchema.Get(r,"owner") as string;
-                if (r.ContainsKey("owner") && !SnapshotLimits.Hex(owner,64)) throw new InvalidDataException("Invalid owner in host roster");
-                next.Add(new Company { Id=id,Key=key,Sid=ProtocolSchema.Get(r,"sid") as string,Owner=owner,Ready=ready });
-            }
             lock (gate)
             {
+                // A failed report is evidence that the previous roster may no
+                // longer describe the game. Block authority until a complete
+                // valid report; do not leave partially committed bindings behind.
+                reportRejected = true;
+                var t = ProtocolSchema.Table(LuaLit.Parse(payload),"host roster");
+                var rows = ProtocolSchema.Table(ProtocolSchema.Get(t,"list"),"company list");
+                string reportedWorld=ProtocolSchema.Get(t,"world") as string;
+                if (t.ContainsKey("world") && !SnapshotLimits.Hex(reportedWorld,32)) throw new InvalidDataException("Invalid world ownership scope");
+                if (rows.Count > 4096) throw new InvalidDataException("Company roster too large");
+                var next = new List<Company>(); var ids = new HashSet<int>(); var permanentOwners = new HashSet<string>();
+                foreach (var row in rows.Values)
+                {
+                    var r = ProtocolSchema.Table(row,"company");
+                    int id = (int)ProtocolSchema.Integer(r,"id",1,4096);
+                    string key = ProtocolSchema.Get(r,"key") as string;
+                    if (key == null || key.Length > 128 || !ids.Add(id) || !(ProtocolSchema.Get(r,"ready") is bool ready)) throw new InvalidDataException("Invalid company roster row");
+                    string owner=ProtocolSchema.Get(r,"owner") as string;
+                    if (r.ContainsKey("owner") && !SnapshotLimits.Hex(owner,64)) throw new InvalidDataException("Invalid owner in host roster");
+                    // Pending engine entities still reserve their permanent owner.
+                    if (owner != null && !permanentOwners.Add(owner)) throw new InvalidDataException("Ambiguous permanent company owner");
+                    next.Add(new Company { Id=id,Key=key,Sid=ProtocolSchema.Get(r,"sid") as string,Owner=owner,Ready=ready });
+                }
+                var nextOwners = new Dictionary<int,int>(owners);
+                var nextBindings = new Dictionary<int,int>();
+                foreach (var entry in claims)
+                {
+                    int co = Resolve(entry.Key,entry.Value,next,nextOwners);
+                    nextBindings.Add(entry.Key,co);
+                    if (co != 0) nextOwners[co] = entry.Key;
+                }
+                // Commit only after every row and every existing claim passed.
                 roster = next;
                 world = reportedWorld;
-                foreach (var entry in claims) Resolve(entry.Key,entry.Value);
+                owners.Clear();
+                foreach (var entry in nextOwners) owners.Add(entry.Key,entry.Value);
+                foreach (var entry in nextBindings) claims[entry.Key].Company = entry.Value;
+                reportRejected = false;
             }
         }
-        void Resolve(int peer, Claim claim)
+        static int Resolve(int peer, Claim claim, List<Company> companies, Dictionary<int,int> companyOwners)
         {
-            var candidates = roster.Where(c=>c.Ready && c.Owner==claim.Owner).ToArray();
+            var candidates = companies.Where(c=>c.Owner==claim.Owner).ToArray();
             if (candidates.Length > 1) throw new InvalidDataException("Ambiguous permanent company owner");
-            if (candidates.Length != 1) return;
+            if (candidates.Length != 1 || !candidates[0].Ready) return claim.Company;
             int co = candidates[0].Id;
-            if (co == 1 || owners.TryGetValue(co,out var owner) && owner != peer) throw new InvalidDataException("Company is already bound to another session identity");
+            if (co == 1 || companyOwners.TryGetValue(co,out var owner) && owner != peer) throw new InvalidDataException("Company is already bound to another session identity");
             if (claim.Company != 0 && claim.Company != co) throw new InvalidDataException("Host roster changed an established company binding");
-            owners[co] = peer; claim.Company = co;
+            return co;
         }
         public void Require(PeerIdentity peer, Dictionary<object,object> action)
         {
             int co = (int)ProtocolSchema.Integer(action,"co",2,4096);
             lock (gate)
             {
-                if (!claims.TryGetValue(peer.Id,out var claim) || claim.Owner != peer.Owner || claim.Company != co || !roster.Any(c=>c.Id == co && c.Ready && c.Owner == peer.Owner)) throw new InvalidDataException("Company claim is not confirmed by the host");
+                if (reportRejected || !claims.TryGetValue(peer.Id,out var claim) || claim.Owner != peer.Owner || claim.Company != co || !roster.Any(c=>c.Id == co && c.Ready && c.Owner == peer.Owner)) throw new InvalidDataException("Company claim is not confirmed by the host");
             }
             ProtocolSchema.CheckPlayerReferences(ProtocolSchema.Table(ProtocolSchema.Get(action,"args"),"args"),co);
         }
@@ -192,7 +219,7 @@ namespace MPFever
             lock(gate)
             {
                 var c=roster.SingleOrDefault(r=>r.Id==co);
-                if(world==null || world!=requestedWorld || c==null || !c.Ready || c.Owner!=null && c.Owner!=owner || roster.Any(r=>r.Id!=co && r.Owner==owner)) throw new InvalidDataException("Ownership assignment does not match this world's unclaimed company");
+                if(reportRejected || world==null || world!=requestedWorld || c==null || !c.Ready || c.Owner!=null && c.Owner!=owner || roster.Any(r=>r.Id!=co && r.Owner==owner)) throw new InvalidDataException("Ownership assignment does not match this world's unclaimed company");
             }
         }
     }
