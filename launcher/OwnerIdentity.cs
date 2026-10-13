@@ -17,9 +17,22 @@ namespace MPFever
         public static string ProfileDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MPFever", "identity");
         public static string ProfilePath(string role) => Path.Combine(ProfileDirectory, role + ".private-owner.lua");
         OwnerIdentity(RSAParameters key) { this.key = key; Owner = Fingerprint(key); }
+        static RSA Provider()
+        {
+            // Framework's CSP KeySize setter does not reliably replace its already
+            // generated default key. Select RSA_AES and the size in the constructor.
+            if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+                return new RSACryptoServiceProvider(2048,new CspParameters(24)) { PersistKeyInCsp=false };
+            var rsa=RSA.Create();rsa.KeySize=2048;return rsa;
+        }
         public static OwnerIdentity Create()
         {
-            using (var rsa = RSA.Create()) { rsa.KeySize = 2048; return new OwnerIdentity(rsa.ExportParameters(true)); }
+            using (var rsa = Provider())
+            {
+                var parameters=rsa.ExportParameters(true);
+                if (parameters.Modulus.Length!=256)throw new CryptographicException("Ownership provider did not generate a 2048-bit key");
+                return new OwnerIdentity(parameters);
+            }
         }
         public static OwnerIdentity Open(string path)
         {
@@ -38,7 +51,7 @@ namespace MPFever
                             var t = ProtocolSchema.Table(LuaLit.Parse(reader.ReadToEnd()), "ownership profile");
                             if (ProtocolSchema.Integer(t, "version", 1, 1) != 1 || t.Count != 9) throw new InvalidDataException("Invalid ownership profile version or fields");
                             var p = new RSAParameters { Modulus = Part(t,"n",256), Exponent = Part(t,"e",3), D = Part(t,"d",256), P = Part(t,"p",128), Q = Part(t,"q",128), DP = Part(t,"dp",128), DQ = Part(t,"dq",128), InverseQ = Part(t,"iq",128) };
-                            using (var rsa = RSA.Create()) { rsa.ImportParameters(p); if (rsa.KeySize != 2048) throw new InvalidDataException("Invalid ownership key size"); }
+                            using (var rsa = Provider()) { rsa.ImportParameters(p); if (rsa.KeySize != 2048) throw new InvalidDataException("Invalid ownership key size"); }
                             var identity = new OwnerIdentity(p);
                             // Validate private/public consistency before issuing any proof.
                             var nonce = NewNonce(); var proof = identity.Sign("profile-check", nonce, identity.Owner);
@@ -73,7 +86,7 @@ namespace MPFever
             => Wire.Utf8.GetBytes("MPFever owner proof v4\n" + epoch + "\n" + nonce + "\n" + hostOwner);
         public string Sign(string epoch, string nonce, string hostOwner)
         {
-            using (var rsa = RSA.Create()) { rsa.ImportParameters(key); return Convert.ToBase64String(rsa.SignData(Challenge(epoch,nonce,hostOwner), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)); }
+            using (var rsa = Provider()) { rsa.ImportParameters(key); return Convert.ToBase64String(rsa.SignData(Challenge(epoch,nonce,hostOwner), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)); }
         }
         public static string Verify(string publicTable, string proof, string epoch, string nonce, string hostOwner)
             => Verify(ProtocolSchema.Table(LuaLit.Parse(publicTable),"ownership public key"),proof,epoch,nonce,hostOwner);
@@ -84,7 +97,7 @@ namespace MPFever
             if (p.Modulus[0] < 128 || p.Exponent[0] != 1 || p.Exponent[1] != 0 || p.Exponent[2] != 1 || !SnapshotLimits.CanonicalBase64(proof,256)) throw new InvalidDataException("Invalid ownership public key or proof");
             try
             {
-                using (var rsa = RSA.Create())
+                using (var rsa = Provider())
                 {
                     rsa.ImportParameters(p);
                     if (!rsa.VerifyData(Challenge(epoch,nonce,hostOwner),Convert.FromBase64String(proof),HashAlgorithmName.SHA256,RSASignaturePadding.Pkcs1)) throw new InvalidDataException("Ownership proof does not match this connection");

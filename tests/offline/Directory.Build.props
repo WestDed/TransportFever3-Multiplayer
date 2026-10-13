@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Offline48'">
+    <BaseIntermediateOutputPath>obj48/</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>obj48/</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+</Project>

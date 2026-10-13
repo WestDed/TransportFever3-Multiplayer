@@ -5,7 +5,6 @@
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <EnableNETAnalyzers>false</EnableNETAnalyzers>
-    <BaseIntermediateOutputPath>obj48/</BaseIntermediateOutputPath>
     <OutputPath>bin48/</OutputPath>
   </PropertyGroup>
   <ItemGroup>

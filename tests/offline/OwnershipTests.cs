@@ -33,6 +33,7 @@ namespace MPFever
                 var reopened=OwnerIdentity.Open(clientPath);
                 Check(key.Owner==reopened.Owner && SnapshotLimits.Hex(key.Owner,64),"private profile restores identical permanent owner after process restart");
                 var publicKey=ProtocolSchema.Table(LuaLit.Parse(key.PublicTable()),"public");
+                Check(Convert.FromBase64String((string)publicKey["n"]).Length==256,"actual crypto provider creates required 2048-bit public key");
                 Check(publicKey.Count==2 && publicKey.ContainsKey("n") && publicKey.ContainsKey("e"),"wire public profile contains no private key components");
                 string epoch=Guid.NewGuid().ToString("N"),nonce=OwnerIdentity.NewNonce();
                 string proof=reopened.Sign(epoch,nonce,hostKey.Owner);
