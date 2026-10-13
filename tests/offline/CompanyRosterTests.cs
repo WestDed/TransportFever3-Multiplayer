@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 
 namespace MPFever
 {
@@ -9,7 +10,7 @@ namespace MPFever
             => "{[\"id\"]=" + id + ",[\"key\"]=\"company" + id + "\",[\"ready\"]=" + (ready ? "true" : "false")
                 + (owner == null ? "" : ",[\"owner\"]=" + LuaLit.Quote(owner)) + "}";
         static string CompanyRoster(string world, params string[] rows)
-            => "{[\"world\"]=" + LuaLit.Quote(world) + ",[\"list\"]={" + string.Join(",", rows) + "}}";
+            => "{[\"world\"]=" + LuaLit.Quote(world) + ",[\"list\"]={" + string.Join(",", rows.Select((row,index)=>"[" + (index+1) + "]=" + row)) + "}}";
         static void CompanyRosterTests()
         {
             string world = new string('d',32), host = new string('a',64), owner = new string('b',64), otherOwner = new string('c',64);
