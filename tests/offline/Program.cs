@@ -32,6 +32,7 @@ namespace MPFever
                 NetworkTests();
                 HandshakeTests();
                 OwnershipTests();
+                CompanyRosterTests();
                 SnapshotTests();
                 IdentityTests();
                 SchemaTests();
