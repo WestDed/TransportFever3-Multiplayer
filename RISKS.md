@@ -11,6 +11,7 @@
 | Финансы | CorrectMoney, частичный loan/contract routing; Obtain ещё принимает недоказанные terms | Штатный loan_util/API, ledger history/owners/insufficient funds в игре |
 | Station billing | Per-stop index не является stable visit ID | Loop/reroute/stop reorder/reload, одна оплата/нулевая сумма transfers |
 | Identity | RSA key possession и saved owner реализованы; это не Steam authentication/initial invitation | Host admission, TLS/server trust, реальные save/load/migration и backup key |
+| Invalid owner roster | PR #9 проверяет все rows/claims до commit и блокирует новые права до корректного report; runtime/Lua регрессии пройдены | Реальный engine roster/load timing; исходные данные game registry не заменяются и уже выполненные native actions не откатываются этим policy |
 | Открытая сеть | TCP не шифруется; активный MITM может изменять последующие сообщения. Session token без private key теперь недостаточен | Выбор/проверка защищённого транспорта и доверия хосту до публичного использования |
 | Недостаточная schema | Whitelist/shape/co policy не знают всю engine Proposal/ref/price структуру | Actual API и native ownership matrix; новые mod events явными schemas |
 | Hooks/версии | Native addresses/ABI определены авторами для отдельных builds | Game hash/build gate, byte checks и каждый hook на реальной версии |
