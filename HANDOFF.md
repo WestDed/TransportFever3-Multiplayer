@@ -4,13 +4,15 @@
 
 ## Текущее состояние 13.10.2026
 
-PR #7 объединён пользователем в main `47604fbb708015d318f5cb10fd2134227301c712`, tree a313441c. Main run 38320541574: все 6 jobs green. Старые #2–#6 повторно не сливать; история промежуточных merge в docs/INTEGRATION_STAGE1.md.
+PR #8 объединён пользователем в main `5f6cd5845adb2cc59e49acfc436e77d80668994f`, tree e5ef8214. [Main run 38346446265](https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38346446265): все 7 jobs green, 78 Python/Lua и 306 C# checks. PR #7 ранее слит в main 47604fbb. Старые #2–#8 повторно не сливать; история промежуточных merge в docs/INTEGRATION_STAGE1.md.
 
 [PR #8](https://github.com/WestDed/TransportFever3-Multiplayer/pull/8), `fix/persistent-company-ownership`, создан от этой main и направлен прямо в main. Постоянные RSA-2048 host/client profiles в LocalAppData/MPFever/identity, owner fingerprint в сохранённом registry, signed fresh challenge (protocol 4), owner-based CompanyBindings/Lua lookup, host-only legacy assignment по world id и отказ при потере/неожиданной замене key. README/INSTALL и docs/STAGE1_PERSISTENT_OWNERSHIP.md содержат backup/migration/limitations. Не отправлять private profiles в логи или GitHub.
 
 Включено actual net48 execution тех же C# tests в Windows CI. Первый run 38339664174 поймал Framework CSP/KeySize bug; исправлен явным provider/constructor. Следующий run 38340158625: все 7 jobs green. Последующие изменения проверять по точному финальному head/run PR #8, не переносить старый результат.
 
-Сначала проверить текущий статус PR #8/main. Если слит, новую задачу начинать веткой от актуальной main и направлять PR прямо в main. Не объединять автоматически, не force-push чужую ветку. User считает восстановление владельца критическим; реальный игровой save/host restart по-прежнему NOT RUN и обязателен.
+[PR #9](https://github.com/WestDed/TransportFever3-Multiplayer/pull/9), `fix/ownership-review`, непосредственно от main 5f6cd58 и прямо в main. Полная owner uniqueness даже pending rows, атомарный roster/binding commit и запрет stale authority после invalid report; sid metadata не меняет proven owner; Lua assignment требует valid host/world. [Разбор, воспроизведение и ошибки фикстур](docs/MAIN_REVIEW_2026_10_13.md). Code head c5ae9be7 прошёл run 38348129418: все 7 jobs green, 79 Python/Lua, 323 C# checks на net8 Linux/Windows и actual net48 Windows, 50 decoder checks, полный Windows build. После него добавлена документация; точный финальный head/run смотреть в PR #9.
+
+Сначала проверить текущий статус PR #9/main. Если слит, новую задачу начинать веткой от актуальной main и направлять PR прямо в main. Не объединять автоматически, не force-push чужую ветку. User считает восстановление владельца критическим; реальный игровой save/host restart по-прежнему NOT RUN и обязателен.
 
 ## История сохранённой работы
 
@@ -22,7 +24,7 @@ PR #7 объединён пользователем в main `47604fbb708015d318f
 
 - [PR #6](https://github.com/WestDed/TransportFever3-Multiplayer/pull/6), `fix/handshake-isolation`, base #5. Pending sockets не получают общие/адресные данные; connection enqueue до Joined; first-frame cap 4 КиБ без потери buffered traffic; real TCP regressions и 32 reconnect при concurrent broadcast. Точный CI head/run смотреть в PR. Initial identity/TLS не реализованы.
 
-Прочитать ARCHITECTURE/FEATURES/ROADMAP/RISKS/TESTING, docs/STAGE1_*.md и ADR_0001_COMMAND_CUTOVER.md. Не повторять уже выполненные fixes. Предыдущие branches/heads/runs выше — исторические доказательства; текущий путь review — один PR #7 в main. Исходный итоговый head #6 683328da прошёл run 38318567426: 67 Python/Lua, 276 C# checks на Ubuntu/Windows, 50 LuaLit, full Windows build; 6 jobs green.
+Прочитать ARCHITECTURE/FEATURES/ROADMAP/RISKS/TESTING, docs/STAGE1_*.md, MAIN_REVIEW_2026_10_13.md и ADR_0001_COMMAND_CUTOVER.md. Не повторять уже выполненные fixes. Предыдущие branches/heads/runs выше — исторические доказательства. Исходный итоговый head #6 683328da прошёл run 38318567426: 67 Python/Lua, 276 C# checks на Ubuntu/Windows, 50 LuaLit, full Windows build; 6 jobs green.
 
 ## Граница завершения
 

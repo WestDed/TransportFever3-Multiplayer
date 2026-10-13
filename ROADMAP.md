@@ -1,6 +1,6 @@
 # План разработки и критерии готовности
 
-Основа — существующий MPFever, не переписывание с нуля. PR #7 объединён в main 47604fbb; [PR #8](https://github.com/WestDed/TransportFever3-Multiplayer/pull/8) добавляет постоянного владельца и net48 execution. Main меняет только заказчик после review; следующие задачи — отдельной веткой от актуальной main с PR в main. Сроки до доступа к движку не обещаем.
+Основа — существующий MPFever, не переписывание с нуля. PR #8 объединён в main 5f6cd58: постоянный владелец и net48 execution. [PR #9](https://github.com/WestDed/TransportFever3-Multiplayer/pull/9) исправляет roster/ownership проверки этой main. Main меняет только заказчик после review; следующие задачи — отдельной веткой от актуальной main с PR в main. Сроки до доступа к движку не обещаем.
 
 ## Этап 0 — аудит
 

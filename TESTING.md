@@ -21,6 +21,8 @@
 
 PR #8 расширяет suite постоянными key/owner/restart/migration сценариями и actual Windows .NET Framework 4.8 execution. Net8 проходит на Linux/Windows; net48 suite исполняет production RSA/TCP/file классы. Точные итоговые counts/head/run в PR #8; game NOT RUN. [Описание и backup](docs/STAGE1_PERSISTENT_OWNERSHIP.md).
 
+PR #8 уже слит: main 5f6cd58 прошла run 38346446265 (7 jobs, 78 Python/Lua, 306 C# checks). [PR #9](https://github.com/WestDed/TransportFever3-Multiplayer/pull/9) добавляет owner/roster/migration регрессии. Code head c5ae9be7 прошёл [run 38348129418](https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38348129418): 79 Python/Lua, 323 C# checks на всех трёх runtime/OS вариантах, 50 decoder checks и все 7 jobs green. Финальный head с документацией проверяется отдельно; точный run в PR #9. Первый C# прогон новых tests имел ошибку формата фикстуры и не считается доказательством failure production кода. [Полный разбор](docs/MAIN_REVIEW_2026_10_13.md).
+
 ## Воспроизведение без игры
 
 ```sh

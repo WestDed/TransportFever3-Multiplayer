@@ -31,6 +31,19 @@ class PersistentOwnershipTests(unittest.TestCase):
     def test_assignment_is_idempotent_and_cannot_grant_two_companies(self):
         self.lua.execute('reg.list[2]={id=2,key="old",color=2}; reg.list[3]={id=3,key="another",color=3}; CO.assignOwner(reg,2,owner,world,host); CO.assignOwner(reg,2,owner,world,host); assert(not pcall(CO.assignOwner,reg,3,owner,world,host) and not pcall(CO.assignOwner,reg,1,impostor,world,host) and #reg.list==3)')
 
+    def test_assignment_without_confirmed_host_or_world_is_refused(self):
+        for setup in (
+            'reg=CO.new("separate",7,2000000); world=nil; host=nil',
+            'reg.world=nil; world=nil',
+            'reg.list[1].owner=nil; host=nil',
+            'reg.world="invalid"; world="invalid"',
+            'reg.list[1].owner="invalid"; host="invalid"',
+        ):
+            with self.subTest(setup=setup):
+                self.setUp()
+                self.lua.execute(setup)
+                self.lua.execute('reg.list[2]={id=2,key="legacy",ent=900}; assert(not pcall(CO.assignOwner,reg,2,owner,world,host) and reg.list[2].owner==nil and reg.list[2].ent==900)')
+
     def test_changed_host_profile_is_not_silently_accepted(self):
         self.lua.execute('assert(not pcall(CO.join,reg,"host","Host",true,nil,nil,impostor,world) and reg.list[1].owner==host)')
 

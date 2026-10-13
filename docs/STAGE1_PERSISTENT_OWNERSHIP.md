@@ -1,6 +1,6 @@
 # Постоянный владелец компании
 
-13.10.2026. [PR #8](https://github.com/WestDed/TransportFever3-Multiplayer/pull/8), `fix/persistent-company-ownership`, от main 47604fbb, направлен прямо в main. TF3/Steam API/настоящие saves не запускались. Это реализация восстановления в production исходниках с offline доказательствами; игровой критерий остаётся NOT RUN.
+13.10.2026. [PR #8](https://github.com/WestDed/TransportFever3-Multiplayer/pull/8), `fix/persistent-company-ownership`, от main 47604fbb, объединён в main 5f6cd58. [PR #9](https://github.com/WestDed/TransportFever3-Multiplayer/pull/9) исправляет дополнительные roster/assignment проверки; [разбор](MAIN_REVIEW_2026_10_13.md). TF3/Steam API/настоящие saves не запускались. Это реализация восстановления в production исходниках с offline доказательствами; игровой критерий остаётся NOT RUN.
 
 ## Что было неправильно
 

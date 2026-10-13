@@ -1,6 +1,6 @@
 # Архитектура Transport Fever 3 Multiplayer
 
-PR #7 объединён заказчиком в main 47604fbb. [PR #8](https://github.com/WestDed/TransportFever3-Multiplayer/pull/8), от этой main и прямо в main, добавляет постоянного владельца компаний и проверку production net48 runtime. Основа — MPFever 0.3.6, MIT, автор arthur; upstream не изменяется. Игры и сохранений нет: работа компонентов проверена, игровая архитектура ещё не принята.
+PR #8 объединён заказчиком в main 5f6cd58: постоянный владелец компаний и production net48 runtime tests. [PR #9](https://github.com/WestDed/TransportFever3-Multiplayer/pull/9), непосредственно от этой main и прямо в main, исправляет roster/ownership проверки. Основа — MPFever 0.3.6, MIT, автор arthur; upstream не изменяется. Игры и сохранений нет: работа компонентов проверена, игровая архитектура ещё не принята.
 
 ## Действующая схема
 
@@ -44,3 +44,5 @@ UTF-8 строки `kind TAB from TAB payload LF`, payload — ограниче�
 История и точные исправления: [декодер](docs/STAGE1_TESTS_DECODER.md), [сеть/снимки](docs/STAGE1_NETWORK_SNAPSHOTS.md), [компании](docs/STAGE1_COMPANIES_PROTOCOL.md), [восстановление/стенд](docs/STAGE1_OFFLINE_RECOVERY.md), [изоляция рукопожатия](docs/STAGE1_HANDSHAKE_ISOLATION.md). Первичный [аудит архитектуры](https://github.com/WestDed/TransportFever3-Multiplayer/blob/6611e8f63e29e04aeb978bddd17877b461894edf/ARCHITECTURE.md) сохранён в Git history.
 
 Постоянный owner, backup и миграция: [STAGE1_PERSISTENT_OWNERSHIP](docs/STAGE1_PERSISTENT_OWNERSHIP.md).
+
+PR #9 проверяет owner uniqueness по всем roster rows, включая pending entities; заменяет roster и bindings только после полного успешного расчёта. Invalid report блокирует новые права до корректного полного report. Sid можно обновить с прежним proven owner. Lua helper назначения требует valid host owner/approver и world. [Результаты проверки main](docs/MAIN_REVIEW_2026_10_13.md).
