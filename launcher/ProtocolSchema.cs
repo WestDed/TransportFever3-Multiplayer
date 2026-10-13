@@ -119,6 +119,7 @@ namespace MPFever
         List<Company> roster = new List<Company>();
         string world;
         public string World { get { lock(gate) return world; } }
+        public string OwnershipSummary { get { lock(gate) return string.Join("; ",roster.Select(c=>c.Id + " " + c.Key + " owner=" + (c.Owner ?? "UNASSIGNED") + " ready=" + c.Ready)); } }
         public void Join(PeerIdentity peer, Dictionary<object, object> args, long start)
         {
             string key = ProtocolSchema.Text(args,"key",128);

@@ -1513,7 +1513,11 @@ namespace MPFever
             switch (m.Kind)
             {
                 case "co_roster":
-                    if (from == null) companyBindings.Report(m.Payload);
+                    if (from == null)
+                    {
+                        companyBindings.Report(m.Payload);
+                        Log.W("Company ownership roster: " + companyBindings.OwnershipSummary);
+                    }
                     break;
                 case "hello":
                     lock (players) players.Add(m.From);

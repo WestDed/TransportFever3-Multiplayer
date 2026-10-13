@@ -765,6 +765,7 @@ local function coApply(st, a)
 	end
 	if a.fn == "mpfCoAssign" then CO.assignOwner(st.co,p.id,p.owner,p.world,p.approver); return end
 	if a.fn ~= "mpfCoJoin" or p.mode ~= "separate" then return end
+	if not CO.validOwner(p.owner) then error("company join without permanent owner is refused") end
 	if not st.co then
 		st.co = CO.new("separate", api.engine.util.getPlayer(), tonumber(p.start))
 		local r, g, b = CO.rgb(1)
