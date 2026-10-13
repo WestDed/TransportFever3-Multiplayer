@@ -116,6 +116,7 @@ function CO.join(reg, key, name, isHost, newName, sid, owner, world)
 		if not validOwner(owner) then error("invalid permanent owner") end
 		local mine=CO.match(reg,key,sid,isHost,owner)
 		if mine then mine.key=key; mine.sid=sid; return mine,false end
+		for _, c in ipairs(reg.list) do if c.owner == owner then error("owner key belongs to another company role") end end
 		if isHost then
 			local first=reg.list[1]
 			if first.owner and first.owner ~= owner then error("host ownership profile changed; restore its backup") end

@@ -34,6 +34,9 @@ class PersistentOwnershipTests(unittest.TestCase):
     def test_changed_host_profile_is_not_silently_accepted(self):
         self.lua.execute('assert(not pcall(CO.join,reg,"host","Host",true,nil,nil,impostor,world) and reg.list[1].owner==host)')
 
+    def test_host_private_key_cannot_create_a_second_client_company(self):
+        self.lua.execute('assert(not pcall(CO.join,reg,"client","Client",false,nil,nil,host) and #reg.list==1)')
+
     def test_owner_and_world_are_part_of_registry_signature(self):
         self.lua.execute('local before=CO.signature(reg); reg.list[1].owner=impostor; assert(CO.signature(reg)~=before); reg.list[1].owner=host; reg.world=string.rep("e",32); assert(CO.signature(reg)~=before)')
 
