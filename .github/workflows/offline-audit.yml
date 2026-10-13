@@ -69,6 +69,22 @@ jobs:
           name: tcp-load-${{ matrix.os }}
           path: audit-results/tcp-load.json
           if-no-files-found: error
+  framework-components:
+    name: Actual .NET Framework 4.8 TCP, ownership and file tests (no game)
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Compile net48 tests and execute them on the Windows Framework runtime
+        shell: pwsh
+        run: |
+          dotnet build tests/offline/Offline48.csproj --configuration Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./tests/offline/bin48/net48/Offline48.exe
+          exit $LASTEXITCODE
   windows-build:
     name: Full Windows EXE and native DLL build (no game)
     runs-on: windows-latest
