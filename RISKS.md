@@ -10,18 +10,20 @@
 | Shared progression | Upstream читает прогресс savegame компании | Engine feasibility независимых state/permits; не считать fallback решением |
 | Финансы | CorrectMoney, частичный loan/contract routing; Obtain ещё принимает недоказанные terms | Штатный loan_util/API, ledger history/owners/insufficient funds в игре |
 | Station billing | Per-stop index не является stable visit ID | Loop/reroute/stop reorder/reload, одна оплата/нулевая сумма transfers |
-| Identity | Имя/sid не являются серверным Steam proof; bearer credential только session | Подтверждённый account/initial admission, persistent claim/migration |
-| Открытая сеть | TCP не шифруется; наблюдатель может получить credential | Выбор/проверка защищённого транспорта и доверия хосту до публичного использования |
+| Identity | RSA key possession и saved owner реализованы; это не Steam authentication/initial invitation | Host admission, TLS/server trust, реальные save/load/migration и backup key |
+| Открытая сеть | TCP не шифруется; активный MITM может изменять последующие сообщения. Session token без private key теперь недостаточен | Выбор/проверка защищённого транспорта и доверия хосту до публичного использования |
 | Недостаточная schema | Whitelist/shape/co policy не знают всю engine Proposal/ref/price структуру | Actual API и native ownership matrix; новые mod events явными schemas |
 | Hooks/версии | Native addresses/ABI определены авторами для отдельных builds | Game hash/build gate, byte checks и каждый hook на реальной версии |
-| Version ≠ compatibility | Protocol 3 не проверяет все EXE/DLL/mod/game hashes | Fingerprint одинакового пакета и полного engine/mod set |
+| Version ≠ compatibility | Protocol 4 не проверяет все EXE/DLL/mod/game hashes | Fingerprint одинакового пакета и полного engine/mod set |
 | Память | 8 x 32 MiB loopback: RSS до ~693 MiB на одном hosted прогоне | Budget production/net48/игры, sustained profiling; меньше копий не равно меньше RSS |
 | Размер/скорость снимка | 1 GiB/4096 parts, 600-секундное ожидание sending/loading, bounded queue timeouts | Параметры по настоящим saves/WAN; не обещать Gigantomaniac по этим caps |
 | Disk durability | Flush(true)/atomic replace проверены обычными файлами | Power loss/filesystem/game save closure; дисковая ошибка сохраняет old save и pause |
 | Journal foundation | Durable input order, но эффекты+frontier не атомарны в игре; компонент не активирован | Engine adapter/async callbacks/quorum по реальному состоянию |
 | Lifecycle | Generation checks уменьшают stale callbacks, но не заменяют atomic session fence | Быстрая смена сессии/menu/late callbacks и cancellation в игре |
-| Host failure | Нет host migration; credentials в памяти не переживают restart | Recovery последнего согласованного snapshot/journal и confirmed ownership |
+| Host failure | Нет host migration; постоянный key восстанавливает owner, session credentials/epoch новые | Реальный host/save restart, recovery snapshot/journal; backup host/client private profiles |
 
 Hash снимка обнаруживает повреждение байтов, а не неправильную стройку/грузопотоки/финансовые проводки. Совпадающий hash ошибочного мира не является успехом. Реальный negative test проверяет код компонентов, но injected owner/loan facts не являются измерением двигателя.
 
 Upstream bugs #15–22 и первоначальные доказательства/гипотезы доступны в [историческом аудите](https://github.com/WestDed/TransportFever3-Multiplayer/blob/6611e8f63e29e04aeb978bddd17877b461894edf/RISKS.md). Стабильный release запрещён до TESTING.md/ROADMAP игровых критериев.
+
+Ключи пока не зашифрованы на диске: доступ к Windows-профилю и backup private keys означает владение этой личностью. Marker блокирует пропажу key, если marker сохранился; удаление всего identity каталога локально не обнаруживается. Новый key не получает старую company по имени. Подробности [PR #8](docs/STAGE1_PERSISTENT_OWNERSHIP.md).

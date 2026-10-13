@@ -97,3 +97,14 @@ TROUBLESHOOTING
 - The game shows "press any key" after a resynchronisation and does not continue: press
   a key, and please report it (with the logs, see README.txt).
 - Something does not appear in the other game: please report it with the logs.
+
+PERSISTENT OWNERSHIP (protocol 4, our development branch)
+--------------------------------------------------------
+Host and client must use the same new package. Private host/client ownership keys are
+created in %LOCALAPPDATA%\MPFever\identity. Back up this directory privately along
+with saves; do not share private-owner.lua files in logs or issues. Company ownership
+is matched by a proven public-key fingerprint, not by name or declared Steam ID.
+Corrupt/missing known keys fail closed; restore the backup. Old companies without an
+owner require explicit assignment by the host, scoped to the saved world id.
+See docs/STAGE1_PERSISTENT_OWNERSHIP.md in the source repository for the request format.
+Actual save/restart/migration in TF3 has not yet been tested by this project.

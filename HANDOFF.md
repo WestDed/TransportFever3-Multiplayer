@@ -2,13 +2,15 @@
 
 Основной репозиторий: https://github.com/WestDed/TransportFever3-Multiplayer. Пользователь разрешил автономную работу без игры, отдельные ветки и PR, без автоматического merge. GitHub write доступ восстановлен; Desktop не требуется. Авторские репозитории не изменяем, MIT copyright arthur сохранён.
 
-## Состояние после слияний 13.10.2026
+## Текущее состояние 13.10.2026
 
-PR #1–#6 закрыты слиянием заказчиком. PR #2 вошёл в main; #3–#6 вошли в промежуточные ветки. При проверке main `9de017ed0f8cb126b91608d5ac6a8b3ae779a9f3` содержит только #2. Все последующие исправления сохранены в `8d4684dee7e2e413d0ac454fa79234ace7a2bd81`, tree `1813ca14d7beb649270bb8e1ae570b71e8e6ec73` — точно такое же содержимое, как у проверенного head #6.
+PR #7 объединён пользователем в main `47604fbb708015d318f5cb10fd2134227301c712`, tree a313441c. Main run 38320541574: все 6 jobs green. Старые #2–#6 повторно не сливать; история промежуточных merge в docs/INTEGRATION_STAGE1.md.
 
-[PR #7](https://github.com/WestDed/TransportFever3-Multiplayer/pull/7), `integrate/stage1-reviewed-fixes`, создан от актуальной main и направлен **прямо в main**. Merge всей принятой работы выполнен без конфликтов, с сохранением истории; затем менялись только Markdown документы. Точный итоговый head/run смотреть в PR #7. [Проверка слияний](docs/INTEGRATION_STAGE1.md).
+[PR #8](https://github.com/WestDed/TransportFever3-Multiplayer/pull/8), `fix/persistent-company-ownership`, создан от этой main и направлен прямо в main. Постоянные RSA-2048 host/client profiles в LocalAppData/MPFever/identity, owner fingerprint в сохранённом registry, signed fresh challenge (protocol 4), owner-based CompanyBindings/Lua lookup, host-only legacy assignment по world id и отказ при потере/неожиданной замене key. README/INSTALL и docs/STAGE1_PERSISTENT_OWNERSHIP.md содержат backup/migration/limitations. Не отправлять private profiles в логи или GitHub.
 
-Первое действие при продолжении — проверить состояние #7 и актуальную main через GitHub. Если #7 слит, новые задачи начинать отдельной веткой от актуальной main с PR в main. Если открыт, не считать его изменения уже находящимися в main. Повторно сливать #2–#6 не требуется; прежний совет о последовательном merge цепочки больше не применяется. Не force-push и не объединять PR автоматически.
+Включено actual net48 execution тех же C# tests в Windows CI. Первый run 38339664174 поймал Framework CSP/KeySize bug; исправлен явным provider/constructor. Следующий run 38340158625: все 7 jobs green. Последующие изменения проверять по точному финальному head/run PR #8, не переносить старый результат.
+
+Сначала проверить текущий статус PR #8/main. Если слит, новую задачу начинать веткой от актуальной main и направлять PR прямо в main. Не объединять автоматически, не force-push чужую ветку. User считает восстановление владельца критическим; реальный игровой save/host restart по-прежнему NOT RUN и обязателен.
 
 ## История сохранённой работы
 
@@ -24,7 +26,7 @@ PR #1–#6 закрыты слиянием заказчиком. PR #2 вошё�
 
 ## Граница завершения
 
-Игры/бинарников/saves/Steam-сессии нет. Полная EXE/DLL сборка, parser/socket/file tests — выполнены; игровые tests не выполнялись. CommandJournal/ReplayCursor/RecoveryBarrier **не используются production scheduler**. Первое подтверждение старой company ownership, TLS/initial admission, полные schemas/ценовые правила/native world rights и save/frontier cutover ещё не готовы. Shared progression/Obtain/billing/конкуренция/Gigantomaniac остаются.
+Игры/бинарников/saves/Steam-сессии нет. Полная EXE/DLL сборка, parser/socket/file tests — выполнены; игровые tests не выполнялись. CommandJournal/ReplayCursor/RecoveryBarrier **не используются production scheduler**. Persistent key ownership и explicit legacy migration реализованы в PR #8 и проверяются offline; реальная engine persistence/migration, TLS/initial admission, полные schemas/ценовые правила/native world rights и save/frontier cutover ещё не подтверждены. Shared progression/Obtain/billing/конкуренция/Gigantomaniac остаются.
 
 Следующий код — лишь отдельным обоснованным PR. До engine adapter сначала получить реальные game build/API/saves и пройти минимальный стенд. Можно продолжать source review/fuzz/security design/offline components, но не выдавать их за доказанную игру и не включать central replay без GUI/native hold gate.
 

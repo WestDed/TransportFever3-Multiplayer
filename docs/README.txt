@@ -143,3 +143,12 @@ CREDITS
 
 
 See INSTALL.txt to get started and ROADMAP.txt for what comes next.
+
+OUR BRANCH: PERSISTENT COMPANY OWNER
+-----------------------------------
+The legacy Steam-account/name description above is historical upstream behaviour.
+Protocol 4 uses a persistent local RSA identity and a saved public-key fingerprint.
+Keep private backups of %LOCALAPPDATA%\MPFever\identity. Never upload private keys.
+New keys do not reclaim old companies by name. Legacy unassigned companies require a
+host-only assignment for that saved world; see docs/STAGE1_PERSISTENT_OWNERSHIP.md in
+the repository. Real TF3 save/restart tests remain NOT RUN.
