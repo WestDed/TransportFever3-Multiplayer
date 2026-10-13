@@ -50,6 +50,11 @@ namespace MPFever
                 Reject<InvalidDataException>(()=>OwnerIdentity.Open(broken),"oversized private profile refused before decoding");
                 using(var lease=new FileStream(clientPath+".lock",FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None))
                     Reject<IOException>(()=>OwnerIdentity.Open(clientPath),"concurrent profile writer cannot replace existing identity");
+                string missing=Path.Combine(root,"lost.private-owner.lua");var lost=OwnerIdentity.Open(missing);File.Delete(missing);
+                Reject<InvalidDataException>(()=>OwnerIdentity.Open(missing),"missing known private key cannot silently create a different player");
+                Check(!File.Exists(missing) && File.ReadAllText(missing+".owner")==lost.Owner,"lost-profile public marker is retained for recovery");
+                string replacement=Path.Combine(root,"replaced.private-owner.lua");OwnerIdentity.Open(replacement);File.Copy(clientPath,replacement,true);
+                Reject<InvalidDataException>(()=>OwnerIdentity.Open(replacement),"unannounced replacement of an existing ownership key is refused");
 
                 string token=null,oldEpoch=null,world=Guid.NewGuid().ToString("N");
                 using(var relay=new Relay(hostKey))

@@ -41,6 +41,8 @@ namespace MPFever
             // replacing an already existing profile. A corrupt profile never regenerates.
             using (var lease = new FileStream(path + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
             {
+                string marker=path+".owner";
+                if (!File.Exists(path) && File.Exists(marker)) throw new InvalidDataException("Ownership private key is missing; restore its backup instead of creating another player");
                 if (File.Exists(path))
                 {
                     using (var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
@@ -56,6 +58,7 @@ namespace MPFever
                             // Validate private/public consistency before issuing any proof.
                             var nonce = NewNonce(); var proof = identity.Sign("profile-check", nonce, identity.Owner);
                             if (Verify(identity.PublicTable(), proof, "profile-check", nonce, identity.Owner) != identity.Owner) throw new InvalidDataException("Inconsistent ownership private key");
+                            CheckMarker(marker,identity.Owner);
                             return identity;
                         }
                     }
@@ -71,10 +74,26 @@ namespace MPFever
                     var bytes = Wire.Utf8.GetBytes(content.ToString());
                     using (var f = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { f.Write(bytes,0,bytes.Length); f.Flush(true); }
                     File.Move(tmp,path); // No overwrite of an existing private identity.
+                    CheckMarker(marker,created.Owner);
                 }
                 finally { if (File.Exists(tmp)) File.Delete(tmp); }
                 return created;
             }
+        }
+        static void CheckMarker(string path,string owner)
+        {
+            if(File.Exists(path))
+            {
+                using(var file=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.Read))
+                {
+                    if(file.Length!=64)throw new InvalidDataException("Invalid ownership profile marker");
+                    using(var reader=new StreamReader(file,Wire.Utf8,false))
+                        if(reader.ReadToEnd()!=owner)throw new InvalidDataException("Ownership key changed unexpectedly; restore the original profile backup");
+                }
+                return;
+            }
+            var bytes=Wire.Utf8.GetBytes(owner);
+            using(var file=new FileStream(path,FileMode.CreateNew,FileAccess.Write,FileShare.None)){file.Write(bytes,0,bytes.Length);file.Flush(true);}
         }
         static byte[] Part(Dictionary<object,object> t, string name, int length)
         {
