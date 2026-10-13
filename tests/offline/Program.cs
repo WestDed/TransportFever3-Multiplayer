@@ -26,9 +26,12 @@ namespace MPFever
         {
             try
             {
+#if NET8_0_OR_GREATER
                 if(args.Length==1 && args[0]=="--bench") return TcpBenchmark.Run();
+#endif
                 NetworkTests();
                 HandshakeTests();
+                OwnershipTests();
                 SnapshotTests();
                 IdentityTests();
                 SchemaTests();
@@ -114,15 +117,17 @@ namespace MPFever
                 relay.Start(0);
                 using (var c = new TcpClient("127.0.0.1", relay.Port))
                 {
+                    var reader=RawChallenge(c,out var challenge);
                     var b = Wire.Encode(Msg.Make("chat", "spoof")); c.GetStream().Write(b,0,b.Length);
                     c.ReceiveTimeout = 5000;
-                    Check(Msg.Parse(new BoundedLineReader(c.GetStream()).ReadLine(5000)).Kind=="reject" && joined == 0 && received == 0, "message before join rejected without dispatch");
+                    Check(Msg.Parse(reader.ReadLine(5000)).Kind=="reject" && joined == 0 && received == 0, "message before join rejected without dispatch");
                 }
                 using (var c = new TcpClient("127.0.0.1", relay.Port))
                 {
+                    var reader=RawChallenge(c,out var challenge);
                     var b = Wire.Encode(Msg.Make("join", "old")); c.GetStream().Write(b,0,b.Length);
                     c.ReceiveTimeout = 5000;
-                    Check(new BoundedLineReader(c.GetStream()).ReadLine().StartsWith("reject\t"), "old protocol receives explicit rejection");
+                    Check(reader.ReadLine().StartsWith("reject\t"), "old protocol receives explicit rejection");
                     Check(joined == 0, "old client never joins");
                 }
             }
@@ -137,7 +142,8 @@ namespace MPFever
                 using(var raw=new TcpClient("127.0.0.1",relay.Port))
                 {
                     raw.ReceiveBufferSize=1024;
-                    var join=Wire.Encode(Msg.Make("join","slow","{[\"protocol\"]="+Wire.Version+"}"));raw.GetStream().Write(join,0,join.Length);
+                    var reader=RawChallenge(raw,out var challenge);
+                    var join=SignedJoin(challenge,OwnerIdentity.Create(),"slow");raw.GetStream().Write(join,0,join.Length);
                     Wait(()=>slow!=null,"real TCP slow peer joined");
                     bool full=false;
                     var large=Msg.Make("chatmsg","Host","{[\"text\"]=\""+new string('a',512*1024)+"\"}");
