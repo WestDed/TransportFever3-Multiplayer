@@ -63,7 +63,7 @@ end
 --  2. else (not for the host) the company of that Steam account other than the savegame's (the player changed its name), when there
 --     is exactly one (two games of one PC share the account: a test setup);
 -- nil when the player has no company yet.
-function CO.match(reg, key, sid, isHost)
+local function legacyMatch(reg, key, sid, isHost)
 	if not reg then return nil end
 	for _, c in ipairs(reg.list) do
 		if c.key == key and key ~= "" and (sid == nil or c.sid == nil or c.sid == sid) then return c end
@@ -80,29 +80,77 @@ function CO.match(reg, key, sid, isHost)
 	return nil
 end
 
--- A player is placed: its company (kept from an earlier visit, see CO.match), the savegame's company when it is the host, or a new
--- one. Returns the company and whether it is new (its player entity must be created).
-function CO.join(reg, key, name, isHost, newName, sid)
-	local mine = CO.match(reg, key, sid, isHost)
-	if mine then
-		-- (a new name for a known account: the company follows it)
-		if mine.key ~= key then mine.key = key end
-		if sid and not mine.sid then mine.sid = sid end
-		return mine, false
+local function validOwner(owner)
+	return type(owner) == "string" and #owner == 64 and owner:match("^[0-9a-f]+$") ~= nil
+end
+CO.validOwner = validOwner
+
+function CO.match(reg, key, sid, isHost, owner)
+	if not reg then return nil end
+	if owner == nil then
+		if reg.ownershipVersion == 2 then return nil end
+		return legacyMatch(reg, key, sid, isHost)
 	end
-	local first = reg.list[1]
-	if isHost then
-		-- the savegame's own company belongs to whoever hosts it
-		first.key = key
-		first.sid = sid
-		return first, false
+	if not validOwner(owner) then return nil end
+	local found
+	for _, c in ipairs(reg.list) do
+		if c.owner == owner then
+			if found then error("ambiguous permanent company owner") end
+			found = c
+		end
 	end
-	-- (a name another account already has: the new company's key carries the account, so that both are told apart)
-	local k = key
-	if CO.byKey(reg, k) then k = key .. "@" .. tostring(sid or #reg.list + 1) end
-	local c = { id = #reg.list + 1, key = k, name = newName or name, color = freeColor(reg), sid = sid }
-	reg.list[#reg.list + 1] = c
-	return c, true
+	if found and ((isHost and found.id ~= 1) or (not isHost and found.id == 1)) then return nil end
+	return found
+end
+
+-- The owner fingerprint is public, but the launcher must prove its private key.
+-- Company id, entity, loans and balance stay attached to the same saved registry row.
+function CO.join(reg, key, name, isHost, newName, sid, owner, world)
+	if owner == nil then
+		if reg.ownershipVersion == 2 then error("permanent ownership key is required") end
+		-- Legacy API only for old pure-module callers; production always supplies owner.
+		local mine = legacyMatch(reg, key, sid, isHost)
+		if mine then if mine.key ~= key then mine.key=key end; if sid and not mine.sid then mine.sid=sid end; return mine,false end
+		if isHost then reg.list[1].key=key; reg.list[1].sid=sid; return reg.list[1],false end
+	else
+		if not validOwner(owner) then error("invalid permanent owner") end
+		local mine=CO.match(reg,key,sid,isHost,owner)
+		if mine then mine.key=key; mine.sid=sid; return mine,false end
+		for _, c in ipairs(reg.list) do if c.owner == owner then error("owner key belongs to another company role") end end
+		if isHost then
+			local first=reg.list[1]
+			if first.owner and first.owner ~= owner then error("host ownership profile changed; restore its backup") end
+			if not reg.world then
+				if type(world) ~= "string" or #world ~= 32 or not world:match("^[0-9a-f]+$") then error("host world id is required") end
+				reg.world=world
+			end
+			first.key=key; first.sid=sid; first.owner=owner; reg.ownershipVersion=2
+			return first,false
+		end
+		for _, c in ipairs(reg.list) do
+			if c.id ~= 1 and not c.owner and (c.key == key or sid and c.sid == sid) then
+				error("legacy company requires explicit assignment by host")
+			end
+		end
+		reg.ownershipVersion=2
+	end
+	local k=key
+	if CO.byKey(reg,k) then k=key .. "@" .. tostring(owner or sid or #reg.list+1) end
+	local c={id=#reg.list+1,key=k,name=newName or name,color=freeColor(reg),sid=sid,owner=owner}
+	reg.list[#reg.list+1]=c
+	return c,true
+end
+
+-- Host-only migration: a saved world id prevents a request for another map;
+-- an existing proven owner cannot be replaced by a legacy migration request.
+function CO.assignOwner(reg, id, owner, world, approver)
+	if not reg or reg.world ~= world or not validOwner(owner) or approver ~= reg.list[1].owner then error("invalid host ownership assignment") end
+	local c=CO.find(reg,id)
+	if not c or id == 1 then error("invalid legacy company") end
+	if c.owner and c.owner ~= owner then error("company already has a confirmed owner") end
+	for _, other in ipairs(reg.list) do if other.id ~= id and other.owner == owner then error("owner already has another company") end end
+	c.owner=owner; reg.ownershipVersion=2
+	return c
 end
 
 -- Canonical length-prefixed fields: separators in names/keys cannot alias another
@@ -114,9 +162,9 @@ local function signatureField(value)
 end
 function CO.signature(reg)
 	if not reg then return "none" end
-	local t = { "co2", signatureField(reg.mode), signatureField(reg.start), signatureField(#reg.list) }
+	local t = { "co3", signatureField(reg.mode), signatureField(reg.start), signatureField(#reg.list), signatureField(reg.ownershipVersion), signatureField(reg.world) }
 	for _, c in ipairs(reg.list) do
-		for _, key in ipairs({ "id", "key", "name", "color", "sid" }) do t[#t + 1] = signatureField(c[key]) end
+		for _, key in ipairs({ "id", "key", "name", "color", "sid", "owner" }) do t[#t + 1] = signatureField(c[key]) end
 	end
 	return table.concat(t)
 end

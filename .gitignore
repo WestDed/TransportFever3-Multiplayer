@@ -6,6 +6,11 @@ release/
 bin/
 tests/offline/bin/
 tests/offline/obj/
+tests/offline/bin48/
+tests/offline/obj48/
+*.private-owner.lua
+*.private-owner.lua.lock
+*.private-owner.lua.owner
 audit-results/
 
 # internal reverse-engineering tools and caches (derived from the game binary)

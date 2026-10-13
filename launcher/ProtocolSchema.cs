@@ -79,6 +79,7 @@ namespace MPFever
                 Text(args,"key",128); Text(args,"name",128); Text(args,"cname",256);
                 if (!(Get(args,"host") is bool) || Get(args,"mode") as string != "separate") throw new InvalidDataException("Invalid company join");
                 Integer(args,"start",0,MaxInteger);
+                if (!SnapshotLimits.Hex(Text(args,"owner",64),64)) throw new InvalidDataException("Invalid permanent owner id");
                 if (args.ContainsKey("sid") && !(Get(args,"sid") is string sid && sid.Length == 17 && sid.All(c => c >= '0' && c <= '9'))) throw new InvalidDataException("Invalid declared Steam id");
                 return;
             }
@@ -110,24 +111,30 @@ namespace MPFever
     // checked against that report; bindings survive socket replacement in this session.
     sealed class CompanyBindings
     {
-        sealed class Claim { public string Key, Sid; public int Company; }
-        sealed class Company { public int Id; public string Key, Sid; public bool Ready; }
+        sealed class Claim { public string Key, Sid, Owner; public int Company; }
+        sealed class Company { public int Id; public string Key, Sid, Owner; public bool Ready; }
         readonly object gate = new object();
         readonly Dictionary<int,Claim> claims = new Dictionary<int,Claim>();
         readonly Dictionary<int,int> owners = new Dictionary<int,int>();
         List<Company> roster = new List<Company>();
+        string world;
+        public string World { get { lock(gate) return world; } }
+        public string OwnershipSummary { get { lock(gate) return string.Join("; ",roster.Select(c=>c.Id + " " + c.Key + " owner=" + (c.Owner ?? "UNASSIGNED") + " ready=" + c.Ready)); } }
         public void Join(PeerIdentity peer, Dictionary<object, object> args, long start)
         {
             string key = ProtocolSchema.Text(args,"key",128);
             if ((bool)args["host"] || key != AsciiLower(peer.Name) || ProtocolSchema.Integer(args,"start") != start)
                 throw new InvalidDataException("Peer cannot claim the host role, another name or starting money");
             string sid = ProtocolSchema.Get(args,"sid") as string;
+            string permanent = ProtocolSchema.Text(args,"owner",64);
+            if (permanent != peer.Owner || !SnapshotLimits.Hex(permanent,64)) throw new InvalidDataException("Company owner must match the proven connection key");
             lock (gate)
             {
-                if (roster.Any(c => c.Id == 1 && (c.Key == key || sid != null && c.Sid == sid))) throw new InvalidDataException("Host company is reserved");
+                if (roster.Any(c => c.Id == 1 && c.Owner == permanent)) throw new InvalidDataException("Host company is reserved");
+                if (!roster.Any(c=>c.Owner==permanent) && roster.Any(c=>c.Id!=1 && c.Owner==null && (c.Key==key || sid!=null && c.Sid==sid))) throw new InvalidDataException("Legacy company requires explicit assignment by the host; name and Steam id are not ownership proof");
                 if (claims.TryGetValue(peer.Id,out var existing))
-                { if (existing.Key != key || existing.Sid != sid) throw new InvalidDataException("Company identity cannot change during a session"); return; }
-                var claim = new Claim {Key=key,Sid=sid};
+                { if (existing.Key != key || existing.Sid != sid || existing.Owner != permanent) throw new InvalidDataException("Company identity cannot change during a session"); return; }
+                var claim = new Claim {Key=key,Sid=sid,Owner=permanent};
                 Resolve(peer.Id,claim);
                 claims.Add(peer.Id,claim);
             }
@@ -136,6 +143,8 @@ namespace MPFever
         {
             var t = ProtocolSchema.Table(LuaLit.Parse(payload),"host roster");
             var rows = ProtocolSchema.Table(ProtocolSchema.Get(t,"list"),"company list");
+            string reportedWorld=ProtocolSchema.Get(t,"world") as string;
+            if (t.ContainsKey("world") && !SnapshotLimits.Hex(reportedWorld,32)) throw new InvalidDataException("Invalid world ownership scope");
             if (rows.Count > 4096) throw new InvalidDataException("Company roster too large");
             var next = new List<Company>(); var ids = new HashSet<int>();
             foreach (var row in rows.Values)
@@ -144,18 +153,21 @@ namespace MPFever
                 int id = (int)ProtocolSchema.Integer(r,"id",1,4096);
                 string key = ProtocolSchema.Get(r,"key") as string;
                 if (key == null || key.Length > 128 || !ids.Add(id) || !(ProtocolSchema.Get(r,"ready") is bool ready)) throw new InvalidDataException("Invalid company roster row");
-                next.Add(new Company { Id=id,Key=key,Sid=ProtocolSchema.Get(r,"sid") as string,Ready=ready });
+                string owner=ProtocolSchema.Get(r,"owner") as string;
+                if (r.ContainsKey("owner") && !SnapshotLimits.Hex(owner,64)) throw new InvalidDataException("Invalid owner in host roster");
+                next.Add(new Company { Id=id,Key=key,Sid=ProtocolSchema.Get(r,"sid") as string,Owner=owner,Ready=ready });
             }
             lock (gate)
             {
                 roster = next;
+                world = reportedWorld;
                 foreach (var entry in claims) Resolve(entry.Key,entry.Value);
             }
         }
         void Resolve(int peer, Claim claim)
         {
-            var exact = roster.Where(c=>c.Ready && c.Key == claim.Key && (c.Sid == null || c.Sid == claim.Sid)).ToArray();
-            var candidates = exact.Length > 0 ? exact : roster.Where(c=>c.Ready && claim.Sid != null && c.Sid == claim.Sid && c.Id != 1).ToArray();
+            var candidates = roster.Where(c=>c.Ready && c.Owner==claim.Owner).ToArray();
+            if (candidates.Length > 1) throw new InvalidDataException("Ambiguous permanent company owner");
             if (candidates.Length != 1) return;
             int co = candidates[0].Id;
             if (co == 1 || owners.TryGetValue(co,out var owner) && owner != peer) throw new InvalidDataException("Company is already bound to another session identity");
@@ -167,10 +179,21 @@ namespace MPFever
             int co = (int)ProtocolSchema.Integer(action,"co",2,4096);
             lock (gate)
             {
-                if (!claims.TryGetValue(peer.Id,out var claim) || claim.Company != co || !roster.Any(c=>c.Id == co && c.Ready)) throw new InvalidDataException("Company claim is not confirmed by the host");
+                if (!claims.TryGetValue(peer.Id,out var claim) || claim.Owner != peer.Owner || claim.Company != co || !roster.Any(c=>c.Id == co && c.Ready && c.Owner == peer.Owner)) throw new InvalidDataException("Company claim is not confirmed by the host");
             }
             ProtocolSchema.CheckPlayerReferences(ProtocolSchema.Table(ProtocolSchema.Get(action,"args"),"args"),co);
         }
         public static string AsciiLower(string s) => new string(s.Select(c=>c >= 'A' && c <= 'Z' ? (char)(c+32) : c).ToArray());
+        public void ValidateAssignment(Dictionary<object,object> request)
+        {
+            int co=(int)ProtocolSchema.Integer(request,"id",2,4096);
+            string owner=ProtocolSchema.Text(request,"owner",64), requestedWorld=ProtocolSchema.Text(request,"world",32);
+            if(request.Count!=4 || !SnapshotLimits.Hex(owner,64) || !SnapshotLimits.Hex(requestedWorld,32) || !SnapshotLimits.Hex(ProtocolSchema.Text(request,"request",32),32)) throw new InvalidDataException("Invalid local ownership assignment");
+            lock(gate)
+            {
+                var c=roster.SingleOrDefault(r=>r.Id==co);
+                if(world==null || world!=requestedWorld || c==null || !c.Ready || c.Owner!=null && c.Owner!=owner || roster.Any(r=>r.Id!=co && r.Owner==owner)) throw new InvalidDataException("Ownership assignment does not match this world's unclaimed company");
+            }
+        }
     }
 }

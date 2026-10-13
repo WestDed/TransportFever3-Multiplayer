@@ -1,6 +1,6 @@
 # План разработки и критерии готовности
 
-Основа — существующий MPFever, не переписывание с нуля. PR #2–#6 закрыты слиянием; [PR #7](https://github.com/WestDed/TransportFever3-Multiplayer/pull/7) собирает принятые исправления прямо в main. Main меняет только заказчик после review; следующие задачи — отдельной веткой от актуальной main с PR в main. Сроки до доступа к движку не обещаем.
+Основа — существующий MPFever, не переписывание с нуля. PR #7 объединён в main 47604fbb; [PR #8](https://github.com/WestDed/TransportFever3-Multiplayer/pull/8) добавляет постоянного владельца и net48 execution. Main меняет только заказчик после review; следующие задачи — отдельной веткой от актуальной main с PR в main. Сроки до доступа к движку не обещаем.
 
 ## Этап 0 — аудит
 
@@ -12,7 +12,9 @@
 
 Критерии этой offline части: suite и build проходят на точном PR head; нет новых неожиданных failures; malformed/old epoch/duplicate/gap/corruption дают ограниченный отказ; slow peer не блокирует healthy broadcast; torn journal tail восстанавливается; failed recovery не допускает resume. Нагрузочные JSON сохраняются без game claims.
 
-**Весь этап 1 ещё не закрыт.** Остаются: confirmed initial/межсессионная identity и migration без доверия имени/sid; полные engine command/ref/price schemas; actual central replay/epoch cutover; freeze tools/drain callbacks и save/frontier atomicity. Это не следует скрывать зелёным CI. Исследование engine API и подтверждение этих переходов требует установленной игры; проект не объявляется ready.
+PR #8 реализует межсессионный owner по persistent private key и host-only legacy migration без доверия имени/sid; включает actual Framework runtime tests. Criterion: после разрушения endpoints/session maps повторное чтение key и saved registry восстанавливает тот же co; replay/foreign key/token/ambiguous owner/corrupt profile отказывают; restored company не получает стартовый капитал снова. Engine save/restart пока NOT RUN.
+
+**Весь этап 1 ещё не закрыт.** Остаются: initial host admission/TLS/server authentication и игровое подтверждение owner migration/save-load; полные engine command/ref/price schemas; actual central replay/epoch cutover; freeze tools/drain callbacks и save/frontier atomicity. Это не следует скрывать зелёным CI. Исследование engine API и подтверждение этих переходов требует установленной игры; проект не объявляется ready.
 
 ## Этап 2 — минимальный игровой стенд
 

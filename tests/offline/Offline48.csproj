@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <OutputPath>bin48/</OutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="TcpBenchmark.cs;obj/**;bin/**;obj48/**;bin48/**" />
+    <Compile Include="../../launcher/Core.cs" Link="Core.cs" />
+    <Compile Include="../../launcher/NetworkIO.cs" Link="NetworkIO.cs" />
+    <Compile Include="../../launcher/Snapshots.cs" Link="Snapshots.cs" />
+    <Compile Include="../../launcher/PeerIdentity.cs" Link="PeerIdentity.cs" />
+    <Compile Include="../../launcher/OwnerIdentity.cs" Link="OwnerIdentity.cs" />
+    <Compile Include="../../launcher/ProtocolSchema.cs" Link="ProtocolSchema.cs" />
+    <Compile Include="../../launcher/CommandJournal.cs" Link="CommandJournal.cs" />
+  </ItemGroup>
+</Project>

@@ -17,7 +17,7 @@ Player documentation is in [`docs/`](docs/): [README](docs/README.txt), [INSTALL
 
 - **Two ways to play**, chosen by the host:
   - "One company for everybody": shared money, vehicles and lines.
-  - "One company per player": own money, roads, stations, depots, vehicles, lines, loans and contracts, and a colour per company. The company belongs to the player's Steam account and is found again after a reconnection.
+  - "One company per player": own money, roads, stations, depots, vehicles, lines, loans and contracts, and a colour per company. The current branch binds company ownership to a persistent private-key profile; see docs/STAGE1_PERSISTENT_OWNERSHIP.md.
 - **Everything is replicated exactly** in every game, at the same game time:
   - roads, tracks, tram tracks, signals, stops, stations, depots, buildings;
   - terrain edits, trees of the brush, the bulldozer;
@@ -116,7 +116,7 @@ python tests\test_lang.py
 python tests\test_lockstep.py
 ```
 
-The offline harness now loads the current companies module and runs the existing scenarios on Linux and Windows. Run the full regression suite with `python -m unittest discover -s tests -p "test_*.py" -v` after installing `tests/requirements-offline.txt`. The raw language check still reports three audited missing keys; `python tests/test_lang_baseline.py --report` rejects any new translation defect. One known registry-signature failure (AUD-04) remains explicitly expected. See [the stage 1 report](docs/STAGE1_TESTS_DECODER.md) for limits and evidence; offline success does not verify the game engine.
+The offline harness runs the complete original lockstep scenarios and strict parser/company/ownership regressions. Install tests/requirements-offline.txt and run `python -m unittest discover -s tests -p "test_*.py" -v`. No expected failures or translation gaps are exempt. C# real TCP/profile/file tests run on net8 Linux/Windows and on the production net48 runtime in Windows CI. See [persistent ownership](docs/STAGE1_PERSISTENT_OWNERSHIP.md) for private-key backup, legacy migration and the limits of these tests. No game engine was executed.
 
 The real tests run two games on one PC: `MPFever.exe --autotest <savegame>`, with scenarios chosen by environment variables. See [RESEARCH](docs/RESEARCH.md) for the determinism test and the census.
 
@@ -124,8 +124,8 @@ The real tests run two games on one PC: `MPFever.exe --autotest <savegame>`, wit
 
 Experimental (0.3.6). Supported game builds:
 
-- **40420**, the current Steam version: supported, with the Lua seed fix.
-- **40408**: supported, but the Lua seed fix is only applied on 40420.
+- **40420**: upstream native addresses configured, with the Lua seed fix.
+- **40408**: upstream native addresses configured, but the Lua seed fix is only applied on 40420.
 
 See [`docs/ROADMAP.txt`](docs/ROADMAP.txt).
 

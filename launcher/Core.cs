@@ -673,6 +673,10 @@ namespace MPFever
         TcpListener listener;
         readonly List<Peer> peers = new List<Peer>();
         readonly PeerIdentities identities = new PeerIdentities();
+        readonly OwnerIdentity hostIdentity;
+        public readonly string Epoch = Guid.NewGuid().ToString("N");
+        public string HostOwner => hostIdentity.Owner;
+        public Relay(OwnerIdentity identity = null) { hostIdentity = identity ?? OwnerIdentity.Create(); }
         int nextId = 1;
         volatile bool stop;
 
@@ -721,6 +725,12 @@ namespace MPFever
             try
             {
                 var r = new BoundedLineReader(p.Tcp.GetStream());
+                string nonce = OwnerIdentity.NewNonce();
+                var challenge = Msg.Make("challenge", "MPFever", "{[\"protocol\"]=" + Wire.Version + ",[\"epoch\"]=" + LuaLit.Quote(Epoch) + ",[\"nonce\"]=" + LuaLit.Quote(nonce) + ",[\"host\"]=" + LuaLit.Quote(HostOwner) + "}");
+                // No application writer can target a pending peer. Write the small
+                // challenge here before reading join; rejection cannot interleave it.
+                var challengeBytes=Wire.Encode(challenge);
+                p.Tcp.GetStream().Write(challengeBytes,0,challengeBytes.Length);
                 string line;
                 while ((line = r.ReadLine(p.Joined ? -1 : Wire.HandshakeMs, p.Joined ? (int?)null : Wire.MaxHandshakeBytes)) != null)
                 {
@@ -734,8 +744,9 @@ namespace MPFever
                         {
                             throw new InvalidDataException("Incompatible protocol or repeated join; install the same MPFever build as the host");
                         }
-                        if (join.Keys.Any(k => !(k is string key) || key != "protocol" && key != "resume"))
+                        if (join.Keys.Any(k => !(k is string key) || key != "protocol" && key != "resume" && key != "public" && key != "proof"))
                             throw new InvalidDataException("Unknown join field");
+                        string owner = OwnerIdentity.Verify(ProtocolSchema.Table(ProtocolSchema.Get(join,"public"),"ownership public key"), ProtocolSchema.Text(join,"proof",344), Epoch, nonce, HostOwner);
                         string resume = null;
                         if (join.TryGetValue("resume", out var rv))
                         {
@@ -745,14 +756,14 @@ namespace MPFever
                         lock(peers)
                         {
                             if (stop) throw new ObjectDisposedException(nameof(Relay));
-                            if(resume==null && peers.Count(o=>o.Joined)>=Wire.MaxPeers)throw new InvalidDataException("Session player capacity reached");
-                            p.Identity = identities.Join(Sanitize(m.From), resume);
+                            if(resume==null && peers.Count(o=>o.Joined)>=Wire.MaxPeers && !peers.Any(o=>o.Joined && o.Identity.Owner==owner))throw new InvalidDataException("Session player capacity reached");
+                            p.Identity = identities.Join(Sanitize(m.From), resume, owner);
                             if(peers.Count(o=>o.Joined)>=Wire.MaxPeers && !peers.Any(o=>o.Joined && o.Identity==p.Identity))throw new InvalidDataException("Session player capacity reached");
                             p.Name = p.Identity.Name + "#" + p.Identity.Id;
                             // Queue the acceptance before publishing this peer to Broadcast.
                             // The same lock protects the joined-peer snapshot; the socket writer
                             // remains independent and never blocks this lock on network I/O.
-                            var accepted = Msg.Make("connection", "MPFever", "{[\"token\"]=" + LuaLit.Quote(p.Identity.Token) + ",[\"you\"]=" + LuaLit.Quote(p.Name) + "}");
+                            var accepted = Msg.Make("connection", "MPFever", "{[\"token\"]=" + LuaLit.Quote(p.Identity.Token) + ",[\"you\"]=" + LuaLit.Quote(p.Name) + ",[\"owner\"]=" + LuaLit.Quote(owner) + "}");
                             if (!p.Outbox.Enqueue(accepted)) throw new IOException("Cannot queue connection acceptance");
                             p.Joined = true;
                             DropOlder(p);
@@ -840,6 +851,8 @@ namespace MPFever
         public event Action<Msg> Received;
         public event Action Closed;
         public string ResumeToken { get; set; }
+        public string ResumeEpoch { get; set; }
+        public OwnerIdentity Identity { get; set; } = OwnerIdentity.Create();
 
         public void Connect(string host, int port, string name)
         {
@@ -857,12 +870,21 @@ namespace MPFever
                 }
                 connect.GetAwaiter().GetResult(); // Preserve the original socket exception.
                 outbox = new BoundedOutbox(tcp.GetStream(), () => tcp.Close(), "Client send");
-                Send(Msg.Make("join", name, "{[\"protocol\"]=" + Wire.Version + (ResumeToken == null ? "" : ",[\"resume\"]=" + LuaLit.Quote(ResumeToken)) + "}"));
                 var reader=new BoundedLineReader(tcp.GetStream());
+                var challenge = Msg.Parse(reader.ReadLine(Wire.HandshakeMs, Wire.MaxHandshakeBytes));
+                if (challenge == null || challenge.Kind != "challenge") throw new InvalidDataException("Host did not send an ownership challenge");
+                var ch = ProtocolSchema.Table(LuaLit.Parse(challenge.Payload),"ownership challenge");
+                if (ProtocolSchema.Integer(ch,"protocol",Wire.Version,Wire.Version) != Wire.Version || ch.Count != 4) throw new InvalidDataException("Incompatible ownership protocol");
+                string epoch=ProtocolSchema.Text(ch,"epoch",32), nonce=ProtocolSchema.Text(ch,"nonce",64), hostOwner=ProtocolSchema.Text(ch,"host",64);
+                if (!SnapshotLimits.Hex(epoch,32) || !SnapshotLimits.Hex(nonce,64) || !SnapshotLimits.Hex(hostOwner,64)) throw new InvalidDataException("Malformed ownership challenge");
+                if (ResumeEpoch != null && ResumeEpoch != epoch) ResumeToken = null; // Host restarted: prove the same persistent key in its new session.
+                ResumeEpoch = epoch;
+                string proof=Identity.Sign(epoch,nonce,hostOwner);
+                Send(Msg.Make("join", name, "{[\"protocol\"]=" + Wire.Version + ",[\"public\"]=" + Identity.PublicTable() + ",[\"proof\"]=" + LuaLit.Quote(proof) + (ResumeToken == null ? "" : ",[\"resume\"]=" + LuaLit.Quote(ResumeToken)) + "}"));
                 var first=Msg.Parse(reader.ReadLine(Wire.HandshakeMs, Wire.MaxHandshakeBytes));
                 if(first==null || first.Kind!="connection")throw new InvalidDataException(first?.Payload ?? "Host did not accept the connection");
                 var info=LuaLit.Parse(first.Payload) as Dictionary<object,object>;
-                if(info==null || !info.TryGetValue("token",out var tv) || !(tv is string token) || !SnapshotLimits.Hex(token,64) || !(ProtocolSchema.Get(info,"you") is string you) || you.Length>64)
+                if(info==null || !info.TryGetValue("token",out var tv) || !(tv is string token) || !SnapshotLimits.Hex(token,64) || !(ProtocolSchema.Get(info,"you") is string you) || you.Length>64 || ProtocolSchema.Get(info,"owner") as string != Identity.Owner)
                     throw new InvalidDataException("Invalid connection credential");
                 ResumeToken=token;
                 Received?.Invoke(first);

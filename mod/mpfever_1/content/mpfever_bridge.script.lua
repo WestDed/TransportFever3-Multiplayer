@@ -763,14 +763,16 @@ local function coApply(st, a)
 		if not ok then log("companies: loan event failed: " .. tostring(err)) end
 		return
 	end
+	if a.fn == "mpfCoAssign" then CO.assignOwner(st.co,p.id,p.owner,p.world,p.approver); return end
 	if a.fn ~= "mpfCoJoin" or p.mode ~= "separate" then return end
+	if not CO.validOwner(p.owner) then error("company join without permanent owner is refused") end
 	if not st.co then
 		st.co = CO.new("separate", api.engine.util.getPlayer(), tonumber(p.start))
 		local r, g, b = CO.rgb(1)
 		pcall(function() api.cmd.sendCommand(api.cmd.makeEntitySetColorCmd(st.co.canon, api.type.Vec3f.new(r, g, b))) end)
 		log("companies: registry created, the savegame's company is player entity " .. tostring(st.co.canon))
 	end
-	local c, isNew = CO.join(st.co, tostring(p.key), tostring(p.name), p.host == true, p.cname, p.sid)
+	local c, isNew = CO.join(st.co, tostring(p.key), tostring(p.name), p.host == true, p.cname, p.sid, p.owner, p.world)
 	log("companies: player '" .. tostring(p.key) .. "' plays company " .. c.id .. (isNew and " (new)" or " (known)"))
 	installSimPlayer(st)
 end
@@ -820,7 +822,7 @@ local function simApplyDue(state)
 					st.authOwn = st.authOwn or {}
 					st.authOwn[#st.authOwn + 1] = { n = a.n, auth = okA and auth or nil }
 					while #st.authOwn > 10 do table.remove(st.authOwn, 1) end
-				elseif a.fn == "mpfCoJoin" then
+				elseif (a.fn == "mpfCoJoin" or a.fn == "mpfCoAssign") then
 					local okc, errc = pcall(coApply, st, a)
 					if not okc then log("companies: " .. tostring(a.fn) .. " failed: " .. tostring(errc)) end
 				elseif coIsLoanEvent(st, a) then
@@ -1831,8 +1833,23 @@ local H = {}
 
 H.welcome = function(from, p)
 	if p.you then G.me = p.you end
+	if CO.validOwner(p.owner) then G.owner = p.owner end
+	if C.ROLE == "host" and p.world then G.ownerWorld = p.world end
 	G.connected = true
 	log("connected to session as " .. tostring(G.me) .. " (" .. tostring(p.role) .. ")")
+end
+
+H.co_assign_owner = function(from, p)
+	if C.ROLE ~= "host" or not G.co or G.co.world ~= p.world or not CO.validOwner(G.owner) then return end
+	local target=CO.find(G.co,p.id)
+	if not target or target.id == 1 or target.owner and target.owner ~= p.owner then return end
+	G.oseq=G.oseq+1
+	local now=gameTime()
+	local paused=G.session.pauseAt ~= nil and now >= G.session.pauseAt and gameSpeed() == 0
+	local a={fn="mpfCoAssign",origin=G.me,oseq=G.oseq,uid=G.me .. ":" .. G.oseq,native=true,
+		at=paused and pausedStamp(now) or stampFor(now),paused=paused or nil,
+		args={id=p.id,owner=p.owner,world=p.world,approver=G.owner}}
+	send("act",a); a.recvFrame=G.frames; G.nativeQueue[#G.nativeQueue+1]=a
 end
 
 H.chat = function(from, p) log("chat " .. tostring(from) .. ": " .. tostring(p.text)) end
@@ -2877,7 +2894,7 @@ local function nativeHoldAt()
 	if (G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0) or G.terrainBusy or G.coBusy then return now end
 	-- (a player joining waits until the others announced at the same time have arrived too, see runNativeReplays)
 	for _, a in ipairs(G.nativeQueue or {}) do
-		if a.fn == "mpfCoJoin" and a.at <= now and G.frames - (a.recvFrame or 0) < JOIN_GATHER then return now end
+		if (a.fn == "mpfCoJoin" or a.fn == "mpfCoAssign") and a.at <= now and G.frames - (a.recvFrame or 0) < JOIN_GATHER then return now end
 	end
 	for _, a in ipairs(G.nativeQueue or {}) do
 		if a.at > now then local t = approach(a.at) if m == nil or t < m then m = t end end
@@ -3178,7 +3195,14 @@ local function pumpCompanies()
 	local b = G.coBusy
 	if not b then return end
 	local age = G.frames - b.frame
-	local c = G.co and CO.match(G.co, b.a.args.key, b.a.args.sid, b.a.args.host == true)
+	local c = G.co and CO.match(G.co, b.a.args.key, b.a.args.sid, b.a.args.host == true, b.a.args.owner)
+	if b.a.fn == "mpfCoAssign" then
+		if not b.sent then b.sent=true; toSim("co_apply",b.a) end
+		local target=G.co and CO.find(G.co,b.a.args.id)
+		if target and target.owner==b.a.args.owner then G.coBusy=nil
+		elseif age > 240 then log("companies: owner assignment did not apply"); G.coBusy=nil end
+		return
+	end
 	if b.phase == "apply" then
 		if not b.sent then b.sent = true; toSim("co_apply", b.a) end
 		if c then
@@ -3257,7 +3281,7 @@ local function runNativeReplays()
 	table.sort(G.nativeQueue, before)
 	local keep = {}
 	for _, a in ipairs(G.nativeQueue) do
-		if a.at <= now and ((a.fn == "terrainEdit" and G.terrainBusy) or (a.fn == "mpfCoJoin" and (G.coBusy or G.frames - (a.recvFrame or 0) < JOIN_GATHER))) then
+		if a.at <= now and ((a.fn == "terrainEdit" and G.terrainBusy) or ((a.fn == "mpfCoJoin" or a.fn == "mpfCoAssign") and (G.coBusy or G.frames - (a.recvFrame or 0) < JOIN_GATHER))) then
 			keep[#keep + 1] = a      -- the previous one is still being handed to the engine
 		elseif a.at <= now then
 			if a.at < now then
@@ -3268,7 +3292,7 @@ local function runNativeReplays()
 			local okr, errr
 			if a.fn == "terrainEdit" then okr, errr = pcall(withActor, PL(a), replayTerrain, a)
 			elseif a.fn == "assetBuild" then okr, errr = pcall(withActor, PL(a), replayAssets, a)
-			elseif a.fn == "mpfCoJoin" then G.coBusy = { a = a, phase = "apply", frame = G.frames }; okr = true
+			elseif (a.fn == "mpfCoJoin" or a.fn == "mpfCoAssign") then G.coBusy = { a = a, phase = "apply", frame = G.frames }; okr = true
 			else okr, errr = pcall(withActor, PL(a), replayNative, a, 1) end
 			if not okr then log("NATIVE REPLAY " .. tostring(a.uid) .. " failed: " .. tostring(errr)) end
 		else
@@ -3680,7 +3704,7 @@ local function runPausedActions()
 				G.authOwn = G.authOwn or {}
 				G.authOwn[a.n] = okA and auth or nil
 				send("sync_hash", { n = a.n, parts = simHash(G.simTerrainSig, G.co), cost = 0, auth = okA and auth or nil })
-			elseif a.fn == "mpfCoJoin" or coIsLoanEvent({ co = G.co }, a) then
+			elseif (a.fn == "mpfCoJoin" or a.fn == "mpfCoAssign") or coIsLoanEvent({ co = G.co }, a) then
 				toSim("co_apply", a)
 			else
 				if C.makesProposal(a.fn) then toSim("replaying", {}) end
@@ -6918,7 +6942,7 @@ end
 
 local coCtlSeq = 0
 local function coGui(st)
-	if G.cmode ~= "separate" then return end
+	if G.cmode ~= "separate" or not CO.validOwner(G.owner) then return end
 	R.CO = st.co
 	if not G.gpWrapped then
 		G.gpWrapped = true
@@ -6931,12 +6955,14 @@ local function coGui(st)
 		local lines = { "me	" .. tostring(G.myCo or 0) }
 		for _, c in ipairs(st.co.list) do if c.ent then lines[#lines + 1] = c.id .. "	" .. c.ent .. "	" .. tostring(c.name or ""):gsub("[%c]", " ") end end
 		local txt = table.concat(lines, NL) .. NL
-		if txt ~= G.coFile then
+		local rosterSig = CO.signature(st.co)
+		if txt ~= G.coFile or rosterSig ~= G.coRosterSig then
+			G.coRosterSig = rosterSig
 			G.coFile = txt
 			if C.ROLE == "host" then
 				local rows = {}
-				for _, c in ipairs(st.co.list) do rows[#rows + 1] = { id = c.id, key = c.key or "", sid = c.sid, ready = c.ent ~= nil } end
-				send("co_roster", { list = rows })
+				for _, c in ipairs(st.co.list) do rows[#rows + 1] = { id = c.id, key = c.key or "", sid = c.sid, owner = c.owner, ready = c.ent ~= nil } end
+				send("co_roster", { list = rows, world = st.co.world })
 			end
 			local f = C.IO.open(C.DIR .. BS .. "companies.txt", "wb")
 			if f then f:write(txt); f:close() end
@@ -6975,7 +7001,7 @@ local function coGui(st)
 		local sid = coMySid()
 		local a = { fn = "mpfCoJoin", origin = G.me, oseq = G.oseq, uid = G.me .. ":" .. G.oseq,
 			at = paused and pausedStamp(now) or stampFor(now), paused = paused or nil,
-			args = { key = name:lower(), name = name, host = (C.ROLE == "host"), mode = "separate", start = G.coStart, sid = sid,
+			args = { key = name:lower(), name = name, host = (C.ROLE == "host"), mode = "separate", start = G.coStart, sid = sid, owner = G.owner, world = C.ROLE == "host" and G.ownerWorld or nil,
 				cname = C.Tf("Entreprise %s", "%s Company", name) } }
 		a.native = true
 		send("act", a)
@@ -6986,7 +7012,7 @@ local function coGui(st)
 	-- which company is this game's: its interface and tools act as that company from now on
 	local reg = st.co
 	if reg then
-		local c = CO.match(reg, coMyName():lower(), coMySid(), C.ROLE == "host")
+		local c = CO.match(reg, coMyName():lower(), coMySid(), C.ROLE == "host", G.owner)
 		-- the other companies' player entities (the native module empties their money popups, see ClearOthers)
 		local others = {}
 		for _, o in ipairs(reg.list) do if o.ent and c and o.ent ~= c.ent then others[#others + 1] = o.ent end end

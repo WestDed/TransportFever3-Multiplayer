@@ -34,6 +34,7 @@ namespace MPFever
                 two.Connect("127.0.0.1",relay.Port,"same");
                 Wait(() => two.ResumeToken != null && relay.Count == 2,"real TCP name collision keeps both connections");
                 Check(one.ResumeToken != two.ResumeToken && !oneClosed.IsSet && left == 0,"matching name cannot evict or reuse credential");
+                reconnected.Identity = one.Identity;
                 reconnected.ResumeToken = one.ResumeToken;
                 reconnected.Connect("127.0.0.1",relay.Port,"same");
                 Check(oneClosed.Wait(5000),"valid credential evicts only its old socket");
@@ -41,9 +42,10 @@ namespace MPFever
                 Check(relay.PeerNames().Contains(originalName) && left == 0,"stable identity survives replacement without false peerleft");
                 using (var forged = new TcpClient("127.0.0.1",relay.Port))
                 {
-                    var b = Wire.Encode(Msg.Make("join","same","{[\"protocol\"]="+Wire.Version+",[\"resume\"]=\""+new string('0',64)+"\"}"));
+                    var reader=RawChallenge(forged,out var challenge);
+                    var b=SignedJoin(challenge,OwnerIdentity.Create(),"same",new string('0',64));
                     forged.GetStream().Write(b,0,b.Length); forged.ReceiveTimeout = 5000;
-                    Check(Msg.Parse(new BoundedLineReader(forged.GetStream()).ReadLine(5000)).Kind=="reject","real TCP forged credential rejected before joining");
+                    Check(Msg.Parse(reader.ReadLine(5000)).Kind=="reject","real TCP forged credential rejected before joining");
                 }
                 Check(relay.PeerNames().Length == 2,"forged reconnect cannot remove actual players");
             }
@@ -56,7 +58,7 @@ namespace MPFever
                     Check(relay.Peers().Length==8,"eight authenticated player slots fill server");
                     using(var ninth=new Client())
                         Reject<InvalidDataException>(()=>ninth.Connect("127.0.0.1",relay.Port,"ninth"),"ninth distinct player rejected during Connect, not reported connected");
-                    using(var replacement=new Client{ResumeToken=clients[0].ResumeToken})
+                    using(var replacement=new Client{ResumeToken=clients[0].ResumeToken,Identity=clients[0].Identity})
                     {
                         replacement.Connect("127.0.0.1",relay.Port,"slot0");
                         Check(relay.Peers().Length==8 && replacement.ResumeToken==clients[0].ResumeToken,"full server admits authenticated replacement without ninth player");

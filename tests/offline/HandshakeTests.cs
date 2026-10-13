@@ -38,7 +38,6 @@ namespace MPFever
                 {
                     using (var socket = listener.AcceptTcpClient())
                     {
-                        new BoundedLineReader(socket.GetStream()).ReadLine(5000, Wire.MaxHandshakeBytes);
                         var bytes = Wire.Utf8.GetBytes(new string('x', Wire.MaxHandshakeBytes + 1));
                         socket.GetStream().Write(bytes, 0, bytes.Length);
                     }
@@ -88,6 +87,7 @@ namespace MPFever
                 using (var pending = new TcpClient("127.0.0.1", relay.Port))
                 {
                     Wait(() => relay.Count == 2, "pending TCP socket is accepted by listener");
+                    var pendingReader=RawChallenge(pending,out var pendingChallenge);
                     Check(relay.Peers().Length == 1, "pending socket has no joined-player authority");
                     relay.Broadcast(Msg.Make("chatmsg", "Host", "{[\"text\"]=\"private session data\"}"));
                     Check(delivered.Wait(5000), "joined peer receives normal session broadcast");
@@ -95,13 +95,13 @@ namespace MPFever
 
                     // Both messages fit in a single TCP write. After processing the
                     // join, the same reader must deliver the buffered next message.
-                    var join = Wire.Encode(Msg.Make("join", "pipelined", "{[\"protocol\"]=" + Wire.Version + "}"));
+                    var join=SignedJoin(pendingChallenge,OwnerIdentity.Create(),"pipelined");
                     var chat = Wire.Encode(Msg.Make("chat", "spoof", "{[\"text\"]=\"" + new string('я', 3000) + "\"}"));
                     var data = new byte[join.Length + chat.Length];
                     Buffer.BlockCopy(join, 0, data, 0, join.Length);
                     Buffer.BlockCopy(chat, 0, data, join.Length, chat.Length);
                     pending.GetStream().Write(data, 0, data.Length);
-                    var accepted = Msg.Parse(new BoundedLineReader(pending.GetStream()).ReadLine(5000, Wire.MaxHandshakeBytes));
+                    var accepted = Msg.Parse(pendingReader.ReadLine(5000, Wire.MaxHandshakeBytes));
                     Check(accepted != null && accepted.Kind == "connection", "acceptance is first frame after a pending socket joins");
                     Wait(() => dispatched == 1, "post-join pipelined frame larger than handshake cap is dispatched once");
                 }
@@ -122,10 +122,11 @@ namespace MPFever
                     using (var raw = new TcpClient("127.0.0.1", relay.Port))
                     {
                         Wait(() => relay.Count == 1, "malformed join socket accepted for validation");
+                        var reader=RawChallenge(raw,out var challenge);
                         relay.Broadcast(Msg.Make("session", "Host", "{[\"private\"]=true}"));
                         var data = Wire.Encode(Msg.Make("join", "attacker", payload));
                         raw.GetStream().Write(data, 0, data.Length);
-                        var rejection = Msg.Parse(new BoundedLineReader(raw.GetStream()).ReadLine(5000, Wire.MaxHandshakeBytes));
+                        var rejection = Msg.Parse(reader.ReadLine(5000, Wire.MaxHandshakeBytes));
                         Check(rejection != null && rejection.Kind == "reject", "malformed join sees only rejection, no session data");
                     }
                     Wait(() => relay.Count == 0, "rejected handshake releases reserved socket slot");
@@ -134,9 +135,10 @@ namespace MPFever
                 {
                     // Deliberately no newline: the 4 KiB ingress cap must reject
                     // before parsing or waiting for a full 4 MiB data frame.
+                    var reader=RawChallenge(oversized,out var challenge);
                     var bytes = Wire.Utf8.GetBytes("join\tlarge\t" + new string('x', Wire.MaxHandshakeBytes + 1));
                     oversized.GetStream().Write(bytes, 0, bytes.Length);
-                    var rejection = Msg.Parse(new BoundedLineReader(oversized.GetStream()).ReadLine(5000, Wire.MaxHandshakeBytes));
+                    var rejection = Msg.Parse(reader.ReadLine(5000, Wire.MaxHandshakeBytes));
                     Check(rejection != null && rejection.Kind == "reject", "real TCP oversized unfinished handshake rejected immediately");
                 }
                 Wait(() => relay.Count == 0, "oversized handshake releases socket slot");
@@ -165,10 +167,10 @@ namespace MPFever
                 broadcaster.Start();
                 try
                 {
-                    string token = null;
+                    string token = null; var permanent=OwnerIdentity.Create();
                     for (int i = 0; i < 32; i++)
                     {
-                        using (var client = new Client { ResumeToken = token })
+                        using (var client = new Client { ResumeToken = token, Identity = permanent })
                         {
                             int firstIsAcceptance = 0;
                             client.Received += m => Interlocked.CompareExchange(ref firstIsAcceptance, m.Kind == "connection" ? 1 : -1, 0);

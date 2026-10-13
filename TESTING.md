@@ -19,6 +19,8 @@
 
 Изоляция и пределы рукопожатия: [STAGE1_HANDSHAKE_ISOLATION](docs/STAGE1_HANDSHAKE_ISOLATION.md); результаты нового C# кода по точному head/run в PR #6.
 
+PR #8 расширяет suite постоянными key/owner/restart/migration сценариями и actual Windows .NET Framework 4.8 execution. Net8 проходит на Linux/Windows; net48 suite исполняет production RSA/TCP/file классы. Точные итоговые counts/head/run в PR #8; game NOT RUN. [Описание и backup](docs/STAGE1_PERSISTENT_OWNERSHIP.md).
+
 ## Воспроизведение без игры
 
 ```sh
@@ -30,7 +32,9 @@ dotnet run --project tests/offline/Offline.csproj --configuration Release
 dotnet run --project tests/offline/Offline.csproj --configuration Release -- --bench
 ```
 
-Windows: `./tests/test_lualit.ps1`; `cmd /c build.bat`; `./tests/verify_windows_build.ps1`. .NET 8 SDK — для console suite; VS C++/MSBuild/.NET 4.8 pack — production build. Нет continue-on-error, expectedFailure или разрешённых translation gaps. Любая новая неожиданная ошибка проваливает job; исправление тестовой среды должно быть отдельно объяснено, не замаскировано exemption.
+Windows: `dotnet build tests/offline/Offline48.csproj --configuration Release`, затем `tests/offline/bin48/net48/Offline48.exe`; `./tests/test_lualit.ps1`; `cmd /c build.bat`; `./tests/verify_windows_build.ps1`. .NET 8 SDK — для console suite; VS C++/MSBuild/.NET 4.8 pack — production build. Нет continue-on-error, expectedFailure или разрешённых translation gaps. Любая новая неожиданная ошибка проваливает job; исправление тестовой среды должно быть отдельно объяснено, не замаскировано exemption.
+
+Новая обязательная framework-components job исполняет те же assertions на целевом CLR. Первый прогон выявил 1024-bit CSP key несмотря на KeySize setter; исправлен provider/constructor, ограничения не ослаблялись. Нет игровых assertions о штатных PLAYER/JOURNAL: injected balance/loan/vehicle facts отмечены как fixture.
 
 Workflow запускается на PR, main, workflow_dispatch; obsolete run отменяется. Artifacts: translation reports, benchmark JSON, experimental ZIP, build-manifest (gameTested=false), native exports. Хранение исходников/документов — Git branches. Benchmark sampling/method/raw results — [STAGE1_OFFLINE_RECOVERY](docs/STAGE1_OFFLINE_RECOVERY.md).
 

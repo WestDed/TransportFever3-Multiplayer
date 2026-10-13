@@ -24,22 +24,23 @@ namespace MPFever
             Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("speed_req","Peer#1","{[\"speed\"]=3}")),"unsupported speed");
             Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("nat_cancel","Peer#1","{[\"origin\"]=\"spoof\",[\"id\"]=1}")),"forged native hold identity");
             Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("act","Peer#1",Act(fn:"makeScriptingSendEventCmd",args:"{[1]=\"script\",[2]=\"Company\",[3]=\"hack\",[4]={}}"))),"arbitrary scripting event");
-            var identities = new PeerIdentities(); var peer = identities.Join("Peer",null); var other = identities.Join("Other",null);
+            var identities = new PeerIdentities(); var peer = identities.Join("Peer",null,new string('a',64)); var other = identities.Join("Other",null,new string('b',64));
             var bindings = new CompanyBindings();
             var join = ProtocolSchema.Table(LuaLit.Parse("{[\"key\"]=\"peer\",[\"name\"]=\"Peer\",[\"host\"]=false,[\"mode\"]=\"separate\",[\"start\"]=2000000}"),"args");
+            join["owner"]=peer.Owner;
             var action = ProtocolSchema.ValidateClient(Msg.Make("act","Peer#1",Act()));
             Reject<InvalidDataException>(()=>bindings.Require(peer,action),"unbound peer cannot mutate company");
             bindings.Join(peer,join,2000000);
-            bindings.Report("{[\"list\"]={[1]={[\"id\"]=1,[\"key\"]=\"host\",[\"ready\"]=true},[2]={[\"id\"]=2,[\"key\"]=\"peer\",[\"ready\"]=false}}}");
+            bindings.Report("{[\"list\"]={[1]={[\"id\"]=1,[\"key\"]=\"host\",[\"ready\"]=true},[2]={[\"id\"]=2,[\"key\"]=\"peer\",[\"owner\"]=\""+peer.Owner+"\",[\"ready\"]=false}}}");
             Reject<InvalidDataException>(()=>bindings.Require(peer,action),"pending engine creation grants no authority");
-            bindings.Report("{[\"list\"]={[1]={[\"id\"]=1,[\"key\"]=\"host\",[\"ready\"]=true},[2]={[\"id\"]=2,[\"key\"]=\"peer\",[\"ready\"]=true}}}");
+            bindings.Report("{[\"list\"]={[1]={[\"id\"]=1,[\"key\"]=\"host\",[\"ready\"]=true},[2]={[\"id\"]=2,[\"key\"]=\"peer\",[\"owner\"]=\""+peer.Owner+"\",[\"ready\"]=true}}}");
             bindings.Require(peer,action); Check(true,"host-confirmed company accepts own action");
             Reject<InvalidDataException>(()=>bindings.Require(other,action),"other peer cannot use same company");
             var foreign = ProtocolSchema.ValidateClient(Msg.Make("act","Peer#1",Act(co:3)));
             Reject<InvalidDataException>(()=>bindings.Require(peer,foreign),"forged company number");
             var playerRef = ProtocolSchema.ValidateClient(Msg.Make("act","Peer#1",Act(args:"{[1]={[\"__ref\"]=true,[\"k\"]=\"player\",[\"co\"]=1}}")));
             Reject<InvalidDataException>(()=>bindings.Require(peer,playerRef),"nested foreign player reference");
-            var reconnect = identities.Join("Peer",peer.Token); bindings.Require(reconnect,action); Check(true,"binding survives authenticated socket reconnect");
+            var reconnect = identities.Join("Peer",peer.Token,peer.Owner); bindings.Require(reconnect,action); Check(true,"binding survives authenticated socket reconnect");
             foreach (var bad in new[] {"host","peer"})
             { join["key"]=bad; Reject<InvalidDataException>(()=>bindings.Join(other,join,2000000),"cannot claim another peer or host name"); }
             join["key"]="other"; join["host"]=true;

@@ -1019,14 +1019,16 @@ namespace MPFever
             companyBindings = new CompanyBindings();
             hostName = name;
             int hostGen = sessionGen;
-            var hostRelay = relay = new Relay();
+            var hostRelay = relay = new Relay(OwnerIdentity.Open(OwnerIdentity.ProfilePath("host")));
+            Log.W("Host ownership profile: " + hostRelay.HostOwner);
             relay.Joined += p =>
             {
                 if (hostGen != sessionGen || relay != hostRelay) return;
                 Log.Ok(F("{0} a rejoint la session", "{0} joined the session", p.Name));
+                Log.W("Player ownership fingerprint: " + p.Name + " = " + p.Identity.Owner);
                 lock (leftAt) leftAt.Remove(BaseName(p.Name));
                 relay.DropOlder(p);
-                relay.Send(p, Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(p.Name) + ",[\"role\"]=\"client\"}"));
+                relay.Send(p, Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(p.Name) + ",[\"role\"]=\"client\",[\"owner\"]=" + LuaLit.Quote(p.Identity.Owner) + "}"));
                 Msg[] history; lock (chatLog) history = chatLog.ToArray();
                 foreach (var c in history) relay.Send(p, c);   // the chat so far (a reconnecting player skips what it has)
                 HostChat("join", BaseName(p.Name), "");
@@ -1056,7 +1058,7 @@ namespace MPFever
                 if (m.Kind == "hello")
                 {
                     g.InGame = true;
-                    g.ToGame(Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(hostName) + ",[\"role\"]=\"host\"}"));
+                    g.ToGame(Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(hostName) + ",[\"role\"]=\"host\",[\"owner\"]=" + LuaLit.Quote(hostRelay.HostOwner) + ",[\"world\"]=" + LuaLit.Quote(hostRelay.Epoch) + "}"));
                     BroadcastSession();
                     if (menuMode && !started) new Thread(() => AutoStart(hostGen, name)) { IsBackground = true, Name = "Auto start" }.Start();
                 }
@@ -1072,7 +1074,9 @@ namespace MPFever
             var game = existing ?? new GameLink(name, "client");
             if (!games.Contains(game)) games.Add(game);
             Client current = null;
-            string resumeToken = null;
+            string resumeToken = null, resumeEpoch = null;
+            var clientIdentity = OwnerIdentity.Open(OwnerIdentity.ProfilePath("client"));
+            Log.W("Player ownership profile: " + clientIdentity.Owner);
             clientCancelled = false;
             // a reconnect thread of an earlier session must not wake up in this one (issue #13)
             int gen = sessionGen;
@@ -1096,7 +1100,7 @@ namespace MPFever
                 client.Received += m =>
                 {
                     if (gen != sessionGen) return;
-                    if (m.Kind == "connection") { resumeToken = client.ResumeToken; return; }
+                    if (m.Kind == "connection") { resumeToken = client.ResumeToken; resumeEpoch = client.ResumeEpoch; return; }
                     if (m.Kind == "resync_begin" || m.Kind == "resync_file") { OnResyncFile(game, m, client); return; }
                     if (m.Kind == "mpstatus")
                     {
@@ -1146,7 +1150,7 @@ namespace MPFever
                             ClientStatus("lost", attempt);
                             Thread.Sleep(5000);
                             if (clientCancelled || gen != sessionGen) return;
-                            var c = new Client { ResumeToken = resumeToken };
+                            var c = new Client { ResumeToken = resumeToken, ResumeEpoch = resumeEpoch, Identity = clientIdentity };
                             try
                             {
                                 wire(c);
@@ -1180,7 +1184,7 @@ namespace MPFever
                     }
                 }
             }) { IsBackground = true, Name = "Chat" }.Start();
-            var first = new Client();
+            var first = new Client { Identity = clientIdentity };
             wire(first);
             first.Connect(host, port, name);
             lock (clients) clients.Add(first);
@@ -1424,6 +1428,7 @@ namespace MPFever
         void HostLoop(int gen)
         {
             double lastHash = Now, lastSession = Now, lastStatus = 0;
+            string lastOwnershipWorld=null, lastOwnershipRequest=null;
             int actsAtHash = actsRelayed;
             while (gen == sessionGen)
             {
@@ -1439,7 +1444,36 @@ namespace MPFever
                 PlayerClock hc;
                 lock (clocks) clocks.TryGetValue(hostName, out hc);
 
-                if (Now - lastSession > 3) { lastSession = Now; BroadcastSession(); }   // late joiners and lost messages
+                if (Now - lastSession > 3)
+                {
+                    lastSession = Now; BroadcastSession();
+                    if(companyBindings.World!=null && lastOwnershipWorld!=companyBindings.World)
+                    { lastOwnershipWorld=companyBindings.World; Log.W("Saved ownership world: " + lastOwnershipWorld); }
+                    var assignmentPath=Path.Combine(OwnerIdentity.ProfileDirectory,"company-assignment.lua");
+                    if(File.Exists(assignmentPath))
+                    {
+                        try
+                        {
+                            using(var file=new FileStream(assignmentPath,FileMode.Open,FileAccess.Read,FileShare.Read))
+                            {
+                                if(file.Length<=0 || file.Length>4096)throw new InvalidDataException("Invalid ownership assignment size");
+                                using(var reader=new StreamReader(file,Wire.Utf8,false))
+                                {
+                                    var request=ProtocolSchema.Table(LuaLit.Parse(reader.ReadToEnd()),"local ownership assignment");
+                                    companyBindings.ValidateAssignment(request);
+                                    var requestId=(string)request["request"];
+                                    if(requestId!=lastOwnershipRequest)
+                                    {
+                                        hostGame.ToGame(Msg.Make("co_assign_owner",hostName,"{[\"id\"]="+((double)request["id"]).ToString(CultureInfo.InvariantCulture)+",[\"owner\"]="+LuaLit.Quote((string)request["owner"])+",[\"world\"]="+LuaLit.Quote((string)request["world"])+"}"));
+                                        lastOwnershipRequest=requestId;
+                                        Log.W("Requested legacy company ownership assignment: " + requestId + "; save the game after it applies");
+                                    }
+                                }
+                            }
+                        }
+                        catch(Exception e) { Log.Warn("Local ownership assignment refused: " + e.Message); }
+                    }
+                }
                 bool paused; long? pausedAt; lock (sessionGate) { paused = pauseAt.HasValue; pausedAt = pauseAt; }
                 // paused: builds and actions still apply, so the games are checked when actions went through since the last
                 // check, once every game has stopped (issue #12: 9 minutes of builds in a pause went unchecked)
@@ -1479,13 +1513,17 @@ namespace MPFever
             switch (m.Kind)
             {
                 case "co_roster":
-                    if (from == null) companyBindings.Report(m.Payload);
+                    if (from == null)
+                    {
+                        companyBindings.Report(m.Payload);
+                        Log.W("Company ownership roster: " + companyBindings.OwnershipSummary);
+                    }
                     break;
                 case "hello":
                     lock (players) players.Add(m.From);
                     Log.W(F("{0} : jeu prêt {1}", "{0}: game ready {1}", m.From, m.Payload));
                     // a game started again (resynchronisation): it needs its identity again
-                    if (from != null) relay.Send(from, Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(from.Name) + ",[\"role\"]=\"client\"}"));
+                    if (from != null) relay.Send(from, Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(from.Name) + ",[\"role\"]=\"client\",[\"owner\"]=" + LuaLit.Quote(from.Identity.Owner) + "}"));
                     lock (resyncWaiting)
                     {
                         if (!resyncing || from == null || snapshotReceived.Contains(m.From)) resyncWaiting.Remove(m.From);
