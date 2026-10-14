@@ -204,25 +204,9 @@ end
 local T = C.T
 
 local function ownerOf(e)
-	if type(e) ~= "number" or e < 0 then return nil end
-	local function po(x)
-		local ok, c = pcall(api.engine.getComponent, x, api.type.ComponentType.PLAYER_OWNED)
-		return (ok and c and type(c.player) == "number" and c.player >= 0) and c.player or nil
-	end
-	local p = po(e)
-	if p then return p end
-	local okg, sg = pcall(api.engine.getComponent, e, api.type.ComponentType.STATION_GROUP)
-	if okg and sg then
-		local okf, first = pcall(function() return sg.stations[1] end)
-		if okf and type(first) == "number" then
-			p = po(first)
-			if p then return p end
-			e = first
-		end
-	end
-	local okc, con = pcall(api.engine.system.streetConnectorSystem.getConstructionEntityForSubconstruction, e)
-	if okc and type(con) == "number" and con >= 0 then return po(con) end
-	return nil
+	-- Use the same resolver as the simulation: a station may be owned
+	-- through its construction rather than through a subconstruction.
+	return R.ownerOf(e)
 end
 
 local function companyName(ent)
@@ -390,20 +374,26 @@ local function installShareSelect()
 	if U.shareSelectInstalled then return end
 	local okE, eu = pcall(ug_require, "/scripts/entity_util.tl")
 	if not (okE and type(eu) == "table" and type(eu.isOwnedByPlayerOrNotOwned) == "function") then
-		U.shareSelectInstalled = true
-		log("companies: shared stations cannot be picked by the line tool (" .. tostring(eu):sub(1, 120) .. ")")
+		if not U.shareSelectMissing then
+			U.shareSelectMissing = true
+			log("companies: waiting for the station selection module (" .. tostring(eu):sub(1, 120) .. ")")
+		end
 		return
 	end
-	U.shareSelectInstalled = true
-	if eu.__mpfShare then return end
-	eu.__mpfShare = true
-	local orig = eu.isOwnedByPlayerOrNotOwned
+	-- A UI reload must use its new company/share context, not a closure
+	-- left in a cached game module by the previous UI instance.
+	local orig = eu.__mpfShareOriginal or eu.isOwnedByPlayerOrNotOwned
+	eu.__mpfShareOriginal = orig
 	local cache, cacheAt = {}, -1
+	local shareVersion, coMap, myCo
 	eu.isOwnedByPlayerOrNotOwned = function(entity, ...)
 		if orig(entity, ...) then return true end
 		if not U.coMap or type(entity) ~= "number" then return false end
 		local now = os.clock()
-		if now - cacheAt > 1 then cache = {}; cacheAt = now end
+		if now - cacheAt > 1 or shareVersion ~= U.shareVersion or coMap ~= U.coMap or myCo ~= U.myCo then
+			cache = {}; cacheAt = now
+			shareVersion, coMap, myCo = U.shareVersion, U.coMap, U.myCo
+		end
 		local v = cache[entity]
 		if v == nil then
 			v = false
@@ -433,6 +423,8 @@ local function installShareSelect()
 		end
 		return v
 	end
+	eu.__mpfShare = true
+	U.shareSelectInstalled = true
 	log("companies: the line tool can pick the stations shared by the other companies")
 end
 
@@ -1359,9 +1351,10 @@ local function tick(pendingState)
 		if not okt then U.terrainWatch = true; log("terrain tools: not watched: " .. tostring(errt)) end
 	end
 	pcall(pollShares)
-	if U.coMap and not U.shareSelectInstalled then
+	if U.coMap and not U.shareSelectInstalled and (not U.shareSelectRetryAt or os.time() >= U.shareSelectRetryAt) then
+		U.shareSelectRetryAt = os.time() + 2
 		local oks, errs = pcall(installShareSelect)
-		if not oks then U.shareSelectInstalled = true; log("companies: share pick not installed: " .. tostring(errs)) end
+		if not oks and not U.shareSelectError then U.shareSelectError = true; log("companies: share pick not installed (will retry): " .. tostring(errs)) end
 	end
 	if U.coMap and not U.stopFeesInstalled then
 		local okf, errf = pcall(installStopFees)
