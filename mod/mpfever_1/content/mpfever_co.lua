@@ -281,8 +281,8 @@ local function contractIndex()
 	pcall(function()
 		local e = api.engine.system.gameScriptSystem.getEntityForGameScript("::/game_mechanics/subventions/subventions.gs")
 		local st = api.engine.getComponent(e, api.type.ComponentType.GAME_SCRIPT).state
-		for status, list in ipairs({ st.proposedSubventions, st.activeSubventions, st.completedSubventions, st.failedSubventions }) do
-			for _, v in ipairs(list or {}) do
+		for status, field in ipairs({ "proposedSubventions", "activeSubventions", "completedSubventions", "failedSubventions" }) do
+			for _, v in ipairs(st[field] or {}) do
 				if v.uid ~= nil then idx[v.uid] = { owner = v.mpfOwner or 1, declined = v.mpfDeclined, status = status } end
 			end
 		end
@@ -352,21 +352,41 @@ function CO.installContracts(env)
 		sub.__mpfCo = true
 		local oh = sub.handleEvent
 		sub.handleEvent = function(u, state, src, id, name, param, ...)
-			if id == "Subvention" and type(param) == "table" and param.mpfCo and activeReg(env) then
+			local reg = env.registry()
+			if id == "Subvention" and reg and reg.mode == "separate" and (name == "onAccept" or name == "onDecline") then
+				local company = type(param) == "table" and CO.find(reg, param.mpfCo)
+				if not company or type(company.ent) ~= "number" or type(param.uid) ~= "number" and type(param.uid) ~= "string" then
+					if env.log then env.log("companies: subsidy request rejected (unknown company or offer)") end
+					return nil
+				end
+				local st = state:get()
+				-- An offer's uid is global. Closed offers and retries must never
+				-- reach the game's reward handler, even if the UI still has a card.
+				for _, field in ipairs({ "activeSubventions", "completedSubventions", "failedSubventions" }) do
+					for _, v in ipairs(st[field] or {}) do
+						if v.uid == param.uid then
+							if env.log then env.log("companies: subsidy already taken: " .. tostring(param.uid)) end
+							return nil
+						end
+					end
+				end
+				local offer
+				for _, v in ipairs(st.proposedSubventions or {}) do
+					if v.uid == param.uid then
+						if offer or v.mpfOwner ~= nil then return nil end
+						offer = v
+					end
+				end
+				if not offer then return nil end
 				if name == "onAccept" then
-					-- the contract becomes the accepting company's before the game's script moves it to the active ones
-					local st = state:get()
-					for _, v in ipairs(st.proposedSubventions or {}) do if v.uid == param.uid then v.mpfOwner = param.mpfCo end end
+					-- Keep the claim in saved game state before calling the game.
+					-- A retained offer cannot be accepted or paid again either.
+					offer.mpfOwner = company.id
 					state:set(st)
 				elseif name == "onDecline" then
 					-- declined by one company only: the others keep the offer
-					local st = state:get()
-					for _, v in ipairs(st.proposedSubventions or {}) do
-						if v.uid == param.uid then
-							v.mpfDeclined = v.mpfDeclined or {}
-							v.mpfDeclined[tostring(param.mpfCo)] = true
-						end
-					end
+					offer.mpfDeclined = offer.mpfDeclined or {}
+					offer.mpfDeclined[tostring(company.id)] = true
 					state:set(st)
 					return nil
 				end

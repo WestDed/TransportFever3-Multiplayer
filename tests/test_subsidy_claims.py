@@ -74,6 +74,46 @@ class SubsidyClaimTests(unittest.TestCase):
     def test_shared_mode_uses_original_game_handler(self):
         self.check('reg.mode="shared"; accept(1,101); accept(2,101); assert(calls==2)')
 
+    def test_decline_only_hides_offer_for_declining_company(self):
+        self.check('game["::/game_mechanics/subventions/subventions.script"].handleEvent(nil,state,"source","Subvention","onDecline",{mpfCo=1,uid=101}); assert(calls==0 and st.proposedSubventions[1].mpfDeclined["1"] and not st.proposedSubventions[1].mpfDeclined["2"]); accept(2,101); assert(calls==1 and st.activeSubventions[1].mpfOwner==2)')
+
+    def test_ambiguous_offer_uid_is_rejected(self):
+        self.check('st.proposedSubventions[2]={uid=101}; accept(1,101); assert(calls==0 and st.proposedSubventions[1].mpfOwner==nil and st.proposedSubventions[2].mpfOwner==nil)')
+
+
+class ContractNotificationTests(unittest.TestCase):
+    def setUp(self):
+        self.lua = LuaRuntime(unpack_returned_tuples=True)
+        self.lua.globals().CO = self.lua.execute((CONTENT / 'mpfever_co.lua').read_text(encoding='utf-8'))
+        self.lua.execute('''
+            reg={mode="separate",list={{id=1,ent=10},{id=2,ent=20}}}; me=2
+            st={activeSubventions={{uid=101,mpfOwner=1},{uid=102,mpfOwner=2}}}
+            nu={updatePersistentNotifications=function(_,_,update) return update end}
+            ug_require=function() return nu end; game={}
+            api={type={ComponentType={GAME_SCRIPT="script"}},engine={
+                system={gameScriptSystem={getEntityForGameScript=function() return 77 end}},
+                getComponent=function() return {state=st} end},
+                res={genericRep={getAllOfType=function() return {} end}}}
+            CO.installContracts({registry=function() return reg end,localCo=function() return me end})
+            cardType="::/game_mechanics/notifications/types/subvention_notification.script"
+            show=function()
+                return nu.updatePersistentNotifications(nil,nil,{type=cardType,
+                    entitiesAndParam={{param={uid=101}},{param={uid=102}}}})
+            end
+        ''')
+
+    def test_foreign_active_card_hidden_when_proposed_list_absent(self):
+        self.lua.execute('local shown=show(); assert(#shown.entitiesAndParam==1 and shown.entitiesAndParam[1].param.uid==102); assert(#st.activeSubventions==2)')
+
+    def test_foreign_completed_card_hidden_when_active_list_absent(self):
+        self.lua.execute('st.completedSubventions=st.activeSubventions; st.proposedSubventions={}; st.activeSubventions=nil; local shown=show(); assert(#shown.entitiesAndParam==1 and shown.entitiesAndParam[1].param.uid==102)')
+
+    def test_unrelated_world_notifications_are_preserved(self):
+        self.lua.execute('local u={type="world-weather",entitiesAndParam={{param={uid=101}}}}; assert(nu.updatePersistentNotifications(nil,nil,u)==u and #u.entitiesAndParam==1)')
+
+    def test_unknown_local_company_preserves_notifications(self):
+        self.lua.execute('me=nil; assert(#show().entitiesAndParam==2)')
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
