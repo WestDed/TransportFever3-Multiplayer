@@ -1806,12 +1806,14 @@ namespace MPFever
             {
                 Log.W(F("=== Resynchronisation n°{0} sur la partie de l'hôte (écart : {1}) ===", "=== Resynchronisation #{0} on the host's game (difference: {1}) ===", id, reason));
                 Pause(T("resynchronisation", "resynchronisation"));
+                int loadTimeout = SnapshotLimits.LoadTimeoutSeconds(Environment.GetEnvironmentVariable("MPFEVER_LOAD_TIMEOUT_SECONDS"));
+                Log.W("Snapshot deadlines: save " + SnapshotLimits.SaveTimeoutSeconds + "s, transfer " + SnapshotLimits.TransferTimeoutSeconds + "s, load " + loadTimeout + "s");
                 long at; lock (sessionGate) at = pauseAt ?? 0;
                 bool stopped = WaitCurrent(() => { lock (clocks) return clocks.Values.All(c => c.T >= at && c.Sp == 0); }, 120);
                 if (!stopped) { Log.Err(T("Resynchronisation abandonnée : les jeux ne se sont pas arrêtés.", "Resynchronisation cancelled: the games did not stop.")); return; }
                 saveDone = null;
                 activeGame.ToGame(Msg.Make("resync_save", hostName, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(ResyncSaveName) + "}"));
-                if (!WaitCurrent(() => saveDone != null && saveDone.TryGetValue("id", out var si) && si is double sd && sd == id, 180))
+                if (!WaitCurrent(() => saveDone != null && saveDone.TryGetValue("id", out var si) && si is double sd && sd == id, SnapshotLimits.SaveTimeoutSeconds))
                 { Log.Err(T("Resynchronisation abandonnée : l'hôte n'a pas sauvegardé.", "Resynchronisation cancelled: the host did not save.")); return; }
                 if (!(saveDone.TryGetValue("ok", out var okv) && okv is bool ok && ok)) { Log.Err(T("Resynchronisation abandonnée : sauvegarde refusée.", "Resynchronisation cancelled: save refused.")); return; }
                 Thread.Sleep(1000);
@@ -1842,15 +1844,26 @@ namespace MPFever
                             finally { done[index].Set(); }
                         }) { IsBackground = true, Name = "Snapshot to " + peers[i].Name }.Start();
                     }
-                    if (!WaitCurrent(() => done.All(d => d.IsSet), 600))
+                    if (!WaitCurrent(() => done.All(d => d.IsSet), SnapshotLimits.TransferTimeoutSeconds))
                     {
                         Interlocked.Exchange(ref cancelled, 1);
                         foreach (var peer in peers) activeRelay.Close(peer);
                         Log.Err("Snapshot sending cancelled or timed out; session remains paused"); return;
                     }
                     lock (failures) if (failures.Count > 0) { Log.Err(string.Join("; ", failures)); return; }
+                    // SendTo has queued the final part; it has not necessarily
+                    // reached the client yet. Start the load budget only after
+                    // every client verifies and commits this exact snapshot.
+                    Log.W("Snapshot parts queued; waiting for verified client receipts");
+                    if (!WaitCurrent(() => { lock (resyncWaiting) return peers.All(p => snapshotReceived.Contains(p.Name)); }, SnapshotLimits.TransferTimeoutSeconds))
+                    {
+                        Log.Err("Snapshot receipt not acknowledged; session remains paused");
+                        foreach (var peer in peers) { lock (resyncWaiting) if (!snapshotReceived.Contains(peer.Name)) activeRelay.Close(peer); }
+                        return;
+                    }
+                    Log.W("Snapshot verified by " + peers.Length + " client(s); waiting for game load");
                     activeGame.ToGame(Msg.Make("resync_load", hostName, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(ResyncSaveName) + "}"));
-                    if (!WaitCurrent(() => { lock (resyncWaiting) return resyncWaiting.Count == 0; }, 600))
+                    if (!WaitCurrent(() => { lock (resyncWaiting) return resyncWaiting.Count == 0; }, loadTimeout))
                     {
                         lock (resyncWaiting) Log.Err("Snapshot load not acknowledged: " + string.Join(", ", resyncWaiting) + "; session remains paused");
                         foreach (var peer in peers) { lock (resyncWaiting) if (resyncWaiting.Contains(peer.Name)) activeRelay.Close(peer); }
@@ -1893,7 +1906,13 @@ namespace MPFever
                 if (!snapshotReceivers.TryGetValue(game, out receiver))
                     snapshotReceivers[game] = receiver = new SnapshotReceiver(Path.Combine(game.Dir, "snapshots"));
             }
-            if (m.Kind == "resync_begin") { receiver.Begin(m.Payload); return; }
+            if (m.Kind == "resync_begin")
+            {
+                var manifest = SnapshotManifest.Parse(m.Payload);
+                receiver.Begin(m.Payload);
+                Log.W("[" + game.Name + "] receiving host snapshot: " + manifest.Bytes + " bytes, " + manifest.Parts + " parts, id " + manifest.Id);
+                return;
+            }
             using (var completed = receiver.Add(m.Payload))
             {
                 if (completed == null)

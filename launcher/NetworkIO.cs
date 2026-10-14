@@ -155,26 +155,34 @@ namespace MPFever
     sealed class BoundedOutbox : IDisposable
     {
         public const int MaxQueuedBytes = 8 * 1024 * 1024, MaxQueuedFrames = 128;
+        public const int ReservedControlBytes = 512 * 1024, ReservedControlFrames = 96;
         readonly object gate = new object();
         readonly Queue<byte[]> queue = new Queue<byte[]>();
         readonly Stream stream;
         readonly Action close;
+        readonly string name;
         readonly int byteLimit;
         int bytes, frames;
         bool stopped;
         public BoundedOutbox(Stream stream, Action close, string name, int byteLimit = MaxQueuedBytes)
         {
-            this.stream = stream; this.close = close; this.byteLimit = byteLimit;
+            this.stream = stream; this.close = close; this.byteLimit = byteLimit; this.name = name;
             new Thread(WriteLoop) { IsBackground = true, Name = name }.Start();
         }
         public bool Enqueue(Msg m, bool wait = false)
         {
             var data = Wire.Encode(m);
-            if (data.Length > byteLimit) return false;
+            // A snapshot producer must not consume the slots needed by ordinary
+            // status/session messages: Relay.Send would otherwise close a healthy
+            // downloading peer. Keep the existing FIFO and total memory limits.
+            bool bulk = m.Kind == "resync_begin" || m.Kind == "resync_file";
+            int budget = byteLimit - (bulk ? Math.Min(ReservedControlBytes, byteLimit / 8) : 0);
+            int frameBudget = bulk ? MaxQueuedFrames - ReservedControlFrames : MaxQueuedFrames;
+            if (data.Length > budget) return false;
             var time = Stopwatch.StartNew();
             lock (gate)
             {
-                while (!stopped && (bytes + data.Length > byteLimit || frames >= MaxQueuedFrames))
+                while (!stopped && (bytes + data.Length > budget || frames >= frameBudget))
                 {
                     if (!wait || time.ElapsedMilliseconds >= 120000) return false;
                     Monitor.Wait(gate, 100);
@@ -202,7 +210,13 @@ namespace MPFever
                     lock (gate) { bytes -= data.Length; frames--; Monitor.PulseAll(gate); }
                 }
             }
-            catch (Exception) { Dispose(); close(); }
+            catch (Exception e)
+            {
+                bool intentional; lock (gate) intentional = stopped;
+                Dispose();
+                if (!intentional) Log.Warn(name + " write failed: " + e.Message);
+                close();
+            }
         }
         public void Dispose()
         {

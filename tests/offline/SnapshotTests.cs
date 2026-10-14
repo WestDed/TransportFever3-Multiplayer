@@ -18,6 +18,12 @@ namespace MPFever
             Directory.CreateDirectory(root);
             try
             {
+                Check(SnapshotLimits.LoadTimeoutSeconds(null) == 1800 && SnapshotLimits.LoadTimeoutSeconds("") == 1800,
+                    "large map load default allows 30 minutes instead of fixed 10 minutes");
+                Check(SnapshotLimits.LoadTimeoutSeconds("60") == 60 && SnapshotLimits.LoadTimeoutSeconds("7200") == 7200,
+                    "load timeout accepts bounded override");
+                foreach (var invalid in new[] { "59", "7201", "-1", "0", "NaN", "1.5", "999999999999" })
+                    Reject<InvalidDataException>(() => SnapshotLimits.LoadTimeoutSeconds(invalid), "invalid load deadline refused: " + invalid);
                 for(int n=1;n<=6;n++)Check(SnapshotLimits.CanonicalBase64(Convert.ToBase64String(new byte[n]),n),"canonical base64 padding "+n);
                 foreach(var item in new[]{new{Text="AB==",Bytes=1},new{Text="AAB=",Bytes=2},new{Text="AA =",Bytes=2},new{Text="A===",Bytes=1}})
                     Check(!SnapshotLimits.CanonicalBase64(item.Text,item.Bytes),"noncanonical base64 padding refused");

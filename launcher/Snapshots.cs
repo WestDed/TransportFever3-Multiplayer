@@ -13,6 +13,14 @@ namespace MPFever
         public const int ChunkBytes = 256 * 1024;
         // A provisional safety budget, not a claim about Gigantomaniac saves.
         public const long MaxBytes = 1024L * 1024 * 1024;
+        public const int SaveTimeoutSeconds = 600, TransferTimeoutSeconds = 1800;
+        public static int LoadTimeoutSeconds(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return 1800;
+            if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int seconds) || seconds < 60 || seconds > 7200)
+                throw new InvalidDataException("MPFEVER_LOAD_TIMEOUT_SECONDS must be an integer from 60 to 7200");
+            return seconds;
+        }
         public static string Hash(Stream stream)
         {
             using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
@@ -210,7 +218,7 @@ namespace MPFever
         {
             lock (gate)
             {
-                if (manifest == null || now() - touched <= TimeSpan.FromMinutes(3) && now() - begun <= TimeSpan.FromMinutes(30)) return false;
+                if (manifest == null || now() - touched <= TimeSpan.FromMinutes(3) && now() - begun <= TimeSpan.FromSeconds(SnapshotLimits.TransferTimeoutSeconds)) return false;
                 Clear(); return true;
             }
         }
