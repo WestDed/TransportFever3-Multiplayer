@@ -44,6 +44,35 @@ try {
     $reader = [IO.StreamReader]::new($stream)
     try { if ($reader.ReadToEnd() -ne [IO.File]::ReadAllText((Join-Path $root 'LICENSE'))) { throw 'Packaged license differs from original' } }
     finally { $reader.Dispose() }
+    # A file copied into the ZIP is invisible to the game's resource catalog if
+    # _content.json omits it. Validate the actual release, not just source files.
+    $prefix = 'MPFever/mod/mpfever_1/'
+    $catalogEntry = $zip.GetEntry($prefix + '_content.json')
+    if ($null -eq $catalogEntry) { throw 'Missing packaged game resource catalog' }
+    $reader = [IO.StreamReader]::new($catalogEntry.Open())
+    try { $catalogText = $reader.ReadToEnd() } finally { $reader.Dispose() }
+    if ($catalogText -ne [IO.File]::ReadAllText((Join-Path $root 'mod/mpfever_1/_content.json'))) { throw 'Packaged resource catalog differs from source' }
+    $catalog = $catalogText | ConvertFrom-Json
+    $registered = @{}
+    foreach ($name in $catalog.files) {
+        if ($name -isnot [string] -or [string]::IsNullOrEmpty($name) -or $name.StartsWith('/') -or $name.Contains('\') -or $name.Split('/') -contains '..' -or $registered.ContainsKey($name)) { throw "Invalid or duplicate resource path: $name" }
+        $registered[$name] = $true
+        $entry = $zip.GetEntry($prefix + 'content/' + $name)
+        if ($null -eq $entry -or $entry.Length -eq 0) { throw "Missing or empty packaged game resource: $name" }
+        $hash = [Security.Cryptography.SHA256]::Create()
+        $stream = $entry.Open()
+        try { $actualHash = [BitConverter]::ToString($hash.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
+        finally { $stream.Dispose(); $hash.Dispose() }
+        $expectedHash = (Get-FileHash (Join-Path $root ('mod/mpfever_1/content/' + $name)) -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actualHash -ne $expectedHash) { throw "Packaged resource differs from source: $name" }
+        Write-Host "PASS registered packaged game resource: $name"
+    }
+    foreach ($entry in $zip.Entries) {
+        if ($entry.FullName.StartsWith($prefix + 'content/', [StringComparison]::Ordinal) -and -not $entry.FullName.EndsWith('/')) {
+            $name = $entry.FullName.Substring(($prefix + 'content/').Length)
+            if (-not $registered.ContainsKey($name)) { throw "Packaged content is not registered in game catalog: $name" }
+        }
+    }
 }
 finally { $zip.Dispose() }
 $manifest = [ordered]@{
