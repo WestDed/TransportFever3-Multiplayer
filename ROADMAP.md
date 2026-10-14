@@ -18,7 +18,9 @@ PR #8 реализует межсессионный owner по persistent privat
 
 ## Этап 2 — минимальный игровой стенд
 
-14.10.2026: первые попытки заказчика/брата не дошли до multiplayer ready. PR #10 исправляет отсутствующую регистрацию permissions module в game resource catalog; loader/реальный ZIP regressions воспроизводят дефект. Следующий gate: одинаковый новый пакет на двух ПК, host hello/ready, прямой join по Radmin IP, transfer/load и две компании. [Запись первого неуспеха](docs/INCIDENT_2026_10_14_FIRST_GAME.md). Этот engine этап не считать PASS по offline bootstrap.
+15.10.2026: после PR #10 и настройки Porthole пользователи сообщили об успешной совместной игре. Минимальный startup/join gate имеет ограниченный USER-REPORTED PASS; большие карты и механики компаний выявили отказы. [Полная матрица PLAY-01–08, исправления PR #11 и критерии повтора](docs/COOP_PLAYTEST_2026_10_15.md). Offline suite не закрывает engine gate.
+
+Приоритет ближайших отдельных PR: (1) проверить исправленную очередь/receipt/load на проблемном большом save; (2) подтвердить выбор/движение и оплату shared stop, затем права строительства возле дороги; (3) один subsidy UID/одна выплата и private cards; (4) остальные company notices/money popups; (5) дорожные тарифы и собственные заказы с escrow. Каждый пункт требует повторного игрового expected/actual и сохранения результата. Восстановление владельца после настоящего restart остаётся обязательным.
 
 Зафиксировать build/hash игры, EXE/DLL/mods/DLC, machines, saves/seed. Сначала два процесса одного ПК, затем два ПК. Unknown game build/hooks — fail closed. Проверить upstream #15–22: снос станции, сигналы/туннели/мосты, модульные правки, копирование состава и callbacks линий. Пауза/x1/x4, simultaneous builds, десять повторений каждого сценария. Сверять геометрию/owners/balances, не только checksum. Два часа без unexplained desync/crash — стартовый порог.
 

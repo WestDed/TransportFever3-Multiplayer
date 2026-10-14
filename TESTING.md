@@ -1,6 +1,6 @@
 # Тестирование и границы доказательства
 
-14.10.2026. В нашей среде TF3 не установлена, Steam/game API и настоящих сохранений нет. Локальная среда — Linux, Python 3.12, lupa 2.6 / Lua 5.2. C#/Windows/native проверки выполняются GitHub Actions; Windows/игра локально не запускались. Заказчик и брат выполнили первый настоящий startup/join на своих ПК, результат FAIL — сессия не началась. [Журналы, обнаруженный package defect и повторный тест](docs/INCIDENT_2026_10_14_FIRST_GAME.md).
+15.10.2026. В нашей среде TF3/Steam/game API не установлены. Локально Linux/Python 3.12/lupa 2.6, C#/Windows/native проверяются GitHub Actions. Заказчик и брат после PR #10 сообщили об успешном совместном startup/join через Porthole; большие карты/механики выявили отказы. Это пользовательский игровой результат, не мой запуск. [Полная запись, regressions и критерии повтора](docs/COOP_PLAYTEST_2026_10_15.md).
 
 ## Фактические автоматические проверки
 
@@ -42,7 +42,7 @@ Windows: `dotnet build tests/offline/Offline48.csproj --configuration Release`, 
 
 Workflow запускается на PR, main, workflow_dispatch; obsolete run отменяется. Artifacts: translation reports, benchmark JSON, experimental ZIP, build-manifest (gameTested=false), native exports. Хранение исходников/документов — Git branches. Benchmark sampling/method/raw results — [STAGE1_OFFLINE_RECOVERY](docs/STAGE1_OFFLINE_RECOVERY.md).
 
-## После приобретения игры
+## Игровые испытания на компьютерах заказчика
 
 1. Записать game build/hash, DLL/EXE/mod/DLC hashes, save/seed, hardware, roles, network и дату. Исходный save сохранить отдельно. [Шаблон протокола](docs/GAME_TEST_RECORD.md).
 2. Два процесса одного ПК, затем два ПК: inactive/active launch, known/unknown build, host/client, shared/separate. Unknown hooks отказывают, не дают частичную синхронизацию.
@@ -56,3 +56,9 @@ Workflow запускается на PR, main, workflow_dispatch; obsolete run �
 10. Карты до Gigantomaniac: game steps/s vs solo, checksum p50/p95, RSS/peak, save/transfer/load time и host upload. Caps/пороговые цели пересмотреть по замерам.
 
 Минимальная запись неуспеха: scenario, epoch/sequence/step/company, expected/actual geometry/owner/journal/payment, logs, число resync и длительность. PASS мока и compiled DLL не заменяют PASS игрового сценария.
+
+## Первые gameplay regressions — PR #11
+
+Code head `ebd3395f5e14b41d37e809a65aa0c6a4d4c36b84`, [run 38591306735](https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38591306735): все 7 jobs success, 105 Python/Lua на Linux/Windows, 336 C# checks на net8 Linux/Windows и actual net48 Windows, 50 decoder checks, реальный TCP bench и полный Windows package verification. Локально 105 PASS. [Baseline red и подробные границы](docs/COOP_PLAYTEST_2026_10_15.md). Финальный documentation head/CI смотреть в PR #11.
+
+Новые tests исполняют настоящие CO/UI Lua functions с injected module/owner/state, включая one-off subsidy, private cards с отсутствующими списками, позднюю station hook установку, cache refresh и UI reload. Queue тест насыщает bytes с blocked writer, deadline tests проверяют defaults/overrides/invalid input. MainForm receipt/load orchestration компилируется Windows job, но console suite её не исполняет. Game повтор на большом save и реальные grants/fees/notifications ещё NOT RETESTED.

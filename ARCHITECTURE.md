@@ -1,10 +1,10 @@
 # Архитектура Transport Fever 3 Multiplayer
 
-PR #8 объединён заказчиком в main 5f6cd58: постоянный владелец компаний и production net48 runtime tests. [PR #9](https://github.com/WestDed/TransportFever3-Multiplayer/pull/9), непосредственно от этой main и прямо в main, исправляет roster/ownership проверки. Основа — MPFever 0.3.6, MIT, автор arthur; upstream не изменяется. Игры и сохранений нет: работа компонентов проверена, игровая архитектура ещё не принята.
+15.10.2026. Main `937318b7` содержит PR #10. Заказчик и брат сообщили об успешном startup/join и совместной игре через Porthole; большие карты и часть механик выявили отказы. У разработчика игра/API/saves не установлены. [PR #11](https://github.com/WestDed/TransportFever3-Multiplayer/pull/11) исправляет подтверждённые исходниками/регрессиями дефекты; игровой повтор ещё нужен. Основа — MPFever 0.3.6, MIT, автор arthur; upstream не изменяется.
 
 ## Действующая схема
 
-Компьютер хоста запускает игру и C# лаунчер .NET Framework 4.8. Лаунчер слушает TCP, проверяет вход/сообщения, связывает peers с компаниями и пересылает действия. Внешний сервер не требуется; NAT/firewall/WAN не испытаны. Каждый клиент запускает собственную симуляцию общего логического мира.
+Компьютер хоста запускает игру и C# лаунчер .NET Framework 4.8. Лаунчер слушает TCP, проверяет вход/сообщения, связывает peers с компаниями и пересылает действия. Внешний сервер не требуется; пользователи соединились через TCP proxy Porthole. Другие WAN/NAT/firewall конфигурации не приняты. Каждый клиент запускает собственную симуляцию общего логического мира.
 
 ```mermaid
 flowchart TD
@@ -46,3 +46,7 @@ UTF-8 строки `kind TAB from TAB payload LF`, payload — ограниче�
 Постоянный owner, backup и миграция: [STAGE1_PERSISTENT_OWNERSHIP](docs/STAGE1_PERSISTENT_OWNERSHIP.md).
 
 PR #9 проверяет owner uniqueness по всем roster rows, включая pending entities; заменяет roster и bindings только после полного успешного расчёта. Invalid report блокирует новые права до корректного полного report. Sid можно обновить с прежним proven owner. Lua helper назначения требует valid host owner/approver и world. [Результаты проверки main](docs/MAIN_REVIEW_2026_10_13.md).
+
+## Первое совместное испытание и локальные исправления
+
+[Полная запись и остаточные задачи](docs/COOP_PLAYTEST_2026_10_15.md). PR #11 резервирует capacity control messages при bulk transfer без изменения FIFO/8 MiB/128 frames; отделяет verified receipt от load wait и задаёт bounded load budget. UI/SIM пользуются одним station-owner resolver, cache и wrapper обновляются после смены shares/компании/reload. Subsidy guard сохраняет один claim до game handler, а индекс notification lists поддерживает отсутствующие поля. Эти изменения не вводят центральный replay, дорожные договоры, custom subsidies или новые native offsets.

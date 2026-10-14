@@ -1,6 +1,6 @@
 # Риски и текущие ограничения
 
-Результаты offline tests не подтверждают работу Transport Fever 3. Ни игровые бинарники, ни saves не использовались. Исправленные memory/code-execution risks и изоляция незавершённых TCP-подключений описаны в STAGE1 docs; ниже остающиеся ограничения.
+Результаты offline tests не подтверждают работу Transport Fever 3. В нашей среде игровые бинарники/saves не использовались; заказчик и брат сообщили о первом совместном запуске и обнаруженных отказах. Исправленные memory/code-execution risks и изоляция незавершённых TCP-подключений описаны в STAGE1 docs; ниже остающиеся ограничения.
 
 | Риск | Наблюдение по исходникам/стенду | Что нужно для снятия |
 |---|---|---|
@@ -17,7 +17,7 @@
 | Hooks/версии | Native addresses/ABI определены авторами для отдельных builds | Game hash/build gate, byte checks и каждый hook на реальной версии |
 | Version ≠ compatibility | Protocol 4 не проверяет все EXE/DLL/mod/game hashes | Fingerprint одинакового пакета и полного engine/mod set |
 | Память | 8 x 32 MiB loopback: RSS до ~693 MiB на одном hosted прогоне | Budget production/net48/игры, sustained profiling; меньше копий не равно меньше RSS |
-| Размер/скорость снимка | 1 GiB/4096 parts, 600-секундное ожидание sending/loading, bounded queue timeouts | Параметры по настоящим saves/WAN; не обещать Gigantomaniac по этим caps |
+| Размер/скорость снимка | 1 GiB/4096 parts; PR #11: bounded control reserve, verified receipt и load по умолчанию 1800 секунд; idle/partial/socket limits остаются | Параметры по настоящим saves/WAN; не обещать Gigantomaniac по этим caps |
 | Disk durability | Flush(true)/atomic replace проверены обычными файлами | Power loss/filesystem/game save closure; дисковая ошибка сохраняет old save и pause |
 | Journal foundation | Durable input order, но эффекты+frontier не атомарны в игре; компонент не активирован | Engine adapter/async callbacks/quorum по реальному состоянию |
 | Lifecycle | Generation checks уменьшают stale callbacks, но не заменяют atomic session fence | Быстрая смена сессии/menu/late callbacks и cancellation в игре |
@@ -28,3 +28,11 @@ Hash снимка обнаруживает повреждение байтов, 
 Upstream bugs #15–22 и первоначальные доказательства/гипотезы доступны в [историческом аудите](https://github.com/WestDed/TransportFever3-Multiplayer/blob/6611e8f63e29e04aeb978bddd17877b461894edf/RISKS.md). Стабильный release запрещён до TESTING.md/ROADMAP игровых критериев.
 
 Ключи пока не зашифрованы на диске: доступ к Windows-профилю и backup private keys означает владение этой личностью. Marker блокирует пропажу key, если marker сохранился; удаление всего identity каталога локально не обнаруживается. Новый key не получает старую company по имени. Подробности [PR #8](docs/STAGE1_PERSISTENT_OWNERSHIP.md).
+
+## Риски, обнаруженные первым совместным испытанием
+
+[PLAY-01–08](docs/COOP_PLAYTEST_2026_10_15.md): большой save может загружаться дольше прежнего deadline; заполнение bulk queue мешало control traffic. Исправленный резерв конечен, FIFO backlog и upload скорость нужно измерить. Прежний отказ около 50% не привязан к одному найденному дефекту без свежих logs.
+
+Один saved subsidy claim предотвращает повторный вызов handler в component tests, но не исправляет premature native apply и не откатывает частичные rewards при engine exception. Simultaneous accept/restart/delivery — отдельный game gate. Отсутствующие notification lists исправлены только для contract cards; general notices/money popup остаются. Скрытие UI не должно удалять чужие ACCOUNT/JOURNAL из общего мира.
+
+Исправления shared-stop selection не подтверждают право строить вдоль чужой дороги или корректность native pathfinding. Для дорог нужны отдельные access/connect/edit/delete права и устойчивый passage ledger. Собственные subsidies — отсутствующая feature, требующая резервирования награды, а не вызова debug spawn.
