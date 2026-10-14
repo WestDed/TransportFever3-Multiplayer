@@ -11,7 +11,7 @@ two games (game B allocates 1000 higher). Checks:
   - the originator's tool receives the real result.
 Run: python MPFever/tests/test_lockstep.py
 """
-import os, sys, tempfile
+import json, os, sys, tempfile
 from pathlib import Path
 import lupa.lua52 as lupa
 
@@ -233,7 +233,7 @@ end
 
 
 class Game:
-    def __init__(self, name, role, tmp, first_entity):
+    def __init__(self, name, role, tmp, first_entity, manifest_files=None):
         self.name, self.dir = name, os.path.join(tmp, name)
         os.makedirs(self.dir)
         Path(self.dir, "in.log").touch()
@@ -246,9 +246,13 @@ class Game:
         self.L.globals().TEST_ENV = self.L.table_from({"MPFEVER_DIR": self.dir, "MPFEVER_NAME": name, "MPFEVER_ROLE": role})
         self.L.execute(MOCK)
         self.L.execute("GAME.nextEntity = %d" % first_entity)
+        if manifest_files is None:
+            manifest_files = json.loads(Path(CONTENT).parent.joinpath('_content.json').read_text(encoding='utf-8'))['files']
+        # The game resolves packaged resources through _content.json. Reading
+        # every dependency from disk hid unregistered modules from this harness.
         self.L.globals().MODULE_SOURCES = self.L.table_from({
             n: Path(CONTENT, n).read_text(encoding="utf-8")
-            for n in ("mpfever_common.lua", "mpfever_refs.lua", "mpfever_co.lua", "mpfever_permissions.lua")
+            for n in manifest_files if n.endswith('.lua')
         })
         self.L.execute(REQUIRE)
         self.L.execute(Path(CONTENT, "mpfever_bridge.script.lua").read_text(encoding="utf-8"))
