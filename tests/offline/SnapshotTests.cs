@@ -130,6 +130,20 @@ namespace MPFever
                 finally { listener.Stop(); }
                 // Deterministic blocked writer: queue bounds and another writer's progress.
                 using (var blocked = new BlockingStream())
+                using (var outbox = new BoundedOutbox(blocked, () => blocked.Release.Set(), "Bulk/control writer", 1000))
+                {
+                    var bulk = Msg.Make("resync_file", "Host", "{[\"data\"]=\"" + new string('a', 100) + "\"}");
+                    Check(outbox.Enqueue(bulk) && blocked.Started.Wait(5000), "snapshot frame is in flight on slow link");
+                    int queued = 1;
+                    while (queued < 128 && outbox.Enqueue(bulk)) queued++;
+                    Check(queued < 128, "bulk producer stops at bounded capacity");
+                    Check(outbox.Enqueue(Msg.Make("mpstatus", "Host", "{[\"text\"]=\"loading\"}")),
+                        "bulk queue reserves room for host status instead of disconnecting active download");
+                    Check(outbox.Enqueue(Msg.Make("session", "Host", "{[\"started\"]=false,[\"speed\"]=0}")),
+                        "bulk queue reserves room for pause/session control");
+                    outbox.Dispose(); blocked.Release.Set();
+                }
+                using (var blocked = new BlockingStream())
                 using (var slow = new BoundedOutbox(blocked, () => blocked.Release.Set(), "Blocked writer", 100))
                 using (var healthyStream = new MemoryStream())
                 using (var healthy = new BoundedOutbox(healthyStream, () => {}, "Healthy writer"))
