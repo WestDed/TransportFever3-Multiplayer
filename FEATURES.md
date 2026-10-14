@@ -21,6 +21,7 @@
 | Центральный порядок и epochs | Offline journal/cursor/quorum реализованы | Классические file/replay tests; **не подключены к игровому scheduler** |
 | Владелец после перезапуска | Owner fingerprint сохраняется с company id; RSA key в LocalAppData, explicit legacy assignment | Python registry roundtrip + реальные C# файлы/TCP/net48; настоящий save/restart пока NOT RUN |
 | Полная Windows сборка | Обязательная CI job | net48 EXE, x64 DLL, 14 exports/ordinals, ZIP/license; hooks не запускались |
+| Игровой каталог ресурсов | Исправлен в PR #10: permissions module зарегистрирован; harness учитывает catalog | Реальный ZIP/copy hashes и Lua bootstrap fixture PASS; первый пользовательский game startup FAIL, повтор с исправлением NOT RUN |
 | Локализация | 33 gaps заполнены | 227 используемых catalog keys в 11 локалях, placeholders проверяются; диагностика новых компонентов может быть на английском |
 | Gigantomaniac | Цель будущего этапа | Ни карты, ни saves/RAM/game step profiling нет |
 

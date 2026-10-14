@@ -1,6 +1,6 @@
 # Тестирование и границы доказательства
 
-13.10.2026. TF3 не установлена, Steam/game API и настоящих сохранений нет. Локальная среда — Linux, Python 3.12, lupa 2.6 / Lua 5.2. C#/Windows/native проверки выполняются GitHub Actions; Windows/игра локально не запускались.
+14.10.2026. В нашей среде TF3 не установлена, Steam/game API и настоящих сохранений нет. Локальная среда — Linux, Python 3.12, lupa 2.6 / Lua 5.2. C#/Windows/native проверки выполняются GitHub Actions; Windows/игра локально не запускались. Заказчик и брат выполнили первый настоящий startup/join на своих ПК, результат FAIL — сессия не началась. [Журналы, обнаруженный package defect и повторный тест](docs/INCIDENT_2026_10_14_FIRST_GAME.md).
 
 ## Фактические автоматические проверки
 
@@ -22,6 +22,8 @@
 PR #8 расширяет suite постоянными key/owner/restart/migration сценариями и actual Windows .NET Framework 4.8 execution. Net8 проходит на Linux/Windows; net48 suite исполняет production RSA/TCP/file классы. Точные итоговые counts/head/run в PR #8; game NOT RUN. [Описание и backup](docs/STAGE1_PERSISTENT_OWNERSHIP.md).
 
 PR #8 уже слит: main 5f6cd58 прошла run 38346446265 (7 jobs, 78 Python/Lua, 306 C# checks). [PR #9](https://github.com/WestDed/TransportFever3-Multiplayer/pull/9) добавляет owner/roster/migration регрессии. Code head c5ae9be7 прошёл [run 38348129418](https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38348129418): 79 Python/Lua, 323 C# checks на всех трёх runtime/OS вариантах, 50 decoder checks и все 7 jobs green. Финальный head с документацией проверяется отдельно; точный run в PR #9. Первый C# прогон новых tests имел ошибку формата фикстуры и не считается доказательством failure production кода. [Полный разбор](docs/MAIN_REVIEW_2026_10_13.md).
+
+PR #10 восстанавливает packaging/loader fidelity: permissions module отсутствовал в `_content.json`, но старая harness брала его прямо с диска. Новая harness предоставляет только registered Lua resources; три catalog/bootstrap/missing-module tests дополняют 17 прежних lockstep scenarios. Windows verification сверяет все actual ZIP resources с catalog/source hashes. Baseline run 38567631668 упал на missing module и unregistered packaged content. После исправления code head 485974f5 прошёл [run 38568193133](https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38568193133): 82 Python/Lua (локально тоже 82), 323 C# в каждой из трёх сред, 50 decoder, все 7 jobs и 15 registered resource/hash checks. Итоговый документированный head/run — в PR #10. Bootstrap использует real Lua source с injected engine API; реальный положительный game startup после исправления не проверен.
 
 ## Воспроизведение без игры
 
