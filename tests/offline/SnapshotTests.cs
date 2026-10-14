@@ -132,7 +132,7 @@ namespace MPFever
                 using (var blocked = new BlockingStream())
                 using (var outbox = new BoundedOutbox(blocked, () => blocked.Release.Set(), "Bulk/control writer", 1000))
                 {
-                    var bulk = Msg.Make("resync_file", "Host", "{[\"data\"]=\"" + new string('a', 100) + "\"}");
+                    var bulk = Msg.Make("resync_file", "Host", "{[\"data\"]=\"" + new string('a', 110) + "\"}");
                     Check(outbox.Enqueue(bulk) && blocked.Started.Wait(5000), "snapshot frame is in flight on slow link");
                     int queued = 1;
                     while (queued < 128 && outbox.Enqueue(bulk)) queued++;

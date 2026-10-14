@@ -49,5 +49,25 @@ class StationSelectionTests(unittest.TestCase):
         self.check('fees[100]=500; install(); assert(eu.isOwnedByPlayerOrNotOwned(100)); local nextUI={myCo=3}; makeInstall(nextUI)(); assert(nextUI.shareSelectInstalled and not eu.isOwnedByPlayerOrNotOwned(100)); assert(eu.isOwnedByPlayerOrNotOwned(10))')
 
 
+class StationOwnerTests(unittest.TestCase):
+    def test_ui_resolves_owner_through_station_construction(self):
+        lua = LuaRuntime(unpack_returned_tuples=True)
+        lua.execute('''
+            world={[100]={STATION_GROUP={stations={101}}},[101]={STATION={}},[200]={PLAYER_OWNED={player=20}}}
+            api={type={ComponentType=setmetatable({},{__index=function(_,k) return k end})},engine={}}
+            api.engine.entityExists=function(e) return world[e]~=nil end
+            api.engine.getComponent=function(e,k) return world[e] and world[e][k] end
+            api.engine.system={streetConnectorSystem={
+                getConstructionEntityForSubconstruction=function() return -1 end,
+                getConstructionEntityForStation=function(e) return e==101 and 200 or -1 end}}
+        ''')
+        lua.globals().R = lua.execute((CONTENT / 'mpfever_refs.lua').read_text(encoding='utf-8'))
+        source = (CONTENT / 'mpfever_ui.script.lua').read_text(encoding='utf-8')
+        start = source.index('local function ownerOf(e)')
+        end = source.index('local function companyName(', start)
+        lua.globals().uiOwner = lua.execute(source[start:end] + '\nreturn ownerOf')
+        lua.execute('assert(R.ownerOf(100)==20); assert(uiOwner(100)==20); assert(uiOwner(-1)==nil and uiOwner(999)==nil)')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
