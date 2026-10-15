@@ -2,6 +2,9 @@
 import json
 import unittest
 import sys
+import io
+from contextlib import redirect_stdout
+from unittest.mock import patch
 import test_lang
 from test_lang import LANGUAGES, LANG_FILE, code_keys, placeholders
 
@@ -26,6 +29,10 @@ class TranslationBaselineTests(unittest.TestCase):
         texts = json.loads(LANG_FILE.read_text(encoding='utf-8-sig'))['texts']
         self.assertEqual(unexpected_translation_errors(code_keys(), texts, LANGUAGES), [])
 
+    def test_original_checker_failure_is_never_converted_to_success(self):
+        with patch.object(test_lang, 'main', return_value=1), redirect_stdout(io.StringIO()):
+            self.assertEqual(report_baseline(), 1)
+
     def test_no_gaps_are_exempt(self):
         self.assertEqual(KNOWN_MISSING, frozenset())
 
@@ -42,14 +49,14 @@ class TranslationBaselineTests(unittest.TestCase):
 
 
 def report_baseline():
-    # Run the original check; catch only its known nonzero result, never exceptions.
+    # No audited gaps remain: any failure of the original checker must fail CI.
     code = test_lang.main()
     texts = json.loads(LANG_FILE.read_text(encoding='utf-8-sig'))['texts']
     errors = unexpected_translation_errors(code_keys(), texts, LANGUAGES)
-    if code not in (0, 1) or errors:
+    if code != 0 or errors:
         print('Unexpected translation failure:', errors)
         return 1
-    print('Translation baseline: only the three audited keys may remain untranslated.')
+    print('All translations checked: no allowed gaps or ignored checker failures.')
     return 0
 
 
