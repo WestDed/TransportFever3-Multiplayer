@@ -267,7 +267,8 @@ function B.command(reg,actor,p,ctx)
 	if not s or type(p)~="table" or not text(p.request,240) or not B.company(reg,actor) then return false,"invalid business command" end
 	if s.requests[p.request] then return s.requests[p.request].ok,s.requests[p.request].result end
 	local ok,result
-	if p.op=="policy" then ok,result=B.setPolicy(reg,actor,p,ctx.owner,ctx.geometry)
+	if ctx.reject then ok,result=false,ctx.reject
+	elseif p.op=="policy" then ok,result=B.setPolicy(reg,actor,p,ctx.owner,ctx.geometry)
 	elseif p.op=="create" then local q=copy(p);q.monthDuration=ctx.monthDuration;ok,result=B.createOrder(reg,actor,q,ctx.now,ctx.balance)
 	elseif p.op=="accept" then ok,result=B.acceptOrder(reg,actor,p.id,ctx.now)
 	elseif p.op=="cancel" then ok,result=B.cancelOrder(reg,actor,p.id)

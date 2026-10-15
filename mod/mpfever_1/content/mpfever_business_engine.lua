@@ -52,17 +52,17 @@ end
 function E.command(state,p,now)
 	local st=state:get();local reg=st and st.co;if not reg or reg.mode~="separate" then return end
 	E.prepare(reg)
-	local owner,geometry
+	local owner,geometry,rejected
 	local roads,targets=E.catalog(reg)
 	if p.op=="policy" then
 		for _,r in ipairs(p.kind=="station" and targets or roads) do if r.key==p.key then owner,geometry=r.owner,r.geometry;break end end
 	elseif p.op=="create" then
-		local found=false;for _,t in ipairs(targets) do if t.key==p.target then found=true;p.targetLabel=t.label end end
-		if not found then log("business: order target no longer exists");return end
-		local ok,res=pcall(api.res.cargoTypeRep.get,p.cargo);if not ok or not res then log("business: unknown cargo type");return end
+		local found=false;for _,t in ipairs(targets) do if t.key==p.target and comp(t.entity,"STATION_GROUP") then found=true;p.targetLabel=t.label end end
+		if not found then rejected="order target no longer exists" end
+		local ok,res=pcall(api.res.cargoTypeRep.get,p.cargo);if not ok or not res then rejected="unknown cargo type" end
 	end
 	p.request=p.mpfRequest
-	local ok,result=B.command(reg,p.mpfCo,p,{owner=owner,geometry=geometry,now=now,monthDuration=api.util.getDefaultMonthDuration(),balance=function(id)return balance(reg,id)end})
+	local ok,result=B.command(reg,p.mpfCo,p,{reject=rejected,owner=owner,geometry=geometry,now=now,monthDuration=api.util.getDefaultMonthDuration(),balance=function(id)return balance(reg,id)end})
 	if ok and p.op=="policy" then reg.business.revision=(reg.business.revision or 0)+1;E.dirty=true end
 	state:set(st);log("business: "..tostring(p.op).." company "..tostring(p.mpfCo).." "..tostring(ok).." "..tostring(result or ""))
 end

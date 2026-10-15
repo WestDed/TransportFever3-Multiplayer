@@ -71,6 +71,8 @@ class AdapterTests(unittest.TestCase):
         self.check('world[300].TRANSPORT_VEHICLE.userStopped=true;E.command(state,{op="policy",kind="road",key=key,mode="private",fee=0,mpfCo=1,mpfRequest="one"},0);E.update(state,200,200);E.command(state,{op="policy",kind="road",key=key,mode="free",fee=0,mpfCo=1,mpfRequest="two"},400);E.update(state,200,400);assert(world[300].TRANSPORT_VEHICLE.userStopped)')
     def test_full_payment_queue_preserves_road_maintenance_obligation(self):
         self.check('E.command(state,{op="policy",kind="road",key=key,mode="free",fee=0,connect=true,mpfCo=1,mpfRequest="one"},0);E.update(state,200,200);world[20].MAINTENANCE_COST={maintenanceCost=1200};B.MAX_TRANSACTIONS=1;B.stationCharge(reg,2,1,"busy",100);defer=true;E.update(state,200,400);assert(reg.business.maintenance[key]==200);defer=false;held[1]();E.update(state,200,600);assert(reg.business.maintenance[key]==0);E.update(state,200,800);assert(funds[7]==9500)')
+    def test_vanished_order_target_returns_saved_error_without_escrow(self):
+        self.check('E.command(state,{op="create",target="sg:missing",title="Goods",cargo=1,amount=1,reward=500,duration=1,mpfCo=1,mpfRequest="one"},0);assert(next(reg.business.orders)==nil and #reg.business.notices["1"]==1 and reg.business.notices["1"][1].code=="request_failed" and funds[7]==10000)')
     def test_journal_callback_is_required_before_order_opens(self):
         self.check('defer=true;E.command(state,{op="create",target="sg:100",title="Goods",cargo=1,amount=1,reward=500,duration=1,mpfCo=1,mpfRequest="one"},0);E.flush(state);local id=next(reg.business.orders);assert(reg.business.orders[id].status=="funding");held[1]();assert(reg.business.orders[id].status=="open" and funds[7]==9500)')
     def test_engine_delivery_drives_reward_and_duplicate_event_is_ignored(self):
@@ -141,6 +143,10 @@ class BusinessUiTests(unittest.TestCase):
         self.check('render();nodes("ComboBox")[1].onValueChange("road:road:A");render();nodes("ComboBox")[3].onValueChange(2);render();click("Use: No");render();click("Connect: No");render();click("Save rules");local p=sent[1][4];assert(p.company==2 and p.use and p.connectGrant and not p.edit and p.key=="road:A")')
     def test_create_order_inputs_send_destination_cargo_amount_reward_duration(self):
         self.check('render();click("Orders");render();nodes("TextInputField")[1].onValueChange("City goods");render();nodes("ComboBox")[1].onValueChange("sg:A");render();nodes("ComboBox")[2].onValueChange(1);render();click("Create and reserve reward");local p=sent[1][4];assert(p.op=="create" and p.title=="City goods" and p.target=="sg:A" and p.cargo==1 and p.amount==100 and p.reward==10000 and p.duration==12)')
+    def test_blank_order_form_is_local_error_and_does_not_disconnect_peer(self):
+        self.check('render();click("Orders");render();click("Create and reserve reward");render();assert(#sent==0 and U.businessMessage=="invalid")')
+    def test_invalid_toll_is_not_sent_over_network(self):
+        self.check('render();nodes("ComboBox")[1].onValueChange("road:road:A");render();nodes("ComboBox")[2].onValueChange("toll");render();nodes("TextInputField")[1].onValueChange("oops");render();click("Save rules");assert(#sent==0 and U.businessMessage=="invalid")')
     def test_order_accept_cancel_and_pagination(self):
         self.check('U.business.orders={{id="order1",issuer=2,status="open",title="A",target="sg:A",progress=0,amount=2,reward=500}};render();click("Orders");render();click("Accept");assert(sent[1][4].op=="accept" and sent[1][4].id=="order1");U.business.orders[1].issuer=1;render();click("Cancel");assert(sent[2][4].op=="cancel")')
     def test_free_station_selection_and_specific_denial(self):

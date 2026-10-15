@@ -21,7 +21,7 @@ function V.poll()
 	if txt=="" then U.businessTxt=txt;U.business=nil;return end
 	local view,err=C.deser(txt)
 	if type(view)~="table" or view.me~=U.myCo then if err then log("business view: "..tostring(err)) end;return end
-	U.businessTxt=txt;U.business=view;U.businessVersion=(U.businessVersion or 0)+1;U.shareVersion=(U.shareVersion or 0)+1
+	U.businessTxt=txt;U.business=view;U.businessMessage=nil;U.businessVersion=(U.businessVersion or 0)+1;U.shareVersion=(U.shareVersion or 0)+1
 end
 function V.roadDecision(entity,cap)
 	local reg=V.registry();if not reg or not U.myCo then return nil end
@@ -42,7 +42,21 @@ function V.stationFee(key,fee)
 	return fee
 end
 local function command(p)
-	api.cmd.sendCommand(api.cmd.makeScriptingSendEventCmd("mpfever","mpfever","business",p))
+	local function number(n,lo,hi)return type(n)=="number" and n==math.floor(n) and n>=lo and n<=hi end
+	local function text(s,max)return type(s)=="string" and #s>0 and #s<=max and not s:find("%c")end
+	local valid=false
+	if p.op=="policy"then
+		if p.mode~="toll"then p.fee=0 end
+		if p.label and not text(p.label,120)then p.label=nil end
+		valid=text(p.key,240) and (p.kind=="road" or p.kind=="station") and (p.mode=="private" or p.mode=="free" or p.mode=="toll")
+			and number(p.fee,p.mode=="toll" and 1 or 0,1000000000) and (p.company==nil or number(p.company,1,4096))
+	elseif p.op=="create"then valid=text(p.title,120) and text(p.target,240) and number(p.cargo,0,4096) and number(p.amount,1,1000000) and number(p.reward,1,10000000000) and number(p.duration,1,120)
+	elseif p.op=="accept" or p.op=="cancel"then valid=text(p.id,120)end
+	if not valid then
+		U.businessMessage="invalid";U.businessVersion=(U.businessVersion or 0)+1;return false
+	end
+	U.businessMessage="pending";U.businessVersion=(U.businessVersion or 0)+1
+	api.cmd.sendCommand(api.cmd.makeScriptingSendEventCmd("mpfever","mpfever","business",p));return true
 end
 function V.install(react,builtin,windowApi)
 	if U.openBusiness then return end
@@ -124,7 +138,11 @@ function V.install(react,builtin,windowApi)
 			for i=math.max(1,#v.payments-11),#v.payments do local p=v.payments[i];rows[#rows+1]=text((purposes[p.purpose] or "").." · "..p.amount.." · "..(statuses[p.status] or ""))end
 		end
 		local last=v.notices and v.notices[#v.notices]
-		if last then rows[#rows+1]=text(last.code=="request_failed" and T("Refusé : vérifiez les droits, les valeurs et le solde.","Refused: check permissions, values and balance.") or T("Accord mis à jour.","Agreement updated."))end
+		if U.businessMessage=="invalid"then rows[#rows+1]=text(T("Refusé : vérifiez les droits, les valeurs et le solde.","Refused: check permissions, values and balance."))
+		elseif U.businessMessage=="pending"then rows[#rows+1]=text(T("Modification en cours pour tous les joueurs…", "Applying for every player…"))
+		elseif last and last.code=="request_failed"then rows[#rows+1]=text(T("Refusé : vérifiez les droits, les valeurs et le solde.","Refused: check permissions, values and balance."))
+		elseif last and last.code=="payment_failed"then rows[#rows+1]=text(T("Échec du paiement","Payment failed"))
+		elseif last then rows[#rows+1]=text(T("Accord mis à jour.","Agreement updated."))end
 		return builtin.Window{title="MPFever · "..T("Entreprises et accords","Companies and agreements"),id="window.mpfever.business",movable=true,closable=true,onClose=wp.onClose,
 			content=builtin.BoxLayout{orientation=W,children=rows}}
 	end)
