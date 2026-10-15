@@ -5,7 +5,7 @@ template<class World,class Clear>
 static void ClearForeignMoneyPositions(World simulation, World world, unsigned mine, unsigned canonical,
     const volatile long* others, long count, Clear clear)
 {
-    if (!world || world==simulation || !mine || !others || count < 0 || count > 8) return;
+    if (!simulation || !world || world==simulation || !mine || !others || count < 0 || count > 8) return;
     unsigned seen[9]; int n=0;
     for(long i=0;i<=count;i++) {
         unsigned e=i<count?(unsigned)others[i]:canonical;

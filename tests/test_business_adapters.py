@@ -59,12 +59,18 @@ class AdapterTests(unittest.TestCase):
                 {comp={node0=10,node1=-1,tangent0={x=50,y=0,z=0},tangent1={x=50,y=0,z=0}}},
                 {comp={node0=-1,node1=11,tangent0={x=50,y=0,z=0},tangent1={x=50,y=0,z=0}}}}}}
             assert(E.checkBuild(reg,2,p));p.proposal.addedSegments={};assert(not E.checkBuild(reg,2,p))''')
+    def test_connect_permission_cannot_upgrade_road_template(self):
+        self.check('world[20].BASE_EDGE.roadTemplate=1;E.command(state,{op="policy",kind="road",key=key,mode="free",fee=0,connect=true,mpfCo=1,mpfRequest="one"},0);E.update(state,200,200);local p={proposal={removedSegments={20},addedSegments={{comp={node0=10,node1=11,tangent0={x=100,y=0,z=0},tangent1={x=100,y=0,z=0},roadTemplate=2}}}}};assert(not E.checkBuild(reg,2,p));p.proposal.addedSegments[1].comp.roadTemplate=1;assert(E.checkBuild(reg,2,p))')
+    def test_connect_cannot_change_lane_modes_and_equal_maps_keep_working(self):
+        self.check('world[20].BASE_EDGE.laneConfigs={{transportModes={[0]=true,[1]=false}}};E.command(state,{op="policy",kind="road",key=key,mode="free",fee=0,connect=true,mpfCo=1,mpfRequest="one"},0);E.update(state,200,200);local c={node0=10,node1=11,tangent0={x=100,y=0,z=0},tangent1={x=100,y=0,z=0},laneConfigs={{transportModes={[1]=false,[0]=true}}}};local p={proposal={removedSegments={20},addedSegments={{comp=c}}}};assert(E.checkBuild(reg,2,p));c.laneConfigs[1].transportModes[1]=true;assert(not E.checkBuild(reg,2,p))')
     def test_connect_does_not_allow_node_deletion_or_unauthorized_attachment(self):
         self.check('E.command(state,{op="policy",kind="road",key=key,mode="free",fee=0,mpfCo=1,mpfRequest="one"},0);E.update(state,200,200);assert(not E.checkBuild(reg,2,{proposal={addedSegments={{comp={node0=10,node1=11}}}}}));assert(not E.checkBuild(reg,2,{proposal={removedNodes={10}}}))')
     def test_unfunded_toll_stops_then_paid_vehicle_resumes(self):
         self.check('funds[8]=0;E.command(state,{op="policy",kind="road",key=key,mode="toll",fee=100,mpfCo=1,mpfRequest="one"},0);E.update(state,200,200);assert(world[300].TRANSPORT_VEHICLE.userStopped and funds[8]==0);funds[8]=200;E.update(state,200,400);E.update(state,200,600);assert(not world[300].TRANSPORT_VEHICLE.userStopped and funds[8]==100)')
     def test_manual_stopped_vehicle_is_not_resumed_by_mod(self):
         self.check('world[300].TRANSPORT_VEHICLE.userStopped=true;E.command(state,{op="policy",kind="road",key=key,mode="private",fee=0,mpfCo=1,mpfRequest="one"},0);E.update(state,200,200);E.command(state,{op="policy",kind="road",key=key,mode="free",fee=0,mpfCo=1,mpfRequest="two"},400);E.update(state,200,400);assert(world[300].TRANSPORT_VEHICLE.userStopped)')
+    def test_full_payment_queue_preserves_road_maintenance_obligation(self):
+        self.check('E.command(state,{op="policy",kind="road",key=key,mode="free",fee=0,connect=true,mpfCo=1,mpfRequest="one"},0);E.update(state,200,200);world[20].MAINTENANCE_COST={maintenanceCost=1200};B.MAX_TRANSACTIONS=1;B.stationCharge(reg,2,1,"busy",100);defer=true;E.update(state,200,400);assert(reg.business.maintenance[key]==200);defer=false;held[1]();E.update(state,200,600);assert(reg.business.maintenance[key]==0);E.update(state,200,800);assert(funds[7]==9500)')
     def test_journal_callback_is_required_before_order_opens(self):
         self.check('defer=true;E.command(state,{op="create",target="sg:100",title="Goods",cargo=1,amount=1,reward=500,duration=1,mpfCo=1,mpfRequest="one"},0);E.flush(state);local id=next(reg.business.orders);assert(reg.business.orders[id].status=="funding");held[1]();assert(reg.business.orders[id].status=="open" and funds[7]==9500)')
     def test_engine_delivery_drives_reward_and_duplicate_event_is_ignored(self):

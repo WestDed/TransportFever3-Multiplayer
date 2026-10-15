@@ -17,6 +17,7 @@ int main() {
     view=simulation;calls=0;ClearForeignMoneyPositions(&simulation,&view,0,7,others,3,clear);
     ClearForeignMoneyPositions(&simulation,&view,8,7,others,9,clear);assert(view==simulation && calls==0);
     ClearForeignMoneyPositions(&simulation,&simulation,8,7,others,3,clear);assert(calls==0 && simulation[7]==20);
+    ClearForeignMoneyPositions((std::map<unsigned,int>*)0,&view,8,7,others,3,clear);assert(calls==0);
     // Reload/reconnect with no foreign companies clears only a foreign canonical.
     view=simulation;calls=0;ClearForeignMoneyPositions(&simulation,&view,8,7,others,0,clear);
     assert(view[8]==30 && view[7]==0 && calls==1);

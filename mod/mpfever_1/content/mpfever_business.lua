@@ -5,6 +5,13 @@ local function text(x, limit) return type(x) == "string" and #x > 0 and #x <= li
 local function count(t) local n=0; for _ in pairs(t or {}) do n=n+1 end; return n end
 local function copy(t) local r={}; for k,v in pairs(t or {}) do r[k]=type(v)=="table" and copy(v) or v end; return r end
 function B.sorted(t) local keys={}; for k in pairs(t or {}) do keys[#keys+1]=k end; table.sort(keys,function(a,b) return tostring(a)<tostring(b) end); return keys end
+function B.equal(a,b)
+	if type(a)~=type(b)then return false end
+	if type(a)~="table"then return a==b end
+	for k,v in pairs(a)do if not B.equal(v,b[k])then return false end end
+	for k in pairs(b)do if a[k]==nil then return false end end
+	return true
+end
 function B.company(reg,id) for _,c in ipairs(reg and reg.list or {}) do if c.id==id and type(c.ent)=="number" then return c end end end
 function B.ensure(reg)
 	if not reg or reg.mode~="separate" then return nil end
@@ -105,7 +112,7 @@ function B.setPolicy(reg,actor,p,owner,geometry)
 		grants[tostring(p.company)]={use=p.use==true,connect=p.connectGrant==true,edit=p.edit==true}
 	end
 	list[p.key]={key=p.key,kind=p.kind or "road",owner=actor,mode=p.mode,fee=p.mode=="toll" and p.fee or 0,
-		connect=p.connect==true,grants=grants,geometry=copy(geometry or old and old.geometry),label=p.label or old and old.label}
+		connect=p.connect==true,grants=grants,geometry=copy(old and old.geometry or geometry),label=p.label or old and old.label}
 	if p.kind=="station" then
 		reg.shares=reg.shares or {};reg.shares[p.key]=p.mode=="private" and 0 or (p.mode=="free" and -1 or p.fee)
 	end
@@ -192,7 +199,12 @@ function B.expire(reg,now)
 	local s=B.ensure(reg)
 	for _,id in ipairs(B.sorted(s.orders)) do
 		local o=s.orders[id]
-		if (o.status=="open" or o.status=="active") and o.deadline<=now then refund(reg,o,"expired") end
+		if o.status=="active" and o.progress>=o.amount then
+			-- Delivery completed before the deadline. A full payment queue may
+			-- defer the reward, but must never convert it into an issuer refund.
+			local tx=transaction(reg,"reward",id,{{co=o.carrier,amount=o.escrow}})
+			if tx then o.status="paying";o.tx=tx end
+		elseif (o.status=="open" or o.status=="active") and o.deadline<=now then refund(reg,o,"expired") end
 	end
 end
 function B.maintenance(reg,owner,key,amount)

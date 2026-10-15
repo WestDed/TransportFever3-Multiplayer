@@ -66,6 +66,8 @@ class BusinessTests(unittest.TestCase):
         self.check('local id=order();B.acceptOrder(reg,2,id,1);assert(not B.cancelOrder(reg,1,id));assert(B.cancelOrder(reg,2,id));assert(reg.business.orders[id].status=="open" and B.acceptOrder(reg,3,id,2))')
     def test_expiry_refunds_and_does_not_reward_late_delivery(self):
         self.check('local id=order(1,1);B.acceptOrder(reg,2,id,1);B.expire(reg,100);assert(not B.delivery(reg,2,{token="late",cargo=1,target="sg:A",amount=1},101));settle();B.expire(reg,200);settle();assert(reg.business.orders[id].status=="expired" and funds[1]==10000 and funds[2]==1000)')
+    def test_full_payment_queue_cannot_expire_an_already_completed_delivery(self):
+        self.check('B.MAX_TRANSACTIONS=1;local id=order(1,1);B.acceptOrder(reg,2,id,1);assert(B.stationCharge(reg,2,1,"busy",100));assert(B.delivery(reg,2,{token="delivered",cargo=1,target="sg:A",amount=1},2));assert(reg.business.orders[id].status=="active" and reg.business.orders[id].progress==1);settle();B.expire(reg,101);settle();assert(reg.business.orders[id].status=="completed" and funds[1]==9600 and funds[2]==1400)')
     def test_one_delivery_never_counts_towards_two_orders(self):
         self.check('local a,b=order(1),order(1);B.acceptOrder(reg,2,a,1);B.acceptOrder(reg,2,b,1);B.delivery(reg,2,{token="one",cargo=1,target="sg:A",amount=1},2);settle();assert(reg.business.orders[a].progress+reg.business.orders[b].progress==1)')
     def test_command_retry_after_save_preserves_owner_and_deduplication(self):
@@ -76,6 +78,8 @@ class BusinessTests(unittest.TestCase):
         self.check('local id=order();local before=C.ser(B.sharedState(reg));reg.business.localSeen={localEntity=1};assert(before==C.ser(B.sharedState(reg)));reg.business.orders[id].reward=600;assert(before~=C.ser(B.sharedState(reg)))')
     def test_connection_split_keeps_owner_and_cannot_delete_middle(self):
         self.check('policy("free");local a={p0={x=0,y=0},p1={x=50,y=0},t0={x=50,y=0},t1={x=50,y=0}};local b={p0={x=50,y=0},p1={x=100,y=0},t0={x=50,y=0},t1={x=50,y=0}};assert(B.roadFor(reg,a).owner==1 and B.preserves(g,{a,b}));a.p1.x=20;a.t0.x=20;a.t1.x=20;b.p0.x=80;b.t0.x=20;b.t1.x=20;assert(not B.preserves(g,{a,b}))')
+    def test_tariff_update_after_split_retains_whole_original_road(self):
+        self.check('policy("toll",100);local half={p0={x=0,y=0},p1={x=50,y=0},t0={x=50,y=0},t1={x=50,y=0}};local other={p0={x=50,y=0},p1={x=100,y=0},t0={x=50,y=0},t1={x=50,y=0}};assert(B.setPolicy(reg,1,{kind="road",key=key,mode="toll",fee=200},1,half));assert(B.roadFor(reg,other).owner==1 and B.roadFor(reg,other).fee==200 and reg.business.roads[key].geometry.p1.x==100)')
     def test_private_payments_not_exposed_to_other_companies(self):
         self.check('local id=order();local own=B.view(reg,1);local other=B.view(reg,2);assert(#own.payments==1 and #other.payments==0 and #other.orders==1);B.acceptOrder(reg,2,id,1);assert(#B.view(reg,3).orders==0)')
     def test_station_payments_conserve_money(self):

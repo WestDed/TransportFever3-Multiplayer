@@ -78,7 +78,7 @@ function E.checkBuild(reg,actor,proposal)
 		local c=added.comp
 		if c then
 			local a,b=c.position0 or position(c.node0),c.position1 or position(c.node1)
-			if a and b then candidates[#candidates+1]={p0=vec(a),p1=vec(b),t0=vec(c.tangent0),t1=vec(c.tangent1)} end
+			if a and b then candidates[#candidates+1]={p0=vec(a),p1=vec(b),t0=vec(c.tangent0),t1=vec(c.tangent1),source=c} end
 			for _,n in ipairs({c.node0,c.node1}) do
 				local key=E.nodeRoad and E.nodeRoad[n]
 				local road=key and reg.business.roads[key]
@@ -91,7 +91,20 @@ function E.checkBuild(reg,actor,proposal)
 		local g=E.geometry(e);local road=B.roadFor(reg,g)
 		if road and road.owner~=actor and not B.can(reg,road.key,actor,"edit") then
 			if not B.can(reg,road.key,actor,"connect") then return false,"road connection is not permitted" end
-			if not B.preserves(g,candidates) then return false,"road edit/deletion is not permitted" end
+			local original=comp(e,"BASE_EDGE");local unchanged={}
+			for _,candidate in ipairs(candidates)do
+				if B.matches(g,candidate)then
+					for _,field in ipairs({"roadTemplate","roadStyle","roadType","type","typeIndex"})do
+						if get(original,field)~=get(candidate.source,field)then return false,"road upgrade is not permitted"end
+					end
+					for _,field in ipairs({"laneConfigs","edgeDecorations"})do
+						local a,b=get(original,field),get(candidate.source,field)
+						if (a or b) and not B.equal(C.marshal(a or {}),C.marshal(b or {}))then return false,"road lane/decorations edit is not permitted"end
+					end
+					unchanged[#unchanged+1]=candidate
+				end
+			end
+			if not B.preserves(g,unchanged) then return false,"road edit/deletion is not permitted" end
 		end
 	end
 	for _,object in ipairs(sp.edgeObjectsToAdd or {})do
@@ -209,8 +222,8 @@ function E.update(state,dt,now)
 		local owned=comp(r.e,"PLAYER_OWNED");local cost=comp(r.e,"MAINTENANCE_COST")
 		if (not owned or owned.player==-1) and cost and cost.maintenanceCost>0 then
 			local amount=(s.maintenance[r.road.key] or 0)+cost.maintenanceCost*elapsed/year
-			local whole=math.floor(amount);s.maintenance[r.road.key]=amount-whole
-			if whole>0 then B.maintenance(reg,r.road.owner,r.road.key,whole) end
+			local whole=math.min(1000000000,math.floor(amount));s.maintenance[r.road.key]=amount
+			if whole>0 and B.maintenance(reg,r.road.owner,r.road.key,whole) then s.maintenance[r.road.key]=amount-whole end
 		end
 	end
 	state:set(st);E.flush(state)
