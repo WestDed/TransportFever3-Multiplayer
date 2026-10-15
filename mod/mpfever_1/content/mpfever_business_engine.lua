@@ -228,7 +228,7 @@ function E.engineEvent(state,id,name,param,now)
 		local index=journey and journey.lineStop1 or tv and tv.stopIndex;local stop=line and index and line.stops[index+1]
 		if actor and stop and (cargo or person) then
 			local token=table.concat({tostring(p.simEntity),tostring(cargo and cargo.startTime or 0),tostring((cargo or person).pickupTime),vkey(st,p.lineEntity),tostring(index),tostring(journey and journey.roundTripCounter or tv and tv.lastLineStopDeparture or 0)},":")
-			changed=B.delivery(reg,actor,{token=token,cargo=cargo and cargo.cargoType or 0,amount=1,target=R.sgKey(stop.stationGroup)},now) or changed
+			changed=B.delivery(reg,actor,{token=token,cargo=(cargo or person).cargoType,amount=1,target=R.sgKey(stop.stationGroup)},now) or changed
 		end
 	end
 	if changed then state:set(st);E.flush(state) end
@@ -236,7 +236,10 @@ end
 function E.view(reg,me)
 	R.CO=reg
 	local out=B.view(reg,me);if not out then return nil end
-	local roads,targets=E.catalog(reg);out.roadCatalog=roads;out.targets=targets;out.me=me;out.companies={};out.cargos={};out.contractOwners=CO.contractOwners and CO.contractOwners() or {}
+	local roads,targets=E.catalog(reg);out.roadCatalog={};out.targets={};
+	for _,r in ipairs(roads)do if r.owner==me then out.roadCatalog[#out.roadCatalog+1]={key=r.key,owner=r.owner,label=r.label}end end
+	for _,r in ipairs(targets)do out.targets[#out.targets+1]={key=r.key,owner=r.owner,label=r.label}end
+	out.me=me;out.companies={};out.cargos={};out.contractOwners=CO.contractOwners and CO.contractOwners() or {}
 	for _,co in ipairs(reg.list) do out.companies[#out.companies+1]={id=co.id,ent=co.ent,name=co.name} end
 	pcall(function() for id in pairs(api.res.cargoTypeRep.getAll(false)) do local cargo=api.res.cargoTypeRep.get(id);out.cargos[#out.cargos+1]={id=id,name=cargo.name or tostring(id)} end;table.sort(out.cargos,function(a,b)return a.id<b.id end) end)
 	return out

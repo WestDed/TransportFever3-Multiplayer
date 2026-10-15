@@ -5,7 +5,7 @@ Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $root = Split-Path $PSScriptRoot
 $source = (Resolve-Path (Join-Path $root 'release/dist/MPFever')).Path
-$output = Join-Path $root 'release/MPFever-0.3.6-experimental.zip'
+$output = Join-Path $root 'release/MPFever-0.3.7-experimental.zip'
 $archive = [IO.Compression.ZipFile]::Open($output, [IO.Compression.ZipArchiveMode]::Create)
 try {
     foreach ($file in Get-ChildItem -LiteralPath $source -File -Recurse) {

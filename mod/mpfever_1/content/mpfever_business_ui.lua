@@ -18,6 +18,7 @@ end
 function V.poll()
 	local f=C.IO.open(C.DIR..C.BS.."business.txt","rb");if not f then return end
 	local txt=f:read("*a");f:close();if txt==U.businessTxt then return end
+	if txt=="" then U.businessTxt=txt;U.business=nil;return end
 	local view,err=C.deser(txt)
 	if type(view)~="table" or view.me~=U.myCo then if err then log("business view: "..tostring(err)) end;return end
 	U.businessTxt=txt;U.business=view;U.businessVersion=(U.businessVersion or 0)+1;U.shareVersion=(U.shareVersion or 0)+1
