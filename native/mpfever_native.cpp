@@ -4,6 +4,7 @@
 // RVAs) to <MPFEVER_DIR>\native.log. Everything is keyed to one exact game build: on any other build the DLL
 // stays inert. Built freestanding (no Windows SDK / C runtime on the build machine): see win.h.
 #include "win.h"
+#include "company_privacy.h"
 
 extern "C" int _fltused = 0;
 
@@ -1289,14 +1290,21 @@ static void ApplyLocalPlayer(const char* why)
 extern "C" u64 ReplDetour(void* src, void* dst, u64 flag)
 {
     u32 before = dst ? *(u32*)((u8*)dst + 0x20c) : 0;
-    // end of a simulation iteration: the positions the other companies earned during it are emptied before the state is copied for
-    // the interface, so that it never shows the money popups of the companies this machine does not play
+    // End of an iteration: keep foreign floating amounts out of the local
+    // interface. Filter only the finished GUI copy, below.
     static long replClear = -1;
     if (replClear < 0) { char v[4]; replClear = GetEnvironmentVariableA("MPFEVER_NOREPLCLEAR", v, 3) > 0 ? 0 : 1; }
-    if (replClear && (u32)((uptr)_ReturnAddress() - g_base) == RVA_REPL_LOOP) ClearOthersIn((u8*)src, false);
+    const bool guiCopy=(u32)((uptr)_ReturnAddress() - g_base)==RVA_REPL_LOOP;
     WatchAdd((u8*)src); WatchAdd((u8*)dst);
     if (src && dst && (u32)((uptr)_ReturnAddress() - g_base) == RVA_REPL_LOOP) { g_gsWord[0] = (u64)src + 0x20c; g_gsWord[1] = (u64)dst + 0x20c; }
     u64 r = g_replOrig(src, dst, flag);
+    // Filter the destination AFTER replication. The projection must not
+    // erase the authoritative simulation state; aliasing worlds are refused.
+    if(replClear && guiCopy && src && dst && g_clearPos && g_localPlayer) {
+        bool known=false;for(int i=0;i<g_nPreSeen;i++)if(g_preSeen[i]==src)known=true;
+        if(known) ClearForeignMoneyPositions(*(void**)((u8*)src+0x18),*(void**)((u8*)dst+0x18),(u32)g_localPlayer,
+            *(u32*)((u8*)dst+0x20c),g_others,g_nOthers,g_clearPos);
+    }
     static long n = 0;
     if (n < 80) {
         n++;

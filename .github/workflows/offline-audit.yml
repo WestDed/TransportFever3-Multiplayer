@@ -94,6 +94,9 @@ jobs:
       - name: Build existing net48 launcher, freestanding DLL and package
         shell: cmd
         run: build.bat
+      - name: Run production native company UI filter on Windows (no game hooks)
+        shell: pwsh
+        run: ./tests/test_native_privacy.ps1
       - name: Verify x64 binaries, package and preserved license
         shell: pwsh
         run: ./tests/verify_windows_build.ps1
