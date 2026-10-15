@@ -2,6 +2,8 @@
 
 Ветка разработки WestDed: результаты offline hardening и их ограничения — [FEATURES](FEATURES.md), [TESTING](TESTING.md), [HANDOFF](HANDOFF.md). TF3 в нашей среде не запускалась; следующие описания upstream не являются подтверждением игровых функций этой копии. Журнал центрального порядка подготовлен отдельно и ещё не включён.
 
+В 0.3.7-experimental добавлено игровое окно **«Компании и соглашения»**: права на дороги, тарифы и собственные заказы. [Инструкция и правила](docs/BUSINESS_MECHANICS.md); игровой повтор новых механик пока NOT RETESTED. Нужен одинаковый полный пакет у всех игроков, protocol 5.
+
 Experimental multiplayer for Transport Fever 3. Several players play the same world, each in their own copy of the game, over the internet or a local network. They play either:
 
 - in **one shared company** (co-op);

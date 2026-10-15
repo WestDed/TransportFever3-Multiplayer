@@ -37,7 +37,7 @@ Snapshot — read-only source, chunks 256 KiB, SHA-256, bounded per-peer writers
 
 ## Протокол и доверие
 
-UTF-8 строки `kind TAB from TAB payload LF`, payload — ограниченные data-only Lua tables. Protocol 4 согласуется в challenge/signed join до принятия входа; sender определяется сокетом. До принятия join сокет не получает Broadcast/адресные сообщения сессии. Подтверждение connection ставится в очередь до публикации Joined под общим lock; первый frame ограничен 4 КиБ, после него сохраняется общий лимит и уже buffered data. Повторный join, неизвестные join fields, host controls с клиента, malformed types/limits отказывают. Восемь TCP-клиентов (хост играет дополнительно) + четыре ограниченных handshakes, reconnect по credential допускается на полном сервере.
+UTF-8 строки `kind TAB from TAB payload LF`, payload — ограниченные data-only Lua tables. Protocol 5 согласуется в challenge/signed join до принятия входа; sender определяется сокетом. До принятия join сокет не получает Broadcast/адресные сообщения сессии. Подтверждение connection ставится в очередь до публикации Joined под общим lock; первый frame ограничен 4 КиБ, после него сохраняется общий лимит и уже buffered data. Повторный join, неизвестные join fields, host controls с клиента, malformed types/limits отказывают. Восемь TCP-клиентов (хост играет дополнительно) + четыре ограниченных handshakes, reconnect по credential допускается на полном сервере.
 
 Версия wire не проверяет одинаковость EXE/DLL/mods/game build. TCP не шифруется; initial invitation, server authentication/Steam proof остаются задачами. Межсессионный possession claim реализован; engine save/load/reconnect требует испытаний. Для выпуска нужна подтверждённая identity и матрица game permissions/цены/refs.
 
@@ -47,6 +47,14 @@ UTF-8 строки `kind TAB from TAB payload LF`, payload — ограниче�
 
 PR #9 проверяет owner uniqueness по всем roster rows, включая pending entities; заменяет roster и bindings только после полного успешного расчёта. Invalid report блокирует новые права до корректного полного report. Sid можно обновить с прежним proven owner. Lua helper назначения требует valid host owner/approver и world. [Результаты проверки main](docs/MAIN_REVIEW_2026_10_13.md).
 
-## Первое совместное испытание и локальные исправления
+## Первое совместное испытание и все замечания PLAY-01–08
 
-[Полная запись и остаточные задачи](docs/COOP_PLAYTEST_2026_10_15.md). PR #11 резервирует capacity control messages при bulk transfer без изменения FIFO/8 MiB/128 frames; отделяет verified receipt от load wait и задаёт bounded load budget. UI/SIM пользуются одним station-owner resolver, cache и wrapper обновляются после смены shares/компании/reload. Subsidy guard сохраняет один claim до game handler, а индекс notification lists поддерживает отсутствующие поля. Эти изменения не вводят центральный replay, дорожные договоры, custom subsidies или новые native offsets.
+[Отчёт пользователей и история исправлений](docs/COOP_PLAYTEST_2026_10_15.md), [архитектура и инструкция новых соглашений](docs/BUSINESS_MECHANICS.md). В PR #11 реализованы и подключены права use/connect/edit, режимы private/free/toll для дорог и остановок, saved toll visits и последовательные journal legs, собственные заказы с escrow/одним carrier/фактической доставкой/возвратом, GUI company-notification projection и фильтр денежных позиций отдельного GUI world после native replication. Клиент не получает новые owner/journal команды; отправляет bounded business event, co/request назначает bridge.
+
+Геометрические ключи связывают разрешённые split segments с исходной дорогой. Road с connect становится engine-public, но logical owner/ACL сохраняется, а содержание начисляется ему отдельно. Политика проверяется перед replay и в author native capture; реальная возможность остановить native proposal до apply требует игрового gate. Engine имеет одного владельца без ACL: UI-флаг сам по себе прав не обеспечивает.
+
+`co.business` сохраняет права, заказы, visit/delivery dedup и платежи. `business` hash проверяет общие условия и progress без локальных tokens/callback markers; ACCOUNT проверки остаются. Saved in-flight booking блокируется как uncertain после reload: это защита от повторного списания, а не доказанная атомарность save+native journal.
+
+Загрузка мира после verified transfer имеет отдельную liveness: каждые 10 секунд launcher сообщает точный snapshot/phase; soft budget 30 минут продлевается до абсолютных двух часов при живой связи. Ready отдельно привязан к snapshot после нового game hello. Healthy socket при незавершённой engine load не закрывается автоматически. Это реакция на уточнённый отказ 50% в игровом loading screen, не доказанная причина зависания движка.
+
+Центральный replay/cutover не заменён, новые native offsets не добавлены. Все новые механики — экспериментальная реализация; игровой результат **NOT RETESTED**.

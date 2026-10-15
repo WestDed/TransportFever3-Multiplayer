@@ -1,3 +1,11 @@
+0.3.7-experimental — company agreements prototype (game NOT RETESTED)
+- Saved road use/connect/edit permissions; private/free/toll road and stop access.
+- Per-entry road fees, saved sequential journal transfers, escrow delivery orders.
+- In-game Companies and agreements window; cargo/passenger orders and refunds.
+- Company notification projection; foreign money positions filtered in GUI copy.
+- Snapshot-specific loading liveness; protocol 5 requires the same full package.
+- See BUSINESS_MECHANICS.md for rules, uncertain-payment limits and game tests.
+
 MPFever - Changelog
 ===================
 

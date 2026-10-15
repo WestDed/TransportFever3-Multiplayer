@@ -1,4 +1,4 @@
-MPFever 0.3.6-experimental - Installation and first game
+MPFever 0.3.7-experimental - Installation and first game
 ========================================================
 
 REQUIREMENTS (every player)
@@ -108,3 +108,24 @@ Corrupt/missing known keys fail closed; restore the backup. Old companies withou
 owner require explicit assignment by the host, scoped to the saved world id.
 See docs/STAGE1_PERSISTENT_OWNERSHIP.md in the source repository for the request format.
 Actual save/restart/migration in TF3 has not yet been tested by this project.
+
+
+КОМПАНИИ И СОГЛАШЕНИЯ (0.3.7-experimental, protocol 5)
+-----------------------------------------------------
+Экспериментальная версия: проверки компонентов не заменяют испытания в игре.
+Оба игрока обновляют ВЕСЬ пакет: EXE, DLL и mod. Сначала сохраните исходный save
+отдельно. Личные identity keys каждый хранит у себя; save в identity не кладут.
+
+В игровом окне MPFever нажмите «Компании и соглашения».
+«Инфраструктура»: своя дорога/остановка, закрытый/бесплатный/платный доступ,
+тариф и права конкретной компании. Для стройки вдоль дороги разрешите
+«Присоединение»; использование не разрешает перестройку и снос.
+«Заказы»: название, остановка назначения, груз/пассажиры, объём, награда, месяцы;
+«Создать и зарезервировать награду». Другая компания принимает заказ, выполняет
+реальные доставки собственным транспортом и получает резерв при завершении.
+«Платежи»: только собственные расчёты; неопределённый платеж после reload
+автоматически не повторяется, его нужно сверить с финансовым журналом.
+
+Полные правила, ограничения и игровой чек-лист: BUSINESS_MECHANICS.md.
+При долгой загрузке мира launcher heartbeat означает лишь живую связь,
+а не движение процента игры. Не запускайте повторное подключение только из-за 50%.

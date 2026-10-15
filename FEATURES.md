@@ -15,29 +15,31 @@
 | Флот и линии | Дополнительная проверка resolved owner | Lua policy с injected ownership; native graph/terrain/assets и разрешённые refs неполны |
 | Бюджет и кредиты | Частично upstream; Repay берёт сохранённые terms | Real coLoanEvent с mock dependencies; Obtain/месячная схема/формула game loan_util не проверены |
 | Прогресс/разрешения | Существующий общий progression fallback | Независимый прогресс ещё не реализован/не подтверждён |
-| Контракты | Upstream owner/filter wrappers | Настоящие offers/rewards/delivery не проверены |
+| Контракты | Exclusive city claim + собственные delivery orders/escrow, см. таблицу ниже | Core/adapters PASS; настоящие offers/rewards/delivery NOT RETESTED |
 | Конкуренция грузов/пассажиров | Используются штатные economy/pathfinding | Поведение разных компаний не измерено; новой искусственной экономики нет |
-| Платная инфраструктура | Upstream shared station/per-stop fee | Пользователи сообщили о недоступности paid stops; UI fixes в PR #11 ещё требуют game повтора; stable visit ID/пути/депо не решены |
+| Платная инфраструктура | Road grants/tolls/visits и station modes/billing, см. таблицу ниже | Core/adapters PASS; реальные pathfinding/fees NOT RETESTED, пути/депо отдельно |
 | Центральный порядок и epochs | Offline journal/cursor/quorum реализованы | Классические file/replay tests; **не подключены к игровому scheduler** |
 | Владелец после перезапуска | Owner fingerprint сохраняется с company id; RSA key в LocalAppData, explicit legacy assignment | Python registry roundtrip + реальные C# файлы/TCP/net48; настоящий save/restart пока NOT RUN |
 | Полная Windows сборка | Обязательная CI job | net48 EXE, x64 DLL, 14 exports/ordinals, ZIP/license; hooks не запускались |
-| Игровой каталог ресурсов | Исправлен в PR #10: permissions module зарегистрирован; harness учитывает catalog | Реальный ZIP/copy hashes и Lua bootstrap fixture PASS; первый пользовательский game startup FAIL, повтор с исправлением NOT RUN |
-| Локализация | 33 gaps заполнены | 227 используемых catalog keys в 11 локалях, placeholders проверяются; диагностика новых компонентов может быть на английском |
+| Игровой каталог ресурсов | Исправлен в PR #10: permissions module зарегистрирован; harness учитывает catalog | Реальный ZIP/copy hashes и Lua bootstrap fixture PASS; первый запуск FAIL; после catalog fix startup/join USER-REPORTED PASS |
+| Локализация | 33 gaps заполнены | 279 используемых catalog keys в 11 локалях, placeholders проверяются; диагностика новых компонентов может быть на английском |
 | Gigantomaniac | Цель будущего этапа | Ни карты, ни saves/RAM/game step profiling нет |
 
 История принятых исправлений: [#2](https://github.com/WestDed/TransportFever3-Multiplayer/pull/2) → [#3](https://github.com/WestDed/TransportFever3-Multiplayer/pull/3) → [#4](https://github.com/WestDed/TransportFever3-Multiplayer/pull/4) → [#5](https://github.com/WestDed/TransportFever3-Multiplayer/pull/5) → [#6](https://github.com/WestDed/TransportFever3-Multiplayer/pull/6). Документы продолжения находятся в docs/STAGE1_*.md. Исторический [аудит функций](https://github.com/WestDed/TransportFever3-Multiplayer/blob/6611e8f63e29e04aeb978bddd17877b461894edf/FEATURES.md) остаётся доступен.
 
 PR #8 слит заказчиком в main 5f6cd58. [PR #9](https://github.com/WestDed/TransportFever3-Multiplayer/pull/9) исправляет ambiguity pending owner, частичный roster commit/stale authority, sid refresh и invalid host/world assignment. [Разбор и результаты](docs/MAIN_REVIEW_2026_10_13.md); фактическое слияние PR #9 проверять через GitHub.
 
-## Обновление после совместной игры — PR #11
+## Полный список первого совместного испытания — PR #11 / 0.3.7-experimental
 
-| Функция | Состояние | Предел проверки |
+| Функция | Что реализовано | Предел проверки |
 |---|---|---|
-| Bulk transfer и control messages | Исправлен premature disconnect при заполнении очереди; отдельный receipt/load wait | Real queue/TCP/net48 tests; большая карта в игре ещё требует повтора |
-| Выбор платной остановки | Исправлены construction-owner fallback, cache, поздний module load и UI reload context | Real Lua functions с injected facts; selection/line/vehicle в игре NOT RETESTED |
-| Одна городская субсидия — один владелец | Guard existing/unclaimed/ready, closed/retry/ambiguous UID denial, saved claim | Component regressions; native ordering, reward/delivery и simultaneous click не приняты |
-| Чужие карточки субсидий | Исправлен индекс при отсутствующих списках | Component regressions; все остальные notices не закрыты |
-| Право строить вдоль чужой дороги | Не реализовано полноценно | Следующий engine permission gate |
-| Платные дороги | Новая запланированная механика | Нет working tariff/payment UI или stable passage ledger |
-| Собственные субсидии | Не реализованы | Межфирменные заказы с escrow планируются отдельно |
-| Чужие денежные надписи/общие company notices | Пользовательский отказ, диагностика нужна | Native ABI не меняется без свежих данных; UI privacy ещё не принята |
+| Большой save, 50% в игровом loading screen | Control reserve, verified receipt, раздельные deadlines, launcher liveness, snapshot-specific ready; healthy socket остаётся подключён | Queue/TCP/deadline regressions; root cause engine stall без свежих logs не установлен |
+| Строительство вдоль чужой дороги | Окно владельца, общие/адресные use/connect/edit права, проверки подключения/split/сноса/road stop, сохранённый logical owner | Core/engine/GUI fixtures; native pre-apply enforcement и вся матрица реальных builders NOT RETESTED |
+| Платные дороги | Private/free/toll, одна плата за вход на участок, debit→credit, сохранённый visit, pause при отсутствии денег, содержание за владельцем | Regression tests, journal callback fixtures; настоящий traffic/pathfinding и save frontier не проверены |
+| Чужие остановки | Private/free/toll и адресное use; общий owner resolver, live selection/reload, line validation и остановка существующего транспорта при revoke; saved billing queue | UI/core/engine fixtures; реальные stop/line/arrival/payment NOT RETESTED |
+| Одна городская субсидия — один владелец | Existing/unclaimed/ready guard, closed/retry/ambiguous UID refusal, saved claim | Regressions; simultaneous native apply и actual rewards требуют игры |
+| Собственные заказы | Окно создания, реальные cargo/passenger ids и target, escrow, один carrier, реальные delivery events, cancel/abandon/expiry/refund | Pure core и production adapters с API fixtures; реальные события TF3 NOT RETESTED |
+| Чужие уведомления и звуки | GUI state/history/map markers/popup prefilter по владельцу company/entity; свои и мировые остаются | Production projection tests; реальные notification recipes/sounds NOT RETESTED |
+| Чужие денежные надписи | Native filter отдельного GUI destination после replication, с alias guard; быстрее reassert company context | Production C++ helper исполняется Linux/Windows CI; engine hooks и полный ACCOUNT/JOURNAL итог NOT RETESTED |
+
+[Правила и инструкция](docs/BUSINESS_MECHANICS.md). Весь пользовательский список реализован в коде; эти записи не означают принятую игровую работоспособность. Пограничная проводка submitted при save становится uncertain и не повторяется автоматически. Durable central cutover, TLS, host migration и Gigantomaniac остаются отдельными этапами проекта.
