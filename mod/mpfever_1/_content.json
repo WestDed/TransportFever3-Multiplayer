@@ -16,6 +16,9 @@
         "mpfever_asset.con.lua",
         "mpfever_asset.script.lua",
         "mpfever_chat@2x.tga",
-        "mpfever_business.lua"
+        "mpfever_business.lua",
+        "mpfever_business_engine.lua",
+        "mpfever_business_ui.lua",
+        "mpfever_privacy.lua"
     ]
 }

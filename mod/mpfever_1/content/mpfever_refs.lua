@@ -362,6 +362,10 @@ end
 
 -- The player entity owning an entity: its own owner, else the owner of its station group's first station, else of its construction
 function R.ownerOf(e)
+	if R.businessOwner then local owner=R.businessOwner(e);if owner then return owner end end
+	return R.rawOwnerOf(e)
+end
+function R.rawOwnerOf(e)
 	if type(e) ~= "number" or e < 0 then return nil end
 	local function po(x)
 		local c = comp(x, "PLAYER_OWNED")

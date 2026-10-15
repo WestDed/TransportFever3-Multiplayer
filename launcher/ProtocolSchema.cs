@@ -11,7 +11,7 @@ namespace MPFever
         public const long MaxInteger = 9007199254740991L;
         public static readonly HashSet<string> ClientKinds = new HashSet<string> {
             "hello", "clock", "act", "speed_req", "sync_hash", "chat", "replay_failed", "act_fail", "act_refused",
-            "det_hash", "autotest_done", "area_done", "nat_pending", "nat_cancel", "resync_received" };
+            "det_hash", "autotest_done", "area_done", "nat_pending", "nat_cancel", "resync_received", "load_status" };
         public static readonly HashSet<string> ClientCommands = new HashSet<string> {
             "makeVehicleBuyCmd", "makeVehicleSellCmd", "makeVehicleSetLineCmd", "makeVehicleSendToDepotCmd", "makeVehicleReverseCmd",
             "makeVehicleReplaceCmd", "makeVehicleSetStoppedByUserCmd", "makeVehicleTryToDepartCmd", "makeVehicleSetManualDepartureCmd",
@@ -57,6 +57,9 @@ namespace MPFever
                     Integer(t,"id",1,int.MaxValue);
                     if (Text(t,"origin",64) != m.From) throw new InvalidDataException("Forged native origin");
                     break;
+                case "load_status":
+                    if (t.Count!=3 || Text(t,"phase",16)!="loading" && Text(t,"phase",16)!="ready") throw new InvalidDataException("Invalid load status");
+                    goto case "resync_received";
                 case "resync_received": Integer(t,"id",1,int.MaxValue); if (!SnapshotLimits.Hex(Text(t,"transfer",32),32)) throw new InvalidDataException("Invalid receipt"); break;
                 case "area_done": Integer(t,"n",0,int.MaxValue); break;
             }
@@ -86,9 +89,10 @@ namespace MPFever
             if (fn == "makeScriptingSendEventCmd")
             {
                 Text(args,1L,512); string id = Text(args,2L,64), name = Text(args,3L,64);
-                Table(Get(args,4L),"event parameters");
-                bool allowed = id == "Loan" && (name == "Obtain" || name == "Repay") || id == "Subvention" && (name == "onAccept" || name == "onDecline") || id == "mpfever" && name == "share";
+                var parameters=Table(Get(args,4L),"event parameters");
+                bool allowed = id == "Loan" && (name == "Obtain" || name == "Repay") || id == "Subvention" && (name == "onAccept" || name == "onDecline") || id == "mpfever" && (name == "share" || name == "business");
                 if (!allowed) throw new InvalidDataException("Unapproved scripting event");
+                if(id=="mpfever" && name=="business") Business(parameters);
             }
             else if (fn == "makeWorldBuildProposalCmd") { Table(Get(args,1L),"proposal"); Table(Get(args,2L),"context"); }
             else if (fn == "makeVehicleBuyCmd" || fn == "makeVehicleReplaceCmd") Table(Get(args,fn == "makeVehicleBuyCmd" ? 3L : 2L),"vehicle config");
@@ -98,6 +102,30 @@ namespace MPFever
                 Integer(args,"w",1,8192); Integer(args,"h",1,8192);
                 if (!(Get(args,"blob") is string blob) || blob.Length > LuaLit.MaxString) throw new InvalidDataException("Invalid terrain blob");
             }
+        }
+        static void Business(Dictionary<object,object> p)
+        {
+            string op=Text(p,"op",16);
+            string fields;
+            switch(op)
+            {
+                case "policy":
+                    fields="op,key,kind,label,mode,fee,connect,company,use,connectGrant,edit";
+                    Text(p,"key",240); string kind=Text(p,"kind",16), mode=Text(p,"mode",16);
+                    if(kind!="road" && kind!="station" || mode!="private" && mode!="free" && mode!="toll") throw new InvalidDataException("Invalid infrastructure policy");
+                    Integer(p,"fee",0,1000000000);if(mode=="toll" && Integer(p,"fee")==0)throw new InvalidDataException("Empty toll");
+                    if(p.ContainsKey("label"))Text(p,"label",120);
+                    if(p.ContainsKey("company"))Integer(p,"company",1,4096);
+                    foreach(var k in new[]{"connect","use","connectGrant","edit"})OptionalBool(p,k);
+                    break;
+                case "create":
+                    fields="op,title,target,cargo,amount,reward,duration";
+                    Text(p,"title",120);Text(p,"target",240);Integer(p,"cargo",0,4096);Integer(p,"amount",1,1000000);Integer(p,"reward",1,10000000000);Integer(p,"duration",1,120);break;
+                case "accept": case "cancel":fields="op,id";Text(p,"id",120);break;
+                default:throw new InvalidDataException("Unknown business operation");
+            }
+            var permitted=new HashSet<string>(fields.Split(','));
+            foreach(var key in p.Keys)if(!(key is string s) || !permitted.Contains(s))throw new InvalidDataException("Untrusted business field");
         }
         public static void CheckPlayerReferences(Dictionary<object, object> t, int company)
         {

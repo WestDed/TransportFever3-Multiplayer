@@ -20,6 +20,11 @@ local okR, R = pcall(ug_require, "mpfever_refs.lua")
 if not okR then R = ug_require("mpfever_1::/mpfever_refs.lua") end
 local okCO, CO = pcall(ug_require, "mpfever_co.lua")
 if not okCO then CO = ug_require("mpfever_1::/mpfever_co.lua") end
+do
+	local ok,m=pcall(ug_require,"mpfever_business_engine.lua")
+	if not ok then m=ug_require("mpfever_1::/mpfever_business_engine.lua") end
+	CO.business=m;m.configure(C,R,CO,log)
+end
 -- companies: the registry of this state (set from the simulation state / the GUI mirror) maps company numbers and player entities
 R.coEntity = function(id) return R.CO and CO.entityOf(R.CO, id) or nil end
 R.coIdOf = function(e) return R.CO and CO.idOfEntity(R.CO, e) or nil end
@@ -233,6 +238,7 @@ local function simHash(terrainSig, reg)
 	local tMark = os.clock()
 	if reg and reg.mode == "separate" then
 		parts.companies = CO.signature(reg)
+		parts.business = tostring(valueHash(CO.business.core.sharedState(reg),0))
 		-- who owns what: roads, constructions and vehicles counted per company (0 = nobody's)
 		pcall(function()
 			local cnt = {}
@@ -435,6 +441,7 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 	if a.fn == "makeScriptingSendEventCmd" and a.co and R.CO and R.CO.mode == "separate" and type(a.args) == "table"
 		and (a.args[2] == "Subvention" or a.args[2] == "mpfever") and type(a.args[4]) == "table" then
 		a.args[4].mpfCo = a.co
+		a.args[4].mpfRequest = tostring(a.tok or a.origin or "") .. ":" .. tostring(a.uid) .. ":" .. tostring(a.at)
 	end
 	if a.fn == "makeScriptingSendEventCmd" and a.co and R.CO and R.CO.canon and a.co ~= CO.idOfEntity(R.CO, R.CO.canon)
 		and type(a.args) == "table" and (a.args[2] == "Loan" or a.args[2] == "Company" or a.args[2] == "Companies") then
@@ -460,6 +467,7 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 		return result
 	end
 	local allowed, denied = P.check(R.CO, a, R.ownerOf)
+	if allowed and a.fn=="makeWorldBuildProposalCmd" then allowed,denied=CO.business.checkBuild(R.CO,a.co,a.args[1]) end
 	if not allowed then
 		result.err = "permission: " .. tostring(denied)
 		return result
@@ -473,7 +481,9 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 				local sg = type(stop) == "table" and stop.stationGroup
 				if type(sg) == "number" and sg >= 0 then
 					local owner = CO.idOfEntity(R.CO, R.ownerOf(sg))
-					if owner and owner ~= a.co and C.shareFee(R.CO.shares, R.sgKey(sg)) <= 0 then blocked = sg break end
+					local key=R.sgKey(sg);local fee=C.shareFee(R.CO.shares,key)
+					local policy=R.CO.business and R.CO.business.stations[key]
+					if owner and owner ~= a.co and ((policy and not CO.business.core.can(R.CO,key,a.co,"use","station")) or (not policy and fee==0)) then blocked = sg break end
 				end
 			end
 		end)
@@ -1047,22 +1057,10 @@ local function chargeShares(st, dt)
 		end
 	end
 	if #owed == 0 then return true end
-	local sums = {}
 	reg.shareIncome = reg.shareIncome or {}
-	for _, o in ipairs(owed) do
-		sums[o.from] = (sums[o.from] or 0) - o.fee
-		sums[o.to] = (sums[o.to] or 0) + o.fee
-		reg.shareIncome[tostring(o.to)] = (reg.shareIncome[tostring(o.to)] or 0) + o.fee
-	end
-	for co, amount in pairs(sums) do
-		local c = CO.find(reg, co)
-		if c and c.ent and amount ~= 0 then
-			local entry = api.type.JournalEntry.new()
-			entry.amount = amount
-			entry.time = -1
-			entry.category.type = api.type.JournalEntry.Type.OTHER
-			api.cmd.sendCommand(api.cmd.makeJournalBookAssetCmd(c.ent, entry, api.type.Vec3f.new(0, 0, 0)))
-		end
+	for _,o in ipairs(owed) do
+		local tx=CO.business.core.stationCharge(reg,o.from,o.to,"stop",o.fee)
+		if tx then reg.shareIncome[tostring(o.to)]=(reg.shareIncome[tostring(o.to)] or 0)+o.fee end
 	end
 	SIM.shareLogged = (SIM.shareLogged or 0) + 1
 	if SIM.shareLogged <= 20 then log("companies: station fees: " .. #owed .. " stop(s) at shared stations paid") end
@@ -1127,6 +1125,8 @@ local function update(userParams, state, dt)
 		end
 	end)
 	if not okl then log("companies: loans failed: " .. tostring(errl)) end
+	local okB,errB=pcall(CO.business.update,state,dt,gameTime())
+	if not okB then log("business update failed: "..tostring(errB)) end
 end
 
 -- A native build by this machine's player, announced by the engine just BEFORE it is applied (onPreBuildProposal).
@@ -1259,6 +1259,15 @@ local function captureNativeBuild(state, param)
 	local proposal, playerInitiated = nil, nil
 	pcall(function() proposal, playerInitiated = param[1], param[4] end)
 	if proposal == nil or playerInitiated == false then return end
+	local allowed,denied=CO.business.checkBuild(st.co,simLocalCo(),proposal)
+	if not allowed then
+		-- Same clearing path used by the existing strict build capture below.
+		proposal.toAdd={};proposal.toRemove={};proposal.parcelsToRemove={}
+		local sp=proposal.proposal
+		for _,k in ipairs({"addedNodes","removedNodes","addedSegments","removedSegments","edgeObjectsToAdd","edgeObjectsToRemove","nodeConfigsToAdd","nodeConfigsToRemove"}) do sp[k]={} end
+		proposal.proposal=sp
+		log("business: local build refused: "..tostring(denied));return
+	end
 	-- A terrain modification (raising / lowering the ground) alone: a script cannot read its height cells nor write them, so
 	-- the native module copies them (terrain_out_<n>.txt, announced in native_events.log) when the engine applies the
 	-- command; the other games get them back through an empty grid of the same size (replayTerrain). The terrain tools cannot
@@ -1532,7 +1541,10 @@ end
 
 local function handleEvent(userParams, state, src, id, name, param)
 	if not C.ACTIVE then return end
+	local okB,errB=pcall(CO.business.engineEvent,state,id,name,param,gameTime())
+	if not okB then log("business delivery event failed: "..tostring(errB)) end
 	if id == "apply_command" and name == "onPostBuildProposal" then
+		CO.business.dirty=true
 		log("engine: post build t=" .. tostring(gameTime()))
 		if os.getenv("MPFEVER_CONDUMP") then
 			pcall(function()
@@ -1577,6 +1589,7 @@ local function handleEvent(userParams, state, src, id, name, param)
 	end
 
 	if id ~= "mpfever" then return end
+	if name=="business" then CO.business.command(state,param,gameTime());CO.business.flush(state);return end
 	local ok, err = pcall(function()
 		local st = state:get() or {}
 		if name == "queue" then
@@ -1618,7 +1631,9 @@ local function handleEvent(userParams, state, src, id, name, param)
 					if owner and owner == param.mpfCo then
 						reg.shares = reg.shares or {}
 						local fee = math.floor(tonumber(param.fee) or 0)
-						reg.shares[param.key] = math.max(fee, 0)      -- 0: not shared (a station absent from the list is shared by default)
+						reg.shares[param.key] = math.max(-1,math.min(fee,1000000000))      -- 0: not shared (a station absent from the list is shared by default)
+						local policy=reg.business and reg.business.stations[param.key]
+						if policy then policy.mode=fee==-1 and "free" or fee==0 and "private" or "toll";policy.fee=math.max(0,fee) end
 						SIM.shareLinesAt = nil
 						log("companies: company " .. owner .. (fee > 0 and (" shares its station " .. param.key .. " for " .. fee .. " per stop") or (" stops sharing its station " .. param.key)))
 					else
@@ -7012,6 +7027,15 @@ local function coGui(st)
 	-- which company is this game's: its interface and tools act as that company from now on
 	local reg = st.co
 	if reg then
+		if G.frames%60==0 and G.myCo then
+			local okV,view=pcall(CO.business.view,reg,G.myCo)
+			if okV and view then
+				local txt=C.ser(view)
+				if txt~=G.businessView then
+					G.businessView=txt;local f=C.IO.open(C.DIR..BS.."business.txt","wb");if f then f:write(txt);f:close() end
+				end
+			elseif not okV then log("business view failed: "..tostring(view)) end
+		end
 		local c = CO.match(reg, coMyName():lower(), coMySid(), C.ROLE == "host", G.owner)
 		-- the other companies' player entities (the native module empties their money popups, see ClearOthers)
 		local others = {}
@@ -7019,7 +7043,7 @@ local function coGui(st)
 		table.sort(others)
 		local osig = table.concat(others, " ")
 		-- (said again every few seconds: the native module forgets the value when a game is loaded, see ApplyLocalPlayer)
-		if c and c.ent and (G.myCo ~= c.id or G.myEnt ~= c.ent or osig ~= G.coOthers or G.frames - (G.coAsserted or 0) > 400) then
+		if c and c.ent and (G.myCo ~= c.id or G.myEnt ~= c.ent or osig ~= G.coOthers or G.frames - (G.coAsserted or 0) > 40) then
 			if G.myCo ~= c.id or G.myEnt ~= c.ent then
 				log("companies: this game plays company " .. c.id .. " (player entity " .. c.ent .. ")")
 				G.waits[#G.waits + 1] = { at = G.frames + 90, fn = function()
@@ -7046,7 +7070,7 @@ local function coGui(st)
 			local tok = ((okT and tm or 0) % 1000000) * 100 + coCtlSeq % 100
 			if not os.getenv("MPFEVER_NOSETLOCAL") then nativeCtl("setlocal " .. c.ent .. " " .. tok) end
 			G.coOthers = osig
-			if osig ~= "" and not os.getenv("MPFEVER_NOCLEAR") then nativeCtl("setothers " .. tok .. " " .. osig) end
+			if not os.getenv("MPFEVER_NOCLEAR") then nativeCtl("setothers " .. tok .. " " .. osig) end
 			if reg.canon then nativeCtl("setcanon " .. tok .. " " .. reg.canon) end
 		end
 	end

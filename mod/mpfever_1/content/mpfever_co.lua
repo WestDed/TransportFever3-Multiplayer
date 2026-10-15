@@ -290,6 +290,10 @@ local function contractIndex()
 	return idx
 end
 
+function CO.contractOwners()
+	local out={};for uid,v in pairs(contractIndex())do if v.status~=1 then out[tostring(uid)]=v.owner end end;return out
+end
+
 local function visibleTo(info, me)
 	if not info then return true end
 	if info.status == 1 then return not (info.declined and info.declined[tostring(me)]) end

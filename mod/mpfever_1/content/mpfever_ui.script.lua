@@ -202,6 +202,11 @@ end
 -- Every entity window (station, depot, vehicle, line, building...) shows on its first line which company it belongs to. The game's
 -- window maker is wrapped: its result is put under a line of text (no button, nothing else changes).
 local T = C.T
+local BUSINESS
+ do
+ local ok,m=pcall(ug_require,"mpfever_business_ui.lua");if not ok then m=ug_require("mpfever_1::/mpfever_business_ui.lua")end
+ BUSINESS=m;BUSINESS.configure(C,R,U,log)
+ end
 
 local function ownerOf(e)
 	-- Use the same resolver as the simulation: a station may be owned
@@ -230,14 +235,14 @@ local function pollShares()
 	U.shareTxt = txt
 	local t = {}
 	for line in txt:gmatch("[^" .. C.NL .. "]+") do
-		local k, fee = line:match("^(.-)" .. C.TAB .. "(%d+)$")
+		local k, fee = line:match("^(.-)" .. C.TAB .. "(-?%d+)$")
 		if k then t[k] = tonumber(fee) end
 	end
 	U.shares = t
 	U.shareVersion = (U.shareVersion or 0) + 1
 end
 
-local SHARE_FEES = { 0, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000 }
+local SHARE_FEES = { -1, 0, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000 }
 
 local function money(n)
 	local ok, s = pcall(api.util.formatMoney, n)
@@ -246,6 +251,7 @@ end
 
 -- what the share line of a station window says, for the fee in force (nil or 0: not shared)
 local function shareText(mine, fee)
+	if fee==-1 then return T("Partagée gratuitement", "Shared for free")end
 	if fee == 0 then fee = nil end
 	if mine then
 		return fee and (T("Partagée avec les autres entreprises : ", "Shared with the other companies: ") .. money(fee) .. T(" par arrêt", " per stop"))
@@ -262,7 +268,7 @@ local function shareInfo(e, owner)
 	local okk, key = pcall(R.sgKey, sg)
 	if not okk then return nil end
 	local fee = C.shareFee(U.shares, key)
-	if fee <= 0 then fee = nil end
+	if fee == 0 then fee = nil end
 	local mine = U.myCo ~= nil and U.coMap and U.coMap[owner] == U.myCo
 	return { key = key, fee = fee or 0, text = shareText(mine, fee), canEdit = mine }
 end
@@ -304,7 +310,7 @@ local function foreignFee(sg)
 	if not (owner and U.coMap[owner]) or U.coMap[owner] == U.myCo then return nil end
 	local okk, key = pcall(R.sgKey, sg)
 	if not okk then return nil end
-	return C.shareFee(U.shares, key)
+	return BUSINESS.stationFee(key,C.shareFee(U.shares, key))
 end
 
 -- The line windows and tooltips name the stations: another company's station shows what a stop there costs
@@ -319,6 +325,7 @@ local function installStopFees()
 			if not (okc and isSg) then return name end
 			local okf, fee = pcall(foreignFee, e)
 			if not okf or fee == nil then return name end
+			if fee==-1 then return name.."  ["..T("Partagée gratuitement", "Shared for free").."]"end
 			if fee > 0 then return name .. T("  [partagée : ", "  [shared: ") .. money(fee) .. T(" par arrêt]", " per stop]") end
 			return name .. T("  [non partagée]", "  [not shared]")
 		end
@@ -387,6 +394,8 @@ local function installShareSelect()
 	local cache, cacheAt = {}, -1
 	local shareVersion, coMap, myCo
 	eu.isOwnedByPlayerOrNotOwned = function(entity, ...)
+		local decision=BUSINESS and BUSINESS.roadDecision(entity,"connect")
+		if decision~=nil then return decision end
 		if orig(entity, ...) then return true end
 		if not U.coMap or type(entity) ~= "number" then return false end
 		local now = os.clock()
@@ -400,7 +409,7 @@ local function installShareSelect()
 			local sg = sharedGroupOf(entity)
 			if sg then
 				local fee = foreignFee(sg)
-				v = fee ~= nil and fee > 0
+				v = fee ~= nil and fee ~= 0
 			end
 			-- a street the tool points at: a shared stop by that street (its key starts with the street's ends)
 			if not v then
@@ -415,7 +424,7 @@ local function installShareSelect()
 					if a > b then a, b = b, a end
 					local prefix = "e:" .. a .. "-" .. b .. ":"
 					for k, fee in pairs(U.shares or {}) do
-						if fee > 0 and k:sub(1, #prefix) == prefix then v = true end
+						if fee ~= 0 and k:sub(1, #prefix) == prefix then v = true end
 					end
 				end)
 			end
@@ -479,7 +488,7 @@ local function installOwnerLine(react, builtin)
 					items[#items + 1] = builtin.ComboBoxItem {
 						value = f,
 						content = builtin.TextView { meta = { class = "font-scale-body" },
-							text = f == 0 and T("Non partagée", "Not shared") or (money(f) .. T(" par arrêt", " per stop")) },
+							text = f==-1 and T("Partagée gratuitement", "Shared for free") or f == 0 and T("Non partagée", "Not shared") or (money(f) .. T(" par arrêt", " per stop")) },
 					}
 				end
 				local key = p.shareKey
@@ -498,6 +507,7 @@ local function installOwnerLine(react, builtin)
 				} }
 				local note
 				if pd then note = T("Modification en cours pour tous les joueurs…", "Applying for every player…")
+				elseif shown==-1 then note=T("Partagée gratuitement", "Shared for free")
 				elseif shown > 0 then note = T("Leurs véhicules paient ce montant à chaque arrêt ici ; vos lignes s'y arrêtent gratuitement.", "Their vehicles pay this at every stop here; your own lines stop for free.")
 				else note = T("Les autres entreprises ne peuvent pas s'arrêter ici.", "The other companies cannot stop here.") end
 				children[#children + 1] = builtin.TextView { meta = { class = "font-scale-body" .. (pd and ", info" or "") }, text = note }
@@ -878,6 +888,7 @@ local function installSession(react, builtin)
 		rows[#rows + 1] = text(" ")
 		rows[#rows + 1] = builtin.Button { meta = { class = "secondary" }, content = row { icon(ICON_CHAT, 22), text("  " .. T("Ouvrir la discussion", "Open the chat")) },
 			onClick = function() if U.openChat then U.openChat() end end }
+		rows[#rows+1]=builtin.Button{content=text(T("Entreprises et accords","Companies and agreements")),onClick=function()if U.openBusiness then U.openBusiness()end end}
 		return builtin.Window {
 			title = "MPFever – " .. T("Multijoueur", "Multiplayer"),
 			id = "window.mpfever.session",
@@ -1351,6 +1362,18 @@ local function tick(pendingState)
 		if not okt then U.terrainWatch = true; log("terrain tools: not watched: " .. tostring(errt)) end
 	end
 	pcall(pollShares)
+	pcall(BUSINESS.poll)
+	if U.coMap and not U.privacyInstalled and (not U.privacyRetry or os.time()>=U.privacyRetry) then
+		U.privacyRetry=os.time()+2
+		local ok,err=pcall(function()
+			local okP,P=pcall(ug_require,"mpfever_privacy.lua");if not okP then P=ug_require("mpfever_1::/mpfever_privacy.lua")end
+			U.privacyInstalled=P.install(ug_require,function()return {me=U.myCo,coMap=U.coMap,ownerOf=R.ownerOf,contractOwner=function(uid)return U.business and U.business.contractOwners and U.business.contractOwners[tostring(uid)]end}end,log)
+		end)
+		if not ok then log("company notification filter: "..tostring(err))end
+	end
+	if U.react and U.builtin and not U.openBusiness then
+		local ok,err=pcall(BUSINESS.install,U.react,U.builtin,defaultWindowApi);if not ok then log("business UI: "..tostring(err))end
+	end
 	if U.coMap and not U.shareSelectInstalled and (not U.shareSelectRetryAt or os.time() >= U.shareSelectRetryAt) then
 		U.shareSelectRetryAt = os.time() + 2
 		local oks, errs = pcall(installShareSelect)

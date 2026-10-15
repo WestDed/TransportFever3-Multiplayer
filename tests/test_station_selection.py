@@ -36,6 +36,9 @@ class StationSelectionTests(unittest.TestCase):
     def test_paid_foreign_station_is_selectable(self):
         self.check('fees[100]=500; install(); assert(eu.isOwnedByPlayerOrNotOwned(100))')
 
+    def test_free_foreign_station_is_selectable(self):
+        self.check('fees[100]=-1; install(); assert(eu.isOwnedByPlayerOrNotOwned(100))')
+
     def test_sharing_change_invalidates_cached_denial_immediately(self):
         self.check('install(); assert(not eu.isOwnedByPlayerOrNotOwned(100)); fees[100]=500; U.shareVersion=1; assert(eu.isOwnedByPlayerOrNotOwned(100))')
 
