@@ -24,6 +24,20 @@ namespace MPFever
             Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("speed_req","Peer#1","{[\"speed\"]=3}")),"unsupported speed");
             Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("nat_cancel","Peer#1","{[\"origin\"]=\"spoof\",[\"id\"]=1}")),"forged native hold identity");
             Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("act","Peer#1",Act(fn:"makeScriptingSendEventCmd",args:"{[1]=\"script\",[2]=\"Company\",[3]=\"hack\",[4]={}}"))),"arbitrary scripting event");
+            string BusinessEvent(string p)=>Act(fn:"makeScriptingSendEventCmd",args:"{[1]=\"mpfever\",[2]=\"mpfever\",[3]=\"business\",[4]="+p+"}");
+            string create="{[\"op\"]=\"create\",[\"title\"]=\"Goods\",[\"target\"]=\"sg:A\",[\"cargo\"]=1,[\"amount\"]=100,[\"reward\"]=10000,[\"duration\"]=12}";
+            string policy="{[\"op\"]=\"policy\",[\"kind\"]=\"road\",[\"key\"]=\"road:A\",[\"mode\"]=\"toll\",[\"fee\"]=100,[\"company\"]=3,[\"use\"]=true,[\"connectGrant\"]=true,[\"edit\"]=false}";
+            foreach(var business in new[]{create,policy,"{[\"op\"]=\"accept\",[\"id\"]=\"order1\"}","{[\"op\"]=\"cancel\",[\"id\"]=\"order1\"}"})
+                Check(ProtocolSchema.ValidateClient(Msg.Make("act","Peer#1",BusinessEvent(business)))!=null,"bounded company business operation accepted");
+            foreach(var bad in new[]{create.Replace("10000","-1"),create.Replace("10000","10000000001"),create.Replace("100,","0,"),create.Replace("12}","121}"),
+                create.Replace("1,","1.5,"),create.Replace("\"Goods\"","\"\""),policy.Replace("100,","0,"),policy.Replace("true","123"),
+                create.Replace("[\"op\"]=\"create\"","[\"op\"]=\"delivery\""),create.Replace("}",",[\"mpfCo\"]=1}"),create.Replace("}",",[\"mpfRequest\"]=\"replay\"}"),
+                create.Replace("}",",[\"balance\"]=99999}"),policy.Replace("\"road\"","\"world\"")})
+                Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("act","Peer#1",BusinessEvent(bad))),"forged or malformed business request refused");
+            string receipt="{[\"id\"]=1,[\"transfer\"]=\""+new string('a',32)+"\",[\"phase\"]=\"loading\"}";
+            foreach(var phase in new[]{"loading","ready"})Check(ProtocolSchema.ValidateClient(Msg.Make("load_status","Peer#1",receipt.Replace("loading",phase)))!=null,"exact snapshot load status accepted");
+            foreach(var bad in new[]{receipt.Replace("loading","50%"),receipt.Replace("[\"id\"]=1","[\"id\"]=0"),receipt.Replace(new string('a',32),"invalid"),receipt.Replace("}",",[\"progress\"]=50}")})
+                Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("load_status","Peer#1",bad)),"invalid load status refused");
             var identities = new PeerIdentities(); var peer = identities.Join("Peer",null,new string('a',64)); var other = identities.Join("Other",null,new string('b',64));
             var bindings = new CompanyBindings();
             var join = ProtocolSchema.Table(LuaLit.Parse("{[\"key\"]=\"peer\",[\"name\"]=\"Peer\",[\"host\"]=false,[\"mode\"]=\"separate\",[\"start\"]=2000000}"),"args");

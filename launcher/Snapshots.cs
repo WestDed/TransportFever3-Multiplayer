@@ -49,6 +49,20 @@ namespace MPFever
         { if (!t.TryGetValue(key, out var v) || !(v is string s)) throw new InvalidDataException("Invalid snapshot string: " + key); return s; }
     }
 
+    // A launcher heartbeat proves the connection is alive, not engine progress.
+    // Loading may outlast the normal budget, but never the absolute two hours.
+    sealed class LoadLiveness
+    {
+        public const int HardSeconds=7200, HeartbeatSeconds=10;
+        readonly DateTime started;
+        readonly int softSeconds;
+        DateTime lastAlive;
+        public LoadLiveness(DateTime now,int seconds) { started=lastAlive=now;softSeconds=seconds; }
+        public void Alive(DateTime now) { if(now>lastAlive)lastAlive=now; }
+        public bool Expired(DateTime now) => (now-started).TotalSeconds>=HardSeconds
+            || (now-started).TotalSeconds>=softSeconds && (now-lastAlive).TotalSeconds>=60;
+    }
+
     sealed class SnapshotManifest
     {
         public int Id, Parts;
