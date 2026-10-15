@@ -24,14 +24,14 @@ namespace MPFever
                     "load timeout accepts bounded override");
                 foreach (var invalid in new[] { "59", "7201", "-1", "0", "NaN", "1.5", "999999999999" })
                     Reject<InvalidDataException>(() => SnapshotLimits.LoadTimeoutSeconds(invalid), "invalid load deadline refused: " + invalid);
-                var now=new DateTime(2026,10,15,0,0,0,DateTimeKind.Utc);
-                var loading=new LoadLiveness(now,1800);
-                Check(!loading.Expired(now.AddSeconds(1799)),"engine loading gets complete soft budget without game clocks");
-                loading.Alive(now.AddSeconds(1900));
-                Check(!loading.Expired(now.AddSeconds(1959)),"live launcher extends large-map engine load past soft budget");
-                Check(loading.Expired(now.AddSeconds(1960)),"missing launcher liveness after soft budget ends wait");
-                loading.Alive(now.AddSeconds(7199));
-                Check(loading.Expired(now.AddSeconds(7200)),"heartbeats never defeat absolute two-hour deadline");
+                var loadStart=new DateTime(2026,10,15,0,0,0,DateTimeKind.Utc);
+                var loading=new LoadLiveness(loadStart,1800);
+                Check(!loading.Expired(loadStart.AddSeconds(1799)),"engine loading gets complete soft budget without game clocks");
+                loading.Alive(loadStart.AddSeconds(1900));
+                Check(!loading.Expired(loadStart.AddSeconds(1959)),"live launcher extends large-map engine load past soft budget");
+                Check(loading.Expired(loadStart.AddSeconds(1960)),"missing launcher liveness after soft budget ends wait");
+                loading.Alive(loadStart.AddSeconds(7199));
+                Check(loading.Expired(loadStart.AddSeconds(7200)),"heartbeats never defeat absolute two-hour deadline");
                 for(int n=1;n<=6;n++)Check(SnapshotLimits.CanonicalBase64(Convert.ToBase64String(new byte[n]),n),"canonical base64 padding "+n);
                 foreach(var item in new[]{new{Text="AB==",Bytes=1},new{Text="AAB=",Bytes=2},new{Text="AA =",Bytes=2},new{Text="A===",Bytes=1}})
                     Check(!SnapshotLimits.CanonicalBase64(item.Text,item.Bytes),"noncanonical base64 padding refused");
