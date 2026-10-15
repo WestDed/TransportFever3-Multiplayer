@@ -3705,6 +3705,45 @@
       "ko": "회사 및 협약",
       "zh-CN": "公司与协议",
       "zh-TW": "公司與協議"
+    },
+    "Apply": {
+      "de": "Übernehmen",
+      "es": "Aplicar",
+      "it": "Applica",
+      "nl": "Toepassen",
+      "pl": "Zastosuj",
+      "pt-BR": "Aplicar",
+      "ru": "Применить",
+      "ja": "適用",
+      "ko": "적용",
+      "zh-CN": "应用",
+      "zh-TW": "套用"
+    },
+    "Custom fee per stop: ": {
+      "de": "Eigene Gebühr pro Halt: ",
+      "es": "Tarifa personalizada por parada: ",
+      "it": "Tariffa personalizzata per fermata: ",
+      "nl": "Eigen tarief per stop: ",
+      "pl": "Własna opłata za postój: ",
+      "pt-BR": "Tarifa personalizada por parada: ",
+      "ru": "Свой тариф за остановку: ",
+      "ja": "停車ごとの任意料金：",
+      "ko": "정차당 사용자 지정 요금: ",
+      "zh-CN": "自定义每次停靠费用：",
+      "zh-TW": "自訂每次停靠費用："
+    },
+    "Whole amount from 0 to 1000000000; 0 is free.": {
+      "de": "Ganze Zahl von 0 bis 1000000000; 0 ist kostenlos.",
+      "es": "Importe entero de 0 a 1000000000; 0 es gratis.",
+      "it": "Importo intero da 0 a 1000000000; 0 è gratuito.",
+      "nl": "Geheel bedrag van 0 tot 1000000000; 0 is gratis.",
+      "pl": "Kwota całkowita od 0 do 1000000000; 0 oznacza bezpłatnie.",
+      "pt-BR": "Valor inteiro de 0 a 1000000000; 0 é gratuito.",
+      "ru": "Целая сумма от 0 до 1000000000; 0 — бесплатно.",
+      "ja": "0〜1000000000の整数。0は無料です。",
+      "ko": "0부터 1000000000까지의 정수 금액입니다. 0은 무료입니다.",
+      "zh-CN": "请输入0至1000000000的整数；0表示免费。",
+      "zh-TW": "請輸入0至1000000000的整數；0表示免費。"
     }
   }
 }

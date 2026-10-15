@@ -244,6 +244,16 @@ end
 
 local SHARE_FEES = { -1, 0, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000 }
 
+local function parseShareFee(value)
+	if type(value) ~= "string" or #value > 32 then return nil end
+	local digits = value:match("^%s*(%d+)%s*$")
+	local amount = digits and tonumber(digits)
+	if not amount or amount > 1000000000 then return nil end
+	-- UI zero means free access; the existing wire value -1 distinguishes it
+	-- from private access (0), which remains an explicit preset.
+	return amount == 0 and -1 or amount
+end
+
 local function money(n)
 	local ok, s = pcall(api.util.formatMoney, n)
 	return ok and tostring(s) or tostring(n)
@@ -466,22 +476,24 @@ local function installOwnerLine(react, builtin)
 	local Wrap = react.RegisterRecipe("MPFeverOwnerLine", function(p)
 		-- the fee changes while the window is open (this player's choice, or the owner's): read again from shares.txt
 		local ver = react.useState(U.shareVersion or 0)
-		local pending = react.useState(nil)   -- the fee just chosen, until every game has applied it: { fee, at }
+		local pending = react.useState(nil)   -- the fee just chosen, until every game has applied it: { key, fee, at }
+		local edit = react.useState(nil)      -- preserve a typed draft while shares.txt refreshes
 		react.onStepTimer(function()
 			local v = U.shareVersion or 0
 			if ver:old() ~= v then ver:set(v) end
 			local pd = pending:old()
-			if pd and ((U.shares and U.shares[p.shareKey] or 0) == pd.fee or os.clock() - pd.at > 10) then pending:set(nil) end
+			if pd and (pd.key ~= p.shareKey or C.shareFee(U.shares, p.shareKey) == pd.fee or os.clock() - pd.at > 10) then pending:set(nil) end
 		end, 0.5)
 		local inner = nil
 		if p.innerRecipe then inner = p.innerRecipe(p.innerParam)
 		elseif p.innerBuiltin then inner = p.innerBuiltin({ entity = p.innerParam and p.innerParam.keyEntity }) end
 		local children = { builtin.TextView { meta = { class = "font-scale-body" }, text = p.ownerText } }
 		if p.shareKey then
-			local fee = U.shares and U.shares[p.shareKey] or 0
+			local fee = C.shareFee(U.shares, p.shareKey)
 			if p.shareEdit then
 				-- the owner chooses the fee per stop of the other companies' vehicles (0: not shared)
 				local pd = pending:old()
+				if pd and pd.key ~= p.shareKey then pd = nil end
 				local shown = pd and pd.fee or fee
 				local items = {}
 				for _, f in ipairs(shareChoices(shown)) do
@@ -492,6 +504,20 @@ local function installOwnerLine(react, builtin)
 					}
 				end
 				local key = p.shareKey
+				local draft = edit:old()
+				if draft and draft.key ~= key then draft = nil end
+				local inputText = draft and draft.text or (shown > 0 and tostring(shown) or shown == -1 and "0" or "")
+				local function applyFee(value)
+					edit:set(nil)
+					if value == shown then return end
+					sendShare(key, value)
+					pending:set({ key = key, fee = value, at = os.clock() })
+				end
+				local function applyCustom(value)
+					local amount = parseShareFee(value)
+					if amount == nil then edit:set({ key = key, text = value or "", error = true }); return end
+					applyFee(amount)
+				end
 				children[#children + 1] = builtin.BoxLayout { orientation = builtin.type.Orientation.Horizontal, children = {
 					builtin.TextView { meta = { class = "font-scale-body" }, text = T("Partage avec les autres entreprises :  ", "Sharing with the other companies:  ") },
 					builtin.ComboBox {
@@ -499,12 +525,25 @@ local function installOwnerLine(react, builtin)
 						items = items,
 						onValueChange = function(v)
 							v = tonumber(v)
-							if v == nil or v == shown then return end
-							sendShare(key, v)
-							pending:set({ fee = v, at = os.clock() })
+							if v ~= nil then applyFee(v) end
 						end,
 					},
 				} }
+				children[#children + 1] = builtin.BoxLayout { orientation = builtin.type.Orientation.Horizontal, children = {
+					builtin.TextView { meta = { class = "font-scale-body" }, text = T("Tarif personnalisé par arrêt : ", "Custom fee per stop: ") },
+					builtin.TextInputField {
+						meta = { class = "font-scale-body", localKey = "mpfever-stop-fee-" .. key .. ":" .. tostring(shown) },
+						value = inputText, maxLength = 32, acceptOnFocusLoss = false,
+						onTyping = function(value) edit:set({ key = key, text = value or "" }) end,
+						onValueChange = applyCustom,
+					},
+					builtin.Button { content = builtin.TextView { text = T("Appliquer", "Apply") }, onClick = function()
+						local current = edit:old()
+						applyCustom(current and current.key == key and current.text or inputText)
+					end },
+				} }
+				children[#children + 1] = builtin.TextView { meta = { class = "font-scale-body" .. (draft and draft.error and ", error" or "") },
+					text = T("Montant entier de 0 à 1000000000 ; 0 est gratuit.", "Whole amount from 0 to 1000000000; 0 is free.") }
 				local note
 				if pd then note = T("Modification en cours pour tous les joueurs…", "Applying for every player…")
 				elseif shown==-1 then note=T("Partagée gratuitement", "Shared for free")
