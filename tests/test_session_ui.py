@@ -17,9 +17,10 @@ class SpeedUiTests(unittest.TestCase):
         self.lua.globals().C = self.lua.execute((CONTENT / 'mpfever_common.lua').read_text(encoding='utf-8'))
         self.lua.execute('''
             clock=5;wall=100;os.clock=function()return clock end;os.time=function()return wall end
-            C.FACTORIES={"makeGameSetSpeedCmd"};original={};C.origCmds=function()return original end
+            C.FACTORIES={"makeGameSetSpeedCmd","makeScriptingSendEventCmd"};original={};C.origCmds=function()return original end
             U={tags={},seq=0,logged=0,stats={speed=0},status={started="1",t="100",speed="4"}}
             R={};sent={};native=0;log=function()end;IMMEDIATE={}
+            N={record=function()error("fixture preferences write failure")end}
             sendLine=function(k,p)sent[#sent+1]={kind=k,p=p}end
             speed={speedup=0,other="kept"}
             api={type={ComponentType={GAME_SPEED="speed"}},engine={util={getWorld=function()return 1 end},
@@ -30,7 +31,7 @@ class SpeedUiTests(unittest.TestCase):
         ui = (CONTENT / 'mpfever_ui.script.lua').read_text(encoding='utf-8')
         start = ui.index('U.shownSpeed = function()')
         self.lua.execute(ui[start:ui.index('\nend\n', start) + 5])
-        self.lua.execute(function(ui, 'isCallable') + '\n' + function(ui, 'install') + '\ninstall()')
+        self.lua.execute(function(ui, 'isCallable') + '\n' + function(ui, 'install') + '\ninstall();reinstall=install')
         bridge = (CONTENT / 'mpfever_bridge.script.lua').read_text(encoding='utf-8')
         self.lua.execute(function(bridge, 'gameSpeed') + '\nrealSpeed=gameSpeed')
 
@@ -56,6 +57,15 @@ class SpeedUiTests(unittest.TestCase):
         self.check('''api.cmd.sendCommand(api.cmd.makeGameSetSpeedCmd(2))
             assert(U.shownSpeed()==2);clock=8;assert(U.shownSpeed()==4)
             wall=107;assert(U.shownSpeed()==nil and api.engine.getComponent(1,"speed")==speed)''')
+
+    def test_ui_reload_does_not_treat_previous_display_speed_as_engine_speed(self):
+        self.check('''U.installed=false;U.status.speed="2";reinstall()
+            local c=api.engine.getComponent(1,"speed")
+            assert(c.speedup==2 and c.mpfRealSpeedup==0 and realSpeed()==0)''')
+
+    def test_failed_preference_record_does_not_block_original_notification_command(self):
+        self.check('''api.cmd.sendCommand(api.cmd.makeScriptingSendEventCmd("","Notifications","dismiss",{id=1}))
+            assert(native==1 and #sent==0)''')
 
 
 class NoticeWindowTests(unittest.TestCase):

@@ -126,7 +126,8 @@ local function install()
 	-- the game's speed buttons (GameSpeedHelper in gui/main/game.tl) show the engine's speed, which the lockstep holds at 0
 	-- between steps: they are shown the session's speed instead (mp_status.txt), or for 2 s the speed this player asked for
 	local okSp, errSp = pcall(function()
-		local origGet = api.engine.getComponent
+		orig.getComponent = orig.getComponent or api.engine.getComponent
+		local origGet = orig.getComponent
 		local speedType = api.type.ComponentType.GAME_SPEED
 		api.engine.getComponent = function(e, ct, ...)
 			local c = origGet(e, ct, ...)

@@ -41,6 +41,11 @@ class ReferencePassTests(unittest.TestCase):
             local b={nodeRef(5000)};local miss=R.translateIn(b,{})
             assert(#miss==1 and b[1]==-999999999 and R.pass==nil)''')
 
+    def test_failed_translation_releases_its_action_cache(self):
+        self.check('''local bad=setmetatable({},{__pairs=function()error("fixture traversal failure")end})
+            assert(not pcall(R.translateIn,bad,{}));assert(R.pass==nil)
+            local a={nodeRef(5000)};assert(#R.translateIn(a,{})==0 and a[1]==500)''')
+
     def test_binding_lookup_takes_precedence_over_geometric_memo(self):
         self.check('''local a={nodeRef(5000),nodeRef(5000)};a[1].key="first";a[2].key="second"
             R.translateIn(a,{first=100,second=101});assert(a[1]==100 and a[2]==101)''')
