@@ -10,8 +10,8 @@ CONTENT = Path(__file__).resolve().parents[1] / 'mod/mpfever_1/content'
 class CompanyProgression(unittest.TestCase):
     def setUp(self):
         self.L = LuaRuntime(unpack_returned_tuples=True)
-        self.L.globals().P = self.L.execute((CONTENT / 'mpfever_progression.lua').read_text())
-        self.L.globals().C = self.L.execute((CONTENT / 'mpfever_common.lua').read_text())
+        self.L.globals().P = self.L.execute((CONTENT / 'mpfever_progression.lua').read_text(encoding='utf-8'))
+        self.L.globals().C = self.L.execute((CONTENT / 'mpfever_common.lua').read_text(encoding='utf-8'))
         self.L.execute('''reg={mode="separate",list={{id=1,ent=7},{id=2,ent=8}}};
             config={basePopulation=100,ranks={{xp=0},{xp=110,ticket=0.9},{xp=130,ticket=0.8}}};
             seed={experience=105,level=1,potentialLevel=1};P.ensure(reg,config,{[1]=seed,[2]=seed})''')
@@ -65,7 +65,7 @@ class CompanyProgression(unittest.TestCase):
 class ProgressionReader(unittest.TestCase):
     def setUp(self):
         self.L=LuaRuntime(unpack_returned_tuples=True)
-        self.L.globals().CO=self.L.execute((CONTENT/'mpfever_co.lua').read_text())
+        self.L.globals().CO=self.L.execute((CONTENT/'mpfever_co.lua').read_text(encoding='utf-8'))
         self.L.execute('native={level=9};M={getCompanyProgressionState=function(e)return e==7 and native or nil end};own={[7]={level=2},[8]={level=1}};read=function(e)return own[e],own[e]~=nil end;req=function()return M end')
 
     def test_reader_uses_own_progress_instead_of_canonical_entity(self):
@@ -85,7 +85,7 @@ class ProgressionEngine(unittest.TestCase):
     def setUp(self):
         self.L=LuaRuntime(unpack_returned_tuples=True)
         for key,file in [('P','mpfever_progression.lua'),('CO','mpfever_co.lua'),('C','mpfever_common.lua')]:
-            self.L.globals()[key]=self.L.execute((CONTENT/file).read_text())
+            self.L.globals()[key]=self.L.execute((CONTENT/file).read_text(encoding='utf-8'))
         self.L.execute('''
             logs={};originalUpdates=0;originalEvents=0;nativeProgress={[7]={experience=105,level=1,potentialLevel=1}}
             reg={mode="separate",canon=7,list={{id=1,ent=7},{id=2,ent=8}}}
@@ -160,7 +160,7 @@ class ProgressionEngine(unittest.TestCase):
 class CompanyPermits(unittest.TestCase):
     def setUp(self):
         self.L=LuaRuntime(unpack_returned_tuples=True)
-        self.L.globals().CO=self.L.execute((CONTENT/'mpfever_co.lua').read_text())
+        self.L.globals().CO=self.L.execute((CONTENT/'mpfever_co.lua').read_text(encoding='utf-8'))
         self.L.execute('''actor=8;fail=false;counts=0
             world={[10]={player=7},[20]={player=8}}
             constructions={{10,{fileName="hq.con",persistentMetadata={permitKey="hq"}},1},
@@ -196,9 +196,9 @@ class CompanyPermits(unittest.TestCase):
 class ProgressionMirror(unittest.TestCase):
     def setUp(self):
         self.L=LuaRuntime(unpack_returned_tuples=True)
-        self.L.globals().C=self.L.execute((CONTENT/'mpfever_common.lua').read_text())
+        self.L.globals().C=self.L.execute((CONTENT/'mpfever_common.lua').read_text(encoding='utf-8'))
         self.L.execute('''U={coWorld="world-A"};C.DIR="fixture";C.BS="/";txt="{}";C.IO={open=function()return {read=function(_,n)limit=n;return txt end,close=function()end}end}''')
-        source=(CONTENT/'mpfever_ui.script.lua').read_text()
+        source=(CONTENT/'mpfever_ui.script.lua').read_text(encoding='utf-8')
         start=source.index('local function pollProgression(')
         self.L.execute(source[start:source.index('\nend\n',start)+5]+'\npoll=pollProgression')
 

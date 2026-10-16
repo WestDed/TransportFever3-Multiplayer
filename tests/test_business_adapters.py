@@ -8,7 +8,7 @@ CONTENT=Path(__file__).resolve().parents[1]/'mod/mpfever_1/content'
 class AdapterTests(unittest.TestCase):
     def setUp(self):
         self.L=LuaRuntime(unpack_returned_tuples=True)
-        self.L.globals().B=self.L.execute((CONTENT/'mpfever_business.lua').read_text())
+        self.L.globals().B=self.L.execute((CONTENT/'mpfever_business.lua').read_text(encoding='utf-8'))
         self.L.execute('''
             ug_require=function()return B end
             reg={mode="separate",list={{id=1,ent=7,name="Host"},{id=2,ent=8,name="Guest"}}}
@@ -46,7 +46,7 @@ class AdapterTests(unittest.TestCase):
             C={origCmds=function()return {}end,marshal=function(t)return t end,shareFee=function(s,k)return s and s[k] or 100 end}
             log=function(t)logs[#logs+1]=t end
         ''')
-        self.L.globals().E=self.L.execute((CONTENT/'mpfever_business_engine.lua').read_text())
+        self.L.globals().E=self.L.execute((CONTENT/'mpfever_business_engine.lua').read_text(encoding='utf-8'))
         self.L.execute('E.configure(C,R,CO,log);key=B.roadKey(E.geometry(20))')
     def check(self,s):self.L.execute(s)
     def test_api_policy_sets_public_graph_but_keeps_company_owner(self):
@@ -89,7 +89,7 @@ class AdapterTests(unittest.TestCase):
 class PrivacyTests(unittest.TestCase):
     def setUp(self):
         self.L=LuaRuntime(unpack_returned_tuples=True)
-        self.L.globals().P=self.L.execute((CONTENT/'mpfever_privacy.lua').read_text())
+        self.L.globals().P=self.L.execute((CONTENT/'mpfever_privacy.lua').read_text(encoding='utf-8'))
         self.L.execute('ctx={me=2,coMap={[7]=1,[8]=2},ownerOf=function(e)if e==100 then return 7 elseif e==200 then return 8 end end}; own={notification={params={entities={{200,0}}}}};foreign={notification={params={vehicles={{100,0}}}}};global={notification={params={entities={{999,0}}}}}')
     def check(self,s):self.L.execute(s)
     def test_foreign_hidden_own_and_shared_world_kept(self):
@@ -109,7 +109,7 @@ class PrivacyTests(unittest.TestCase):
 class BusinessUiTests(unittest.TestCase):
     def setUp(self):
         self.L=LuaRuntime(unpack_returned_tuples=True)
-        self.L.globals().sources=self.L.table_from({p.name:p.read_text() for p in CONTENT.glob('*.lua')})
+        self.L.globals().sources=self.L.table_from({p.name:p.read_text(encoding='utf-8') for p in CONTENT.glob('*.lua')})
         self.L.execute('''
             local modules={};ug_require=function(n) n=n:gsub("^mpfever_1::/","");if not modules[n]then modules[n]=assert(load(sources[n]))()end;return modules[n]end
             C={T=function(_,en)return en end,shareFee=function(s,k)return s and s[k] or 100 end}
