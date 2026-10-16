@@ -1,3 +1,6 @@
+WESTDED PR #15 UPDATE: 0.3.7-westded.2-experimental / protocol 7.
+Personal company development, migration, headquarters/landmarks and game acceptance: COMPANY_PROGRESSION.md. Component tests are not game tests. The upstream text below describes older behavior where noted.
+
 MPFever - Multiplayer for Transport Fever 3
 Version 0.3.7-westded.1-experimental
 ===========================================
@@ -85,7 +88,7 @@ WHAT WORKS
 
 KNOWN LIMITATIONS
 -----------------
-- Separate companies: the level (rank, permits) of the savegame's company is shared by all the
+- Upstream legacy separate companies: the level (rank, permits) of the savegame's company is shared by all the
   companies; the company actions of the Company window (market campaigns, greening, industry
   prospecting) only work for the host's company for now (the other players' requests are
   ignored); there is no money transfer between companies yet. Depots cannot be shared. The map

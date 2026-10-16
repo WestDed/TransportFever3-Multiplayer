@@ -67,6 +67,17 @@ class SpeedUiTests(unittest.TestCase):
         self.check('''api.cmd.sendCommand(api.cmd.makeScriptingSendEventCmd("","Notifications","dismiss",{id=1}))
             assert(native==1 and #sent==0)''')
 
+    def test_base_rank_button_uses_bounded_personal_operation(self):
+        self.check('''U.coMap={[7]=1};U.stats.held=0;U.logged=20;R.translateOut=function()end
+            local cmd=api.cmd.makeScriptingSendEventCmd("","Company","applyLevel",{level=2})
+            api.cmd.sendCommand(cmd);local a=sent[1].p.args
+            assert(sent[1].kind=="act_req" and a[2]=="mpfever" and a[3]=="progression" and a[4].level==2 and a[4].mpfCo==nil)''')
+
+    def test_shared_company_rank_button_keeps_original_event(self):
+        self.check('''U.stats.held=0;U.logged=20;R.translateOut=function()end
+            api.cmd.sendCommand(api.cmd.makeScriptingSendEventCmd("","Company","applyLevel",{level=2}))
+            local a=sent[1].p.args;assert(a[2]=="Company" and a[3]=="applyLevel")''')
+
 
 class NoticeWindowTests(unittest.TestCase):
     def setUp(self):

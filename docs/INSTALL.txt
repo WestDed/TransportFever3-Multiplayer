@@ -1,4 +1,4 @@
-MPFever 0.3.7-westded.1-experimental - Installation and first game
+MPFever 0.3.7-westded.2-experimental - Installation and first game
 ========================================================
 
 REQUIREMENTS (every player)
@@ -110,7 +110,7 @@ See docs/STAGE1_PERSISTENT_OWNERSHIP.md in the source repository for the request
 Actual save/restart/migration in TF3 has not yet been tested by this project.
 
 
-КОМПАНИИ И СОГЛАШЕНИЯ (0.3.7-westded.1-experimental, protocol 6)
+КОМПАНИИ И СОГЛАШЕНИЯ (0.3.7-westded.2-experimental, protocol 7)
 -----------------------------------------------------
 Экспериментальная версия: проверки компонентов не заменяют испытания в игре.
 Оба игрока обновляют ВЕСЬ пакет: EXE, DLL и mod. Сначала сохраните исходный save
@@ -133,3 +133,7 @@ Actual save/restart/migration in TF3 has not yet been tested by this project.
 Исправления очередей/маршрутов/загрузки и оставшиеся пункты: OFFLINE_UPSTREAM_FIXES.md.
 При долгой загрузке мира launcher heartbeat означает лишь живую связь,
 а не движение процента игры. Не запускайте повторное подключение только из-за 50%.
+
+ЛИЧНОЕ РАЗВИТИЕ (PR #15)
+-------------------------
+В окне «Компании и соглашения» появилась вкладка «Развитие»: ваши XP, уровень и подтверждение заработанного повышения. Правила перехода старого мира, личные штабы/достопримечательности, пределы и игровые проверки: COMPANY_PROGRESSION.md в пакете. Сначала сохраните отдельную копию мира. Обоим нужен полный пакет .2 / protocol 7; после перехода старый пакет не используйте. Новая механика ещё не проверена в игре.
