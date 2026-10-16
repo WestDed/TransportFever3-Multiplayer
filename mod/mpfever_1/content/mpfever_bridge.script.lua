@@ -49,7 +49,7 @@ local function valueHash(v, d)
 	local t = type(v)
 	if t == "number" then
 		if v ~= v then return 1 end
-		if math.floor(v) == v and math.abs(v) < 1e15 then return C.hashStr(7, string.format("%d", v)) end
+		if math.floor(v) == v and math.abs(v) < 1e15 then return C.hashStr(7, C.int(v)) end
 		return C.hashStr(7, string.format("%.6g", v))
 	elseif t == "string" then
 		return C.hashStr(11, v)
@@ -90,7 +90,7 @@ local function countsHash(counts)
 	for _, c in ipairs(counts) do
 		n = n + 1
 		total = total + c
-		acc = (acc + C.hashStr(23, string.format("%d", c))) % 4294967296
+		acc = (acc + C.hashStr(23, C.int(c))) % 4294967296
 	end
 	return n .. "/" .. total .. "/" .. acc
 end
@@ -124,7 +124,7 @@ local function extendedParts(parts)
 		sdumps = sdumps + 1
 		table.sort(dump)
 		pcall(function()
-			local f = C.IO.open(C.DIR .. BS .. "sdump_" .. string.format("%012d", gameTime()) .. ".txt", "wb")
+			local f = C.IO.open(C.DIR .. BS .. "sdump_" .. string.format("%012.0f", gameTime()) .. ".txt", "wb")
 			f:write(table.concat(dump, NL), NL)
 			f:close()
 		end)
@@ -298,7 +298,7 @@ local function simHash(terrainSig, reg)
 	if R.ncDump then
 		pcall(function()
 			table.sort(R.ncDump)
-			local f = C.IO.open(C.DIR .. BS .. "nc_" .. string.format("%012d", t) .. ".txt", "wb")
+			local f = C.IO.open(C.DIR .. BS .. "nc_" .. string.format("%012.0f", t) .. ".txt", "wb")
 			f:write(table.concat(R.ncDump, NL), NL)
 			f:close()
 		end)
@@ -449,7 +449,7 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 		log("action " .. tostring(a.uid) .. " " .. result.err .. ": ignored on every game")
 		return result
 	end
-	local okt, unresolved = pcall(R.translateIn, a.args or {}, bind or {})
+	local okt, unresolved = pcall(R.translateIn, a.args or {}, bind or {}, a.fn)
 	if not okt then
 		result.err = "references: " .. tostring(unresolved)
 		log("action " .. tostring(a.uid) .. " reference resolution failed: " .. tostring(unresolved))

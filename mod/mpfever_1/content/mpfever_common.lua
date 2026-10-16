@@ -136,15 +136,21 @@ local function escapeChar(c)
 	return BS .. string.format("%03d", string.byte(c))
 end
 
+-- Lua 5.2's Windows integer formatter can be 32-bit although numbers are doubles.
+function C.int(v)
+	return v == 0 and "0" or string.format("%.0f", v)
+end
+local ESCAPED = "[" .. string.char(0) .. "-" .. string.char(31) .. string.char(127) .. QUOTE .. BS .. BS .. "]"
+
 function C.ser(v, depth)
 	depth = depth or 0
 	local t = type(v)
 	if t == "number" then
 		if v ~= v or v == math.huge or v == -math.huge then return "0" end
-		if math.floor(v) == v and math.abs(v) < 9007199254740992 then return string.format("%d", v) end
+		if math.floor(v) == v and math.abs(v) < 9007199254740992 then return C.int(v) end
 		return string.format("%.17g", v)
 	elseif t == "string" then
-		return QUOTE .. v:gsub("[%c" .. QUOTE .. BS .. BS .. "]", escapeChar) .. QUOTE
+		return QUOTE .. v:gsub(ESCAPED, escapeChar) .. QUOTE
 	elseif t == "boolean" then
 		return tostring(v)
 	elseif t == "table" and depth < 40 then
@@ -188,7 +194,7 @@ local function decodeData(s)
 			if bytes > LIMITS.stringBytes then reject() end
 			chunks[#chunks + 1] = v
 		end
-		local special = "[" .. quote .. BS .. BS .. "%c]"
+		local special = "[" .. quote .. BS .. BS .. string.char(0) .. "-" .. string.char(31) .. string.char(127) .. "]"
 		while i <= n do
 			local p = s:find(special, i)
 			if not p then reject() end
@@ -463,6 +469,9 @@ C.CTOR = {
 	StationTerminal = { "api.type.StationTerminal" },
 	Context = { "api.type.Context" },
 	StreetEdgeObject = { "api.type.SimpleStreetProposal.EdgeObject" },
+	Waypoint = { "api.type.Waypoint" },
+	EdgePos = { "api.type.EdgePos" },
+	EdgeId = { "api.type.EdgeId" },
 }
 
 -- fields needing a specific type; false = derived by the engine, never copied; absent = copied generically
@@ -475,10 +484,46 @@ local SCHEMA = {
 	TransportVehiclePart = { part = "VehiclePart" },
 	VehiclePart = { compartment2loadConfig = { list = "LoadConfig" }, color = "Vec3f" },
 	Line = { stops = { list = "LineStop" } },
-	LineStop = { alternativeTerminals = { list = "StationTerminal" }, stopConfig = "StopConfig", waypoints = false },
+	LineStop = { alternativeTerminals = { list = "StationTerminal" }, stopConfig = "StopConfig", waypoints = { list = "Waypoint" } },
+	Waypoint = { edgePos = "EdgePos", pos = "Vec3f", __p0 = false },
+	EdgePos = { edgeId = "EdgeId" },
 }
 
 C.errors = {}
+
+-- Adapt the waypoint's direction to this game's resolved track. Never mutate the
+-- shipped arguments: a retry/rebuild must not mirror the position a second time.
+local function waypointsHere(m)
+	local out = {}; for k, v in pairs(m) do out[k] = v end
+	out.waypoints = {}
+	for _, wp in ipairs(m.waypoints) do
+		local ep = type(wp) == "table" and wp.edgePos
+		local eid = type(ep) == "table" and ep.edgeId
+		local e = type(eid) == "table" and eid.entity
+		if e == -999999999 then
+			C.errors[#C.errors + 1] = "waypoint dropped: its track is not on this game"
+		else
+			local flip = false
+			if type(e) == "number" and e >= 0 and type(wp.__p0) == "table" and type(ep.param) == "number" then
+				pcall(function()
+					local be = api.engine.getComponent(e, api.type.ComponentType.BASE_EDGE)
+					local p0 = api.engine.getComponent(be.node0, api.type.ComponentType.BASE_NODE).position
+					local p1 = api.engine.getComponent(be.node1, api.type.ComponentType.BASE_NODE).position
+					local function d(p) return math.abs(p.x-wp.__p0.x)+math.abs(p.y-wp.__p0.y)+math.abs((p.z or 0)-(wp.__p0.z or 0)) end
+					flip = d(p0) > 1 and d(p1) < 1
+				end)
+			end
+			if flip then
+				local copy, edgePos = {}, {}
+				for k, v in pairs(wp) do copy[k] = v end
+				for k, v in pairs(ep) do edgePos[k] = v end
+				edgePos.param = 1-ep.param; copy.edgePos = edgePos; wp = copy
+			end
+			out.waypoints[#out.waypoints + 1] = wp
+		end
+	end
+	return out
+end
 
 function C.newOf(tname)
 	for _, p in ipairs(C.CTOR[tname] or {}) do
@@ -547,6 +592,7 @@ rebuild = function(tname, m, where)
 	where = where or tname
 	if type(m) ~= "table" then return m end
 	if tname == "Vec3f" or tname == "Mat4f" or isVec(m) or m.__mat then return plain(m) end
+	if tname == "LineStop" and type(m.waypoints) == "table" then m = waypointsHere(m) end
 	local obj = C.newOf(tname)
 	return fill(obj, m, tname, where)
 end
