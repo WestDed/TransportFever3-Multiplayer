@@ -2,7 +2,9 @@
 
 Основной репозиторий: https://github.com/WestDed/TransportFever3-Multiplayer. Пользователь разрешил автономную работу без игры, отдельные ветки и PR, без автоматического merge. GitHub write доступ восстановлен; Desktop не требуется. Авторские репозитории не изменяем, MIT copyright arthur сохранён.
 
-## Текущее состояние 14.10.2026
+## Текущее состояние 16.10.2026
+
+Обновление 16.10: [сравнение актуального upstream и наших компаний](docs/UPSTREAM_COMPANIES_REVIEW_2026_10_16.md). Main уже 937318b (PR #10 слит); заказчик и брат после него сыграли через Porthole и сообщили об отказах. PR #11 (de3dca1) и #12 (ad6b6f9, ручной station fee) пока открыты; новые механики имеют 175 offline tests/7 jobs PASS на #12, но game NOT RETESTED. Upstream уже 0.3.11, head 171d35c, у нас остались конкретные исправленные upstream дефекты. Pure Lua диагностика подтвердила потерю waypoints и две покупки при двух update в одном step. Также GUI load token r+counter может повториться после host restart несмотря на уникальный snapshot transfer. Читать новый разбор перед следующим кодом; не обновлять upstream целиком: там снова eval в C.deser и прежний simulation money filter. Документальный PR от main не переносит исправления и не включает код #11–12. Старые записи ниже — история, а не текущее игровое состояние.
 
 Обновление 14.10: PR #9 слит пользователем в main `f71d64d08b60f74368d7ba6af0e778e059a20387`, tree 18943252; main run 38349819937 — 7 jobs green. Заказчик и брат впервые попробовали запуск на настоящих игровых ПК: совместная сессия **не началась**. Host слушает TCP, но не получает собственный bridge hello/ready; клиент пришёл по Steam public-IP invitation и получил NetworkStream read error. На host screenshot есть Radmin IPv4; принятого peer нет в предоставленных launcher logs. Дополнительные host auto/native/UI logs получены: PE stamp 6ac50427 (known 40420), hooks/UI работают, loader вызвал save load с MPFever. [Факты, найденный дефект и повторный тест](docs/INCIDENT_2026_10_14_FIRST_GAME.md). Private keys не запрашивать. Это отрицательный пользовательский engine запуск, не мой локальный запуск и не игровой PASS.
 
