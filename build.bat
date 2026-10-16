@@ -28,6 +28,7 @@ copy /y LICENSE "%DIST%\" >nul || exit /b 1
 for %%f in (README INSTALL ROADMAP CHANGELOG) do copy /y docs\%%f.txt "%DIST%\" >nul || exit /b 1
 copy /y docs\BUSINESS_MECHANICS.md "%DIST%\BUSINESS_MECHANICS.md" >nul || exit /b 1
 copy /y docs\OFFLINE_UPSTREAM_FIXES.md "%DIST%\OFFLINE_UPSTREAM_FIXES.md" >nul || exit /b 1
+copy /y docs\COMPANY_PROGRESSION.md "%DIST%\COMPANY_PROGRESSION.md" >nul || exit /b 1
 xcopy /e /i /q /y mod\mpfever_1 "%DIST%\mod\mpfever_1" >nul || exit /b 1
 if exist "release\MPFever-%VERSION%.zip" del "release\MPFever-%VERSION%.zip"
 rem explicit forward-slash zip entries, also on the older framework used by PowerShell 5

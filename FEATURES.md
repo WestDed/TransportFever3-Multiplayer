@@ -1,5 +1,7 @@
 # Состояние функций
 
+16.10.2026, PR #15: [личные XP, уровни, разрешения и вкладка развития](docs/COMPANY_PROGRESSION.md), 0.3.7-westded.2-experimental/protocol 7. Код/миграция/UI/scheduler проверены offline, игровые здания и полный save/restart ещё NOT TESTED. Следующий абзац описывает предыдущий PR #14.
+
 16.10.2026: [offline исправления](docs/OFFLINE_UPSTREAM_FIXES.md), 0.3.7-westded.1-experimental/protocol 6, поверх PR #12: данные/waypoints, indexed refs/rotated checks, очереди покупок/edits, unique load identity, speed/notice UI и bounded notification preferences. В документе — полная матрица выполненного и отложенного для двигателя. Ниже историческое состояние #11; новые игровые проверки ещё не выполнены.
 
 15.10.2026. Есть первый пользовательский PASS совместного подключения/игры через Porthole. Большая карта, доступ к инфраструктуре, субсидии и чужие уведомления выявили отказы/недостающие функции. В среде разработчика игры нет; автоматические проверки и пользовательские испытания различаются. Стабильный выпуск не подготовлен. [Матрица всех замечаний и PR #11](docs/COOP_PLAYTEST_2026_10_15.md).
@@ -16,7 +18,8 @@
 | Право указать co | Host roster/proven persistent owner и schema | C# negative/restart tests; реальные roster timing/save/load требуют engine gate |
 | Флот и линии | Дополнительная проверка resolved owner | Lua policy с injected ownership; native graph/terrain/assets и разрешённые refs неполны |
 | Бюджет и кредиты | Частично upstream; Repay берёт сохранённые terms | Real coLoanEvent с mock dependencies; Obtain/месячная схема/формула game loan_util не проверены |
-| Прогресс/разрешения | Существующий общий progression fallback | Независимый прогресс ещё не реализован/не подтверждён |
+| Прогресс/разрешения | PR #15: личные saved XP/rank, штатные permits/multipliers и explicit promotion | Core/adapter/scheduler/UI fixtures PASS; настоящий game XP, цены и сохранение ещё NOT TESTED |
+| Штаб/уникальные здания | Подсчёт построек по владельцу, личный уровень для открытий; census failure ограничителен | Общий permit механизм проверен offline; настоящий штаб/Колизей/улучшения требуют игры |
 | Контракты | Exclusive city claim + собственные delivery orders/escrow, см. таблицу ниже | Core/adapters PASS; настоящие offers/rewards/delivery NOT RETESTED |
 | Конкуренция грузов/пассажиров | Используются штатные economy/pathfinding | Поведение разных компаний не измерено; новой искусственной экономики нет |
 | Платная инфраструктура | Road grants/tolls/visits и station modes/billing, см. таблицу ниже | Core/adapters PASS; реальные pathfinding/fees NOT RETESTED, пути/депо отдельно |

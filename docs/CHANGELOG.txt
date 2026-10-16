@@ -1,3 +1,12 @@
+0.3.7-westded.2-experimental — personal company development (game NOT TESTED)
+- Saved personal XP/applied rank/potential rank, stable company ids, one-time legacy migration.
+- Own paid transport legs give XP; native rank thresholds/permits/ticket multipliers preserved.
+- Native progression mirror and normalized checks, bounded saved recent-leg dedup.
+- Development tab and strictly validated promotion command; other Company actions remain guarded.
+- Per-owner headquarters/landmark counts; census failure retains restrictive original permits.
+- Town effects remain shared; actual headquarters/Colosseum, save/restart and XP balance need game tests.
+- Protocol 7 / FileVersion 0.3.7.2; full package required. See COMPANY_PROGRESSION.md.
+
 0.3.7-westded.1-experimental — offline-verifiable upstream fixes (game NOT RETESTED)
 - Portable large integers/control-byte handling; preserve typed line waypoints and geometry references.
 - Action-local indexed references; rotated heavy checks with per-part pending differences.

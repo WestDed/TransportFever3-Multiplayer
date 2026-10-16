@@ -1,4 +1,4 @@
-# Дороги, остановки и заказы компаний — 0.3.7-westded.1-experimental
+# Дороги, остановки и заказы компаний — 0.3.7-westded.2-experimental
 
 Реализация в [PR #11](https://github.com/WestDed/TransportFever3-Multiplayer/pull/11), от main `937318b7747eaf9048a3ebf35d30efd4d211ea0c`. Все механики ниже реализованы в исходниках и подключены к игровому bridge/UI; их игровой статус — **NOT RETESTED**. Пользователь потребовал реализовать весь список PLAY-01–08 перед следующим игровым испытанием. Наличие интерфейса, fixtures и собранного DLL не означает, что API и native hooks прошли проверку в движке.
 
@@ -6,7 +6,7 @@
 
 ## Как пользоваться
 
-На обоих ПК нужен одинаковый **полный** пакет 0.3.7-westded.1-experimental: launcher, winhttp.dll и каталог mod. Protocol 6 отказывает прежним клиентам с protocol 5/4. Обновление одного Lua-файла или только EXE недостаточно. Основная main не менялась; для испытания не требуется автоматически объединять PR. Исходный save и индивидуальные identity profiles сохранить отдельно, не передавать друг другу private keys.
+На обоих ПК нужен одинаковый **полный** пакет 0.3.7-westded.2-experimental: launcher, winhttp.dll и каталог mod. Protocol 7 отказывает прежним клиентам с protocol 6/5/4. Обновление одного Lua-файла или только EXE недостаточно. Основная main не менялась; для испытания не требуется автоматически объединять PR. Исходный save и индивидуальные identity profiles сохранить отдельно, не передавать друг другу private keys.
 
 В игровом окне MPFever открыть **«Компании и соглашения»**:
 
@@ -86,3 +86,5 @@
 - [События CalcTicketPriceCargoEvent/CalcTicketPriceEvent](https://wiki.transportfever3.com/script-doc/content/scripts/gamescript.html).
 - [Repository getAll и CargoTypeRep](https://wiki.transportfever3.com/script-doc/api/res.html).
 - [GUI notification getters/prefilters](https://wiki.transportfever3.com/script-doc/content/game_mechanics/notifications/notification_util.html) и [параметры notification types](https://wiki.transportfever3.com/script-doc/content/game_mechanics/notifications/types/notification_types.html).
+
+Личное развитие, собственные уровни и открытие штаба/достопримечательностей: [COMPANY_PROGRESSION.md](COMPANY_PROGRESSION.md). Платежи за инфраструктуру не начисляют XP.
