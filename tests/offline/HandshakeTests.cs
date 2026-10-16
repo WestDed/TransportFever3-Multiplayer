@@ -131,6 +131,17 @@ namespace MPFever
                     }
                     Wait(() => relay.Count == 0, "rejected handshake releases reserved socket slot");
                 }
+                using (var oldPeer = new TcpClient("127.0.0.1", relay.Port))
+                {
+                    var reader = RawChallenge(oldPeer, out var challenge);
+                    string valid = Wire.Utf8.GetString(SignedJoin(challenge, OwnerIdentity.Create(), "old-version"));
+                    string old = valid.Replace("[\"protocol\"]=" + Wire.Version, "[\"protocol\"]=" + (Wire.Version - 1));
+                    Check(old != valid, "old-version fixture changes only protocol in an otherwise signed join");
+                    var data = Wire.Utf8.GetBytes(old);oldPeer.GetStream().Write(data, 0, data.Length);
+                    var answer = Msg.Parse(reader.ReadLine(5000));
+                    Check(answer == null || answer.Kind != "connection", "previous package protocol cannot enter session");
+                    Wait(() => relay.Count == 0, "old protocol rejection releases reserved socket");
+                }
                 using (var oversized = new TcpClient("127.0.0.1", relay.Port))
                 {
                     // Deliberately no newline: the 4 KiB ingress cap must reject

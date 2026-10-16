@@ -1,6 +1,18 @@
 # Тестирование и границы доказательства
 
-14.10.2026. В нашей среде TF3 не установлена, Steam/game API и настоящих сохранений нет. Локальная среда — Linux, Python 3.12, lupa 2.6 / Lua 5.2. C#/Windows/native проверки выполняются GitHub Actions; Windows/игра локально не запускались. Заказчик и брат выполнили первый настоящий startup/join на своих ПК, результат FAIL — сессия не началась. [Журналы, обнаруженный package defect и повторный тест](docs/INCIDENT_2026_10_14_FIRST_GAME.md).
+16.10.2026, PR #15: [матрица личного развития](docs/COMPANY_PROGRESSION.md#приёмка-в-игре). Локально 281 Python/Lua/C++ tests PASS, 288/288 keys × 11 локалей, git diff --check. Новые проверки: миграция, личные XP/уровни, настоящий Lua scheduler, цена по владельцу линии, bounded dedup, native hash normalization, permits census failure, GUI/view/schema. C# и Windows exact-head CI фиксируются в PR #15 после завершения. **Game NOT TESTED для новых изменений.** Сведения ниже о PR #14 и более ранних heads — исторические.
+
+16.10.2026: [новые offline regressions и границы](docs/OFFLINE_UPSTREAM_FIXES.md). Локально 231 tests PASS, 282/282 переводов × 11 локалей. Production functions проверяются на constructor/clock/async/React fixtures и настоящих temporary files; game engine не запускался. Новые C# cases включены во все три runtime/OS jobs, Windows ZIP имеет WestDed номер/protocol 6. Exact итоговые head/run/counts — в PR после CI, до этого проверка не объявляется успешной.
+
+15.10.2026. В нашей среде TF3/Steam/game API не установлены. Локально Linux/Python 3.12/lupa 2.6, C#/Windows/native проверяются GitHub Actions. Заказчик и брат после PR #10 сообщили об успешном совместном startup/join через Porthole; большие карты/механики выявили отказы. Это пользовательский игровой результат, не мой запуск. [Полная запись, regressions и критерии повтора](docs/COOP_PLAYTEST_2026_10_15.md).
+
+## Ручной тариф в окне остановки
+
+Ветка `feat/custom-station-fee-2026-10-16` продолжает ещё не объединённый PR #11. `test_station_fee_ui.py` исполняет **настоящие** helper/recipe/sendShare из `mpfever_ui.script.lua` и `shareFee` из `mpfever_common.lua`, подставляя React и engine dependencies. 13 новых сценариев: кнопка/Enter, typing без отправки, произвольный тариф, UI-ноль → wire `-1` (бесплатно) против private preset `0`, граница 1e9, неверные числа/выражения/длинный ввод, исправление ошибки, неизменённая сумма, другая остановка, read-only чужая остановка, default 100, external updates/draft, pending ack/timeout и reopening nonpreset fee. Fixtures поддерживают сброс state в nil, чтобы проверить очистку draft/pending, а не скрыть её ошибку.
+
+Локально: **175 tests PASS**, включая прежние 162; переводы **282/282** для каждой из 11 локалей; `git diff --check` PASS. Первоначально отсутствовала зависимость lupa в локальной Python-среде; установка точного `tests/requirements-offline.txt` восстановила harness без изменения требований или исключений. CI и полный Windows ZIP проверяются на точном опубликованном head; ссылки и результаты — в новом PR.
+
+В игре ещё **NOT RETESTED**. На двух ПК проверить: свою сумму `1234` кнопкой и Enter; одинаковый тариф в обоих окнах и платёж ровно 1234 при визите чужого транспорта; свои визиты бесплатны; `0` бесплатно, пункт «Не общая» запрещает доступ; неверный ввод не меняет тариф и не разрывает связь. Повторить после закрытия окна, смены остановки, save/host restart и reconnect. Проверить ширину/фокус/Enter/цвет ошибки в настоящем GUI; офлайн recipe не проверяет rendering и native widget callbacks. Использовать один полный новый пакет на обоих ПК.
 
 ## Фактические автоматические проверки
 
@@ -23,7 +35,7 @@ PR #8 расширяет suite постоянными key/owner/restart/migratio
 
 PR #8 уже слит: main 5f6cd58 прошла run 38346446265 (7 jobs, 78 Python/Lua, 306 C# checks). [PR #9](https://github.com/WestDed/TransportFever3-Multiplayer/pull/9) добавляет owner/roster/migration регрессии. Code head c5ae9be7 прошёл [run 38348129418](https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38348129418): 79 Python/Lua, 323 C# checks на всех трёх runtime/OS вариантах, 50 decoder checks и все 7 jobs green. Финальный head с документацией проверяется отдельно; точный run в PR #9. Первый C# прогон новых tests имел ошибку формата фикстуры и не считается доказательством failure production кода. [Полный разбор](docs/MAIN_REVIEW_2026_10_13.md).
 
-PR #10 восстанавливает packaging/loader fidelity: permissions module отсутствовал в `_content.json`, но старая harness брала его прямо с диска. Новая harness предоставляет только registered Lua resources; три catalog/bootstrap/missing-module tests дополняют 17 прежних lockstep scenarios. Windows verification сверяет все actual ZIP resources с catalog/source hashes. Baseline run 38567631668 упал на missing module и unregistered packaged content. После исправления code head 485974f5 прошёл [run 38568193133](https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38568193133): 82 Python/Lua (локально тоже 82), 323 C# в каждой из трёх сред, 50 decoder, все 7 jobs и 15 registered resource/hash checks. Итоговый документированный head/run — в PR #10. Bootstrap использует real Lua source с injected engine API; реальный положительный game startup после исправления не проверен.
+PR #10 восстанавливает packaging/loader fidelity: permissions module отсутствовал в `_content.json`, но старая harness брала его прямо с диска. Новая harness предоставляет только registered Lua resources; три catalog/bootstrap/missing-module tests дополняют 17 прежних lockstep scenarios. Windows verification сверяет все actual ZIP resources с catalog/source hashes. Baseline run 38567631668 упал на missing module и unregistered packaged content. После исправления code head 485974f5 прошёл [run 38568193133](https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38568193133): 82 Python/Lua (локально тоже 82), 323 C# в каждой из трёх сред, 50 decoder, все 7 jobs и 15 registered resource/hash checks. Итоговый документированный head/run — в PR #10. Bootstrap использует real Lua source с injected engine API; впоследствии пользователи сообщили об успешном startup/join после исправления; новые механики ещё NOT RETESTED.
 
 ## Воспроизведение без игры
 
@@ -42,7 +54,7 @@ Windows: `dotnet build tests/offline/Offline48.csproj --configuration Release`, 
 
 Workflow запускается на PR, main, workflow_dispatch; obsolete run отменяется. Artifacts: translation reports, benchmark JSON, experimental ZIP, build-manifest (gameTested=false), native exports. Хранение исходников/документов — Git branches. Benchmark sampling/method/raw results — [STAGE1_OFFLINE_RECOVERY](docs/STAGE1_OFFLINE_RECOVERY.md).
 
-## После приобретения игры
+## Игровые испытания на компьютерах заказчика
 
 1. Записать game build/hash, DLL/EXE/mod/DLC hashes, save/seed, hardware, roles, network и дату. Исходный save сохранить отдельно. [Шаблон протокола](docs/GAME_TEST_RECORD.md).
 2. Два процесса одного ПК, затем два ПК: inactive/active launch, known/unknown build, host/client, shared/separate. Unknown hooks отказывают, не дают частичную синхронизацию.
@@ -56,3 +68,25 @@ Workflow запускается на PR, main, workflow_dispatch; obsolete run �
 10. Карты до Gigantomaniac: game steps/s vs solo, checksum p50/p95, RSS/peak, save/transfer/load time и host upload. Caps/пороговые цели пересмотреть по замерам.
 
 Минимальная запись неуспеха: scenario, epoch/sequence/step/company, expected/actual geometry/owner/journal/payment, logs, число resync и длительность. PASS мока и compiled DLL не заменяют PASS игрового сценария.
+
+## Первые gameplay regressions — PR #11
+
+Code head `ebd3395f5e14b41d37e809a65aa0c6a4d4c36b84`, [run 38591306735](https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38591306735): все 7 jobs success, 105 Python/Lua на Linux/Windows, 336 C# checks на net8 Linux/Windows и actual net48 Windows, 50 decoder checks, реальный TCP bench и полный Windows package verification. Локально 105 PASS. [Baseline red и подробные границы](docs/COOP_PLAYTEST_2026_10_15.md). Финальный documentation head/CI смотреть в PR #11.
+
+Новые tests исполняют настоящие CO/UI Lua functions с injected module/owner/state, включая one-off subsidy, private cards с отсутствующими списками, позднюю station hook установку, cache refresh и UI reload. Queue тест насыщает bytes с blocked writer, deadline tests проверяют defaults/overrides/invalid input. MainForm receipt/load orchestration компилируется Windows job, но console suite её не исполняет. Game повтор на большом save и реальные grants/fees/notifications ещё NOT RETESTED.
+
+## Полный пакет механик 0.3.7-experimental
+
+[BUSINESS_MECHANICS](docs/BUSINESS_MECHANICS.md) содержит правила и восьмипунктовую игровую матрицу. Новые `test_business.py` и `test_business_adapters.py` исполняют production core, engine adapter и React window: права владельца, full-curve split против удаления середины, одно списание/повторный въезд, reserve funds, callback retry, uncertain reload, escrow/one carrier/cargo/passenger delivery/cancel/expiry, form controls и GUI notification projection. Существующий station selection suite дополнен free access.
+
+`test_native_privacy.py` + `native_privacy_tests.cpp` исполняют настоящий C++ helper для own/foreign/duplicate/canonical/empty/invalid/alias cases, проверяют сохранность simulation map. Linux — g++; Windows full-build job — MSVC через `test_native_privacy.ps1`. Это isolated UI helper, не вызов game hooks. C# SchemaTests проверяют business whitelist, границы, spoofed actor/request/delivery и snapshot-specific load phases; SnapshotTests — soft/liveness/hard deadlines.
+
+Первый полный run [38683104340](https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38683104340) на head `3aa2b69df7f7b8032fcae36122d8608c5b11cc68`: Lua на обеих ОС, decoder и full Windows build/native filter PASS; три C# jobs законно FAILED на CS0128 — новое имя `now` пересекалось со старым fixture. Переменная нового теста переименована в loadStart; exemptions не вводились. После этого production C# components отдельно скомпилированы Roslyn 8.0 и исполнены на .NET 8 Linux: **363 checks PASS**. SDK CLI в этой sandbox не читает Process.StartTime; compiler/assembly запущены напрямую, это особенность локальной среды, не модификация production/tests. Обычный dotnet run и actual net48 обязаны пройти GitHub Actions.
+
+Итоговый head/run и artifact фиксируются в PR #11 после полной проверки. Не использовать artifact раннего failed run как готовый результат. После последней правки локально требуется весь Python discovery; Windows/net8/net48/package/decoder результаты — на том же точном итоговом head. Игровой статус всех новых механик **NOT RETESTED**; пользовательский прошлый startup/join **USER-REPORTED PASS**, прежние отказы сохранены отдельно.
+
+Дополнительное ревью: тариф после split сохраняет всю исходную геометрию; connect не допускает road template/lane/decorations upgrade; сравнение metadata не зависит от порядка table keys. При полной очереди уже доставленный заказ ожидает reward, а не возвращает деньги issuer по deadline; неоплаченная maintenance obligation не теряется. Для каждого случая добавлены регрессии. Локально **158 Python/Lua/C++ tests PASS**, C# **363 checks PASS**. Предыдущий полный head `001df1c042813a8400f2eb3ce6f37d73b8c5bf76` прошёл все семь jobs в [run 38683866783](https://github.com/WestDed/TransportFever3-Multiplayer/actions/runs/38683866783); последующие guard changes требуют собственного финального run, который фиксируется в PR.
+
+Последняя проверка формы: пустой заказ/нечисловой тариф остаются локальной ошибкой UI, не отправляются как malformed action и не вызывают schema disconnect легитимного игрока. Исчезнувший target возвращает saved request_failed без escrow. Регрессии добавлены; локальный итог **161 tests PASS**. Эти UI changes также требуют финального CI на точном PR head.
+
+CI report audit: `report_baseline` сохранял старое разрешение exit 1 от исходного translation checker, хотя список исключений давно пуст. Новый negative test воспроизвёл преобразование такого exit в success (`0 != 1`); исправлено на строгое `code != 0`, устаревший текст про три allowed keys удалён. Локально **162 tests PASS**; ни один nonzero checker result не игнорируется. Последний CI/head/package фиксируется в PR #11.

@@ -18,6 +18,20 @@ namespace MPFever
             Directory.CreateDirectory(root);
             try
             {
+                Check(SnapshotLimits.LoadTimeoutSeconds(null) == 1800 && SnapshotLimits.LoadTimeoutSeconds("") == 1800,
+                    "large map load default allows 30 minutes instead of fixed 10 minutes");
+                Check(SnapshotLimits.LoadTimeoutSeconds("60") == 60 && SnapshotLimits.LoadTimeoutSeconds("7200") == 7200,
+                    "load timeout accepts bounded override");
+                foreach (var invalid in new[] { "59", "7201", "-1", "0", "NaN", "1.5", "999999999999" })
+                    Reject<InvalidDataException>(() => SnapshotLimits.LoadTimeoutSeconds(invalid), "invalid load deadline refused: " + invalid);
+                var loadStart=new DateTime(2026,10,15,0,0,0,DateTimeKind.Utc);
+                var loading=new LoadLiveness(loadStart,1800);
+                Check(!loading.Expired(loadStart.AddSeconds(1799)),"engine loading gets complete soft budget without game clocks");
+                loading.Alive(loadStart.AddSeconds(1900));
+                Check(!loading.Expired(loadStart.AddSeconds(1959)),"live launcher extends large-map engine load past soft budget");
+                Check(loading.Expired(loadStart.AddSeconds(1960)),"missing launcher liveness after soft budget ends wait");
+                loading.Alive(loadStart.AddSeconds(7199));
+                Check(loading.Expired(loadStart.AddSeconds(7200)),"heartbeats never defeat absolute two-hour deadline");
                 for(int n=1;n<=6;n++)Check(SnapshotLimits.CanonicalBase64(Convert.ToBase64String(new byte[n]),n),"canonical base64 padding "+n);
                 foreach(var item in new[]{new{Text="AB==",Bytes=1},new{Text="AAB=",Bytes=2},new{Text="AA =",Bytes=2},new{Text="A===",Bytes=1}})
                     Check(!SnapshotLimits.CanonicalBase64(item.Text,item.Bytes),"noncanonical base64 padding refused");
@@ -129,6 +143,20 @@ namespace MPFever
                 }
                 finally { listener.Stop(); }
                 // Deterministic blocked writer: queue bounds and another writer's progress.
+                using (var blocked = new BlockingStream())
+                using (var outbox = new BoundedOutbox(blocked, () => blocked.Release.Set(), "Bulk/control writer", 1000))
+                {
+                    var bulk = Msg.Make("resync_file", "Host", "{[\"data\"]=\"" + new string('a', 110) + "\"}");
+                    Check(outbox.Enqueue(bulk) && blocked.Started.Wait(5000), "snapshot frame is in flight on slow link");
+                    int queued = 1;
+                    while (queued < 128 && outbox.Enqueue(bulk)) queued++;
+                    Check(queued < 128, "bulk producer stops at bounded capacity");
+                    Check(outbox.Enqueue(Msg.Make("mpstatus", "Host", "{[\"text\"]=\"loading\"}")),
+                        "bulk queue reserves room for host status instead of disconnecting active download");
+                    Check(outbox.Enqueue(Msg.Make("session", "Host", "{[\"started\"]=false,[\"speed\"]=0}")),
+                        "bulk queue reserves room for pause/session control");
+                    outbox.Dispose(); blocked.Release.Set();
+                }
                 using (var blocked = new BlockingStream())
                 using (var slow = new BoundedOutbox(blocked, () => blocked.Release.Set(), "Blocked writer", 100))
                 using (var healthyStream = new MemoryStream())

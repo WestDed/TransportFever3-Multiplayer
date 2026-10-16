@@ -816,7 +816,14 @@ namespace MPFever
                 }
         }
 
-        public void Send(Peer p, Msg m) { if (!SendBulk(p, m, false)) Close(p); }
+        public void Send(Peer p, Msg m)
+        {
+            if (!SendBulk(p, m, false))
+            {
+                Log.Warn("Outgoing queue full or closed for " + (p?.Name ?? "unknown peer") + ": " + m.Kind);
+                if (p != null) Close(p);
+            }
+        }
 
         public bool SendBulk(Peer p, Msg m, bool wait = true)
         {

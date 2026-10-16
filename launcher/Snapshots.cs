@@ -8,11 +8,36 @@ using System.Threading;
 
 namespace MPFever
 {
+    // Separate command identity from the host's small session counter. The same
+    // transfer is idempotent; a new host/transfer with id=1 is a different load.
+    static class SnapshotControl
+    {
+        public static string MenuSequence(string request)
+        {
+            if (!SnapshotLimits.Hex(request, 32)) throw new InvalidDataException("Invalid load request token");
+            return "r" + request;
+        }
+        public static string Payload(int id, string name, string request)
+        {
+            MenuSequence(request);
+            if (id < 1 || string.IsNullOrEmpty(name) || name.Length > 512) throw new InvalidDataException("Invalid load control");
+            return "{[\"id\"]=" + id.ToString(CultureInfo.InvariantCulture) + ",[\"name\"]=" + LuaLit.Quote(name) + ",[\"request\"]=" + LuaLit.Quote(request) + "}";
+        }
+    }
+
     static class SnapshotLimits
     {
         public const int ChunkBytes = 256 * 1024;
         // A provisional safety budget, not a claim about Gigantomaniac saves.
         public const long MaxBytes = 1024L * 1024 * 1024;
+        public const int SaveTimeoutSeconds = 600, TransferTimeoutSeconds = 1800;
+        public static int LoadTimeoutSeconds(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return 1800;
+            if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int seconds) || seconds < 60 || seconds > 7200)
+                throw new InvalidDataException("MPFEVER_LOAD_TIMEOUT_SECONDS must be an integer from 60 to 7200");
+            return seconds;
+        }
         public static string Hash(Stream stream)
         {
             using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
@@ -39,6 +64,20 @@ namespace MPFever
         }
         public static string Text(Dictionary<object, object> t, string key)
         { if (!t.TryGetValue(key, out var v) || !(v is string s)) throw new InvalidDataException("Invalid snapshot string: " + key); return s; }
+    }
+
+    // A launcher heartbeat proves the connection is alive, not engine progress.
+    // Loading may outlast the normal budget, but never the absolute two hours.
+    sealed class LoadLiveness
+    {
+        public const int HardSeconds=7200, HeartbeatSeconds=10;
+        readonly DateTime started;
+        readonly int softSeconds;
+        DateTime lastAlive;
+        public LoadLiveness(DateTime now,int seconds) { started=lastAlive=now;softSeconds=seconds; }
+        public void Alive(DateTime now) { if(now>lastAlive)lastAlive=now; }
+        public bool Expired(DateTime now) => (now-started).TotalSeconds>=HardSeconds
+            || (now-started).TotalSeconds>=softSeconds && (now-lastAlive).TotalSeconds>=60;
     }
 
     sealed class SnapshotManifest
@@ -210,7 +249,7 @@ namespace MPFever
         {
             lock (gate)
             {
-                if (manifest == null || now() - touched <= TimeSpan.FromMinutes(3) && now() - begun <= TimeSpan.FromMinutes(30)) return false;
+                if (manifest == null || now() - touched <= TimeSpan.FromMinutes(3) && now() - begun <= TimeSpan.FromSeconds(SnapshotLimits.TransferTimeoutSeconds)) return false;
                 Clear(); return true;
             }
         }

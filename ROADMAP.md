@@ -1,5 +1,9 @@
 # План разработки и критерии готовности
 
+16.10.2026: по новому запросу заказчика в PR #15 реализовано [личное развитие](docs/COMPANY_PROGRESSION.md): saved XP/rank, подтверждение собственного уровня, штатные разрешения и собственные HQ/landmark counts. Это расширяет прежний offline scope #14; новый adapter реализован, но критерий этапа 3 ещё требует игры. Приёмка: собственные перевозки → только свой XP → собственное открытие → свой штаб/Колизей → полный restart без сброса. Банкротство, другие Company actions и central cutover остаются отдельно.
+
+16.10.2026: по запросу заказчика выполнен [offline набор из аудита upstream 0.3.11](docs/OFFLINE_UPSTREAM_FIXES.md). Выбраны проверяемые data/queue/UI fixes поверх наших security/ownership/business изменений; это не полный merge upstream. Native geometry/hold/capture и новые engine company mechanics оставлены без изменения до стенда. Следующие переносы — по реальным игровым доказательствам.
+
 Основа — существующий MPFever, не переписывание с нуля. PR #8 объединён в main 5f6cd58: постоянный владелец и net48 execution. [PR #9](https://github.com/WestDed/TransportFever3-Multiplayer/pull/9) исправляет roster/ownership проверки этой main. Main меняет только заказчик после review; следующие задачи — отдельной веткой от актуальной main с PR в main. Сроки до доступа к движку не обещаем.
 
 ## Этап 0 — аудит
@@ -18,7 +22,11 @@ PR #8 реализует межсессионный owner по persistent privat
 
 ## Этап 2 — минимальный игровой стенд
 
-14.10.2026: первые попытки заказчика/брата не дошли до multiplayer ready. PR #10 исправляет отсутствующую регистрацию permissions module в game resource catalog; loader/реальный ZIP regressions воспроизводят дефект. Следующий gate: одинаковый новый пакет на двух ПК, host hello/ready, прямой join по Radmin IP, transfer/load и две компании. [Запись первого неуспеха](docs/INCIDENT_2026_10_14_FIRST_GAME.md). Этот engine этап не считать PASS по offline bootstrap.
+15.10.2026: после PR #10 и настройки Porthole пользователи сообщили об успешной совместной игре. Минимальный startup/join gate имеет ограниченный USER-REPORTED PASS; большие карты и механики компаний выявили отказы. [Полная матрица PLAY-01–08, исправления PR #11 и критерии повтора](docs/COOP_PLAYTEST_2026_10_15.md). Offline suite не закрывает engine gate.
+
+По требованию пользователя весь PLAY-01–08 реализован до следующего игрового повтора в PR #11: road grants/tolls, station modes/access, custom delivery orders с escrow, company notices и money projection, engine-load liveness. Это прототип с интеграцией в bridge/UI, а не только план/helper. [Подробные правила и критерии](docs/BUSINESS_MECHANICS.md).
+
+Ближайшая последовательность — проверить одинаковый пакет 0.3.7-experimental на обоих ПК: большой save, road permission matrix и тарификация, shared stop selection/arrival/payment, exclusive city UID, собственные грузовые/пассажирские заказы, собственные/чужие notices и popups, затем полный save/restart/owner restore. Фиксировать expected/actual; найденные engine incompatibilities исправлять небольшими изменениями. Автоматические fixtures не закрывают эти критерии.
 
 Зафиксировать build/hash игры, EXE/DLL/mods/DLC, machines, saves/seed. Сначала два процесса одного ПК, затем два ПК. Unknown game build/hooks — fail closed. Проверить upstream #15–22: снос станции, сигналы/туннели/мосты, модульные правки, копирование состава и callbacks линий. Пауза/x1/x4, simultaneous builds, десять повторений каждого сценария. Сверять геометрию/owners/balances, не только checksum. Два часа без unexplained desync/crash — стартовый порог.
 
@@ -28,7 +36,7 @@ PR #8 реализует межсессионный owner по persistent privat
 
 ## Этап 4 — конкуренция и инфраструктура
 
-Сначала измерить штатный pathfinding: один завод/город, две компании, цены/интервалы, пересадки. Проверять stocks/onboard/deliveries/revenues по сегментам, без дублирования. Затем договоры путей/станций/депо, доступ/плата/смена владельца/банкротство. Stable visit ID, одна оплата за посещение, сумма межфирменных переводов ноль, reroute/reload сохраняют результат. Не создавать новую экономику до измерения штатной.
+Сначала измерить штатный pathfinding: один завод/город, две компании, цены/интервалы, пересадки. Проверять stocks/onboard/deliveries/revenues по сегментам, без дублирования. Прототип дорожных/станционных соглашений и заказов уже введён в PR #11 по запросу пользователя. Принять их по игровым результатам; затем договоры путей/депо, смена владельца/банкротство. Stable visit ID, одна оплата за посещение, сумма межфирменных переводов ноль, reroute/reload сохраняют результат. Не создавать новую экономику до измерения штатной.
 
 ## Этап 5 — recovery и длительность
 

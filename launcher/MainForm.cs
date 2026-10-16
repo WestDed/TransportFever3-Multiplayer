@@ -42,7 +42,7 @@ namespace MPFever
 
     sealed class MainForm : Form
     {
-        public const string Version = "0.3.6-experimental";
+        public const string Version = "0.3.7-westded.2-experimental";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -60,7 +60,7 @@ namespace MPFever
         const double UnitsPerSecond = 1000;    // game time units per real second at x1
         const double HashEverySeconds = 10;
 
-        readonly TextBox nameBox = new TextBox { Text = Environment.UserName };
+        readonly TextBox nameBox = new TextBox { Text = SavedName() };
         readonly TextBox hostBox = new TextBox { Text = "127.0.0.1" };
         readonly NumericUpDown portBox = new NumericUpDown { Minimum = 1024, Maximum = 65535, Value = 28090 };
         readonly ModernButton hostBtn = new ModernButton(ButtonKind.Primary);
@@ -136,13 +136,14 @@ namespace MPFever
         readonly HashSet<string> resyncWaiting = new HashSet<string>();
         volatile Dictionary<object, object> saveDone;
         string lastDiffKeys = "";
+        readonly CheckpointState checkpointState = new CheckpointState();
         int diffStreak;
         int postResyncHashN = -1;
         readonly HashSet<string> ignoredParts = new HashSet<string>();
         // parts every game corrects by itself from the host's values (not a reason to reload)
         static readonly HashSet<string> CorrectedParts = new HashSet<string> { "money" };
         // game state that is never a local measure, even when it differs right after a reload (a company a game missed must be seen)
-        static readonly HashSet<string> NeverLocalParts = new HashSet<string> { "companies", "money", "owners", "loans", "edges", "constructions", "lines" };
+        static readonly HashSet<string> NeverLocalParts = new HashSet<string> { "companies", "business", "money", "owners", "loans", "edges", "constructions", "lines" };
         // the simulation's own state (passengers boarding, vehicle positions, the towns and what follows them): it used to drift
         // by itself (the game's Lua walked its tables in a different order on every PC, fixed in 0.3.4), so it was only reloaded
         // when it lasted. The games now stay identical: a difference there comes from an action applied differently and must be
@@ -563,6 +564,8 @@ namespace MPFever
 
         static string SettingsFile => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "mpfever_settings.txt");
 
+        static string SavedName() => LoadSettings().TryGetValue("name", out var name) && !string.IsNullOrWhiteSpace(name) ? name : Environment.UserName;
+
         internal static Dictionary<string, string> LoadSettings()
         {
             var d = new Dictionary<string, string>();
@@ -584,8 +587,7 @@ namespace MPFever
             menuMode = true;
             running = true;
             hostBtn.Enabled = joinBtn.Enabled = localBtn.Enabled = false;
-            var st = LoadSettings();
-            menuGame = new GameLink(st.TryGetValue("name", out var n) && n != "" ? n : Environment.UserName, "menu");
+            menuGame = new GameLink(SavedName(), "menu");
             games.Add(menuGame);
             menuGame.Exited += () => { Log.W(T("Transport Fever 3 fermé : fin de MPFever.", "Transport Fever 3 closed: MPFever exits.")); try { BeginInvoke((Action)Close); } catch { } };
             MenuStatus();
@@ -827,9 +829,9 @@ namespace MPFever
             lock (clocks) clocks.Clear();
             lock (hashes) hashes.Clear();
             lock (chatLog) { chatLog.Clear(); chatId = 0; }
-            lock (snapshotReceivers) { foreach (var receiver in snapshotReceivers.Values) receiver.Dispose(); snapshotReceivers.Clear(); }
+            lock (snapshotReceivers) { foreach (var receiver in snapshotReceivers.Values) receiver.Dispose(); snapshotReceivers.Clear(); loadingClients.Clear(); }
             hashN = 0; syncText = "—"; actsRelayed = actRefused = actFails = desyncs = 0;
-            resyncing = false; resyncFailed = false; resyncWaiting.Clear(); ignoredParts.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = "";
+            resyncing = false; resyncFailed = false; resyncWaiting.Clear(); loadWatches.Clear(); ignoredParts.Clear(); checkpointState.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = "";
             joinPending = false;
             joinedAddr = null;
             if (steamConnect != null) { steamConnect = null; SteamCtl("clear", null); }
@@ -838,7 +840,7 @@ namespace MPFever
                 menuGame.InGame = false;
                 foreach (var f in new[] { "in.log", "out.log", "ui.log", "started.txt", "results.log", "native_events.log", "resync_claims.txt",
                                           "resync_pending.txt", "bindings.log", "captured.txt", "companies.txt", "shares.txt",
-                                          "chat.txt", "chat_out.txt" })
+                                          "chat.txt", "chat_out.txt", "business.txt" })
                     try { var p = Path.Combine(menuGame.Dir, f); if (File.Exists(p)) File.WriteAllText(p, ""); } catch { }
             }
             menuPhase = "idle"; menuText = ""; menuLoad = ""; menuLoadSeq = "";
@@ -1091,7 +1093,11 @@ namespace MPFever
             game.FromGame += clientFromGame = (g, m) =>
             {
                 if (gen != sessionGen) return;
-                if (m.Kind == "hello") { g.InGame = true; if (menuMode) { menuPhase = "ingame"; menuText = T("En partie.", "In game."); MenuStatus(); } }
+                if (m.Kind == "hello") {
+                    LoadingClient loaded=null;
+                    lock(snapshotReceivers) { if(loadingClients.TryGetValue(g,out loaded))loadingClients.Remove(g); }
+                    if(loaded!=null) current?.Send(Msg.Make("load_status",g.Name,LoadStatus(loaded.Manifest,"ready")));
+                    g.InGame = true; if (menuMode) { menuPhase = "ingame"; menuText = T("En partie.", "In game."); MenuStatus(); } }
                 current?.Send(m);
             };
             Action<Client> wire = null;
@@ -1130,7 +1136,7 @@ namespace MPFever
                 client.Closed += () =>
                 {
                     if (gen != sessionGen) return;
-                    lock (snapshotReceivers) { if (snapshotReceivers.TryGetValue(game, out var receiver)) { receiver.Dispose(); snapshotReceivers.Remove(game); } }
+                    lock (snapshotReceivers) { if (snapshotReceivers.TryGetValue(game, out var receiver)) { receiver.Dispose(); snapshotReceivers.Remove(game); loadingClients.Remove(game); } }
                     lock (clients) clients.Remove(client);
                     if (current == client) current = null;   // nothing is sent until reconnected
                     Log.Warn(F("[{0}] connexion à l'hôte perdue", "[{0}] connection to the host lost", name));
@@ -1174,6 +1180,14 @@ namespace MPFever
                 while (chatGen == sessionGen && !clientCancelled)
                 {
                     Thread.Sleep(250);
+                    LoadingClient loading=null;
+                    lock(snapshotReceivers)
+                    {
+                        if(loadingClients.TryGetValue(game,out var pending) && pending.Client==current
+                            && (DateTime.UtcNow-pending.LastSent).TotalSeconds>=LoadLiveness.HeartbeatSeconds)
+                        { pending.LastSent=DateTime.UtcNow;loading=pending; }
+                    }
+                    if(loading!=null) current?.Send(Msg.Make("load_status",game.Name,LoadStatus(loading.Manifest,"loading")));
                     foreach (var line in game.ReadChatOut())
                     {
                         var text = ChatClean(line);
@@ -1385,7 +1399,7 @@ namespace MPFever
             Log.W(F("=== Partie démarrée avec {0} jeu(x) au temps {1} : vérification initiale... ===", "=== Game started with {0} game(s) at time {1}: initial check... ===", n, times.FirstOrDefault()));
             BroadcastSession();
             // every game just loaded the same savegame: a part already different now is a local measure
-            postResyncHashN = hashN + 1;
+            checkpointState.Clear(); postResyncHashN = hashN + 1;
             RequestHash();
             int startGen=sessionGen;
             new Thread(() => { Thread.Sleep(1500); if(startGen==sessionGen)SetSpeed(1, T("démarrage", "start")); }) { IsBackground = true }.Start();
@@ -1526,7 +1540,7 @@ namespace MPFever
                     if (from != null) relay.Send(from, Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(from.Name) + ",[\"role\"]=\"client\",[\"owner\"]=" + LuaLit.Quote(from.Identity.Owner) + "}"));
                     lock (resyncWaiting)
                     {
-                        if (!resyncing || from == null || snapshotReceived.Contains(m.From)) resyncWaiting.Remove(m.From);
+                        if (!resyncing || from == null) resyncWaiting.Remove(m.From);
                     }
                     break;
 
@@ -1545,13 +1559,22 @@ namespace MPFever
                     }
 
                 case "resync_received":
+                case "load_status":
                     lock (resyncWaiting)
                     {
                         if (from != null && snapshotTargets.TryGetValue(from.Name, out var target)
                             && LuaLit.Parse(m.Payload) is Dictionary<object, object> receipt
                             && receipt.TryGetValue("id", out var rid) && rid is double rd && rd == target.Id
                             && receipt.TryGetValue("transfer", out var rt) && rt is string rs && rs == target.Transfer)
-                            snapshotReceived.Add(from.Name);
+                        {
+                            if(m.Kind=="resync_received")
+                            { snapshotReceived.Add(from.Name);loadWatches[from.Name]=new LoadLiveness(DateTime.UtcNow,activeLoadTimeout); }
+                            else if(snapshotReceived.Contains(from.Name))
+                            {
+                                if(receipt.TryGetValue("phase",out var phase) && phase as string=="ready")resyncWaiting.Remove(from.Name);
+                                else if(loadWatches.TryGetValue(from.Name,out var watch))watch.Alive(DateTime.UtcNow);
+                            }
+                        }
                     }
                     break;
 
@@ -1720,7 +1743,10 @@ namespace MPFever
                 if (local.Count > 0) Log.Warn(T("Mesures propres à chaque jeu (ignorées désormais) : ", "Local measures (ignored from now on): ") + string.Join(", ", local));
             }
             diffs = diffs.Where(d => !ignoredParts.Contains(DiffKey(d))).ToList();
-            CheckResync(diffs.Select(d => DiffKey(d)).Where(k => !CorrectedParts.Contains(k)).ToList(), n);
+            checkpointState.Observe(n, keys, diffs.Select(DiffKey));
+            var pendingParts = checkpointState.Pending.Where(k => !CorrectedParts.Contains(k) && !ignoredParts.Contains(k)).ToList();
+            CheckResync(pendingParts, n);
+            if (diffs.Count == 0 && pendingParts.Count > 0) return;
             if (diffs.Count == 0)
             {
                 bool changed = syncState != 1;
@@ -1729,7 +1755,7 @@ namespace MPFever
                 syncText = T("SYNCHRONE ✔", "IN SYNC ✔");
                 if (changed || n % 6 == 1) Log.Ok(F("Synchronisation n°{0} (temps {1}) : IDENTIQUE sur {2} jeux ({3} mesures)", "Sync check #{0} (time {1}): IDENTICAL on {2} games ({3} measures)", n, time, names.Count, keys.Count));
             }
-            else if (diffKeys.Where(d => !ignoredParts.Contains(d) && !CorrectedParts.Contains(d)).All(DriftParts.Contains))
+            else if (pendingParts.All(DriftParts.Contains))
             {
                 // simulation drift (or money, corrected at once): no alarm, a line per minute
                 bool changed = syncState != 2;
@@ -1777,7 +1803,7 @@ namespace MPFever
                 return;
             }
             driftSince = -1;
-            diffStreak = k == lastDiffKeys ? diffStreak + 1 : 1;
+            diffStreak = checkpointState.Streak(keys.Where(x => !DriftParts.Contains(x)));
             lastDiffKeys = k;
             if (diffStreak < 2) return;
             if (Now - lastResync < ResyncCooldownSeconds)
@@ -1806,12 +1832,16 @@ namespace MPFever
             {
                 Log.W(F("=== Resynchronisation n°{0} sur la partie de l'hôte (écart : {1}) ===", "=== Resynchronisation #{0} on the host's game (difference: {1}) ===", id, reason));
                 Pause(T("resynchronisation", "resynchronisation"));
+                int loadTimeout = SnapshotLimits.LoadTimeoutSeconds(Environment.GetEnvironmentVariable("MPFEVER_LOAD_TIMEOUT_SECONDS"));
+                activeLoadTimeout=loadTimeout;
+                Log.W("Snapshot deadlines: save " + SnapshotLimits.SaveTimeoutSeconds + "s, transfer " + SnapshotLimits.TransferTimeoutSeconds + "s, load " + loadTimeout + "s");
                 long at; lock (sessionGate) at = pauseAt ?? 0;
                 bool stopped = WaitCurrent(() => { lock (clocks) return clocks.Values.All(c => c.T >= at && c.Sp == 0); }, 120);
                 if (!stopped) { Log.Err(T("Resynchronisation abandonnée : les jeux ne se sont pas arrêtés.", "Resynchronisation cancelled: the games did not stop.")); return; }
                 saveDone = null;
-                activeGame.ToGame(Msg.Make("resync_save", hostName, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(ResyncSaveName) + "}"));
-                if (!WaitCurrent(() => saveDone != null && saveDone.TryGetValue("id", out var si) && si is double sd && sd == id, 180))
+                string saveRequest = Guid.NewGuid().ToString("N");
+                activeGame.ToGame(Msg.Make("resync_save", hostName, SnapshotControl.Payload(id, ResyncSaveName, saveRequest)));
+                if (!WaitCurrent(() => saveDone != null && saveDone.TryGetValue("id", out var si) && si is double sd && sd == id && saveDone.TryGetValue("request", out var sr) && sr as string == saveRequest, SnapshotLimits.SaveTimeoutSeconds))
                 { Log.Err(T("Resynchronisation abandonnée : l'hôte n'a pas sauvegardé.", "Resynchronisation cancelled: the host did not save.")); return; }
                 if (!(saveDone.TryGetValue("ok", out var okv) && okv is bool ok && ok)) { Log.Err(T("Resynchronisation abandonnée : sauvegarde refusée.", "Resynchronisation cancelled: save refused.")); return; }
                 Thread.Sleep(1000);
@@ -1825,7 +1855,7 @@ namespace MPFever
                     Peer[] peers = activeRelay.Peers();
                     lock (resyncWaiting)
                     {
-                        resyncWaiting.Clear(); snapshotTargets.Clear(); snapshotReceived.Clear();
+                        resyncWaiting.Clear(); snapshotTargets.Clear(); snapshotReceived.Clear();loadWatches.Clear();
                         resyncWaiting.Add(hostName);
                         foreach (var peer in peers) { resyncWaiting.Add(peer.Name); snapshotTargets[peer.Name] = source.Manifest; }
                     }
@@ -1842,24 +1872,42 @@ namespace MPFever
                             finally { done[index].Set(); }
                         }) { IsBackground = true, Name = "Snapshot to " + peers[i].Name }.Start();
                     }
-                    if (!WaitCurrent(() => done.All(d => d.IsSet), 600))
+                    if (!WaitCurrent(() => done.All(d => d.IsSet), SnapshotLimits.TransferTimeoutSeconds))
                     {
                         Interlocked.Exchange(ref cancelled, 1);
                         foreach (var peer in peers) activeRelay.Close(peer);
                         Log.Err("Snapshot sending cancelled or timed out; session remains paused"); return;
                     }
                     lock (failures) if (failures.Count > 0) { Log.Err(string.Join("; ", failures)); return; }
-                    activeGame.ToGame(Msg.Make("resync_load", hostName, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(ResyncSaveName) + "}"));
-                    if (!WaitCurrent(() => { lock (resyncWaiting) return resyncWaiting.Count == 0; }, 600))
+                    // SendTo has queued the final part; it has not necessarily
+                    // reached the client yet. Start the load budget only after
+                    // every client verifies and commits this exact snapshot.
+                    Log.W("Snapshot parts queued; waiting for verified client receipts");
+                    if (!WaitCurrent(() => { lock (resyncWaiting) return peers.All(p => snapshotReceived.Contains(p.Name)); }, SnapshotLimits.TransferTimeoutSeconds))
+                    {
+                        Log.Err("Snapshot receipt not acknowledged; session remains paused");
+                        foreach (var peer in peers) { lock (resyncWaiting) if (!snapshotReceived.Contains(peer.Name)) activeRelay.Close(peer); }
+                        return;
+                    }
+                    Log.W("Snapshot verified by " + peers.Length + " client(s); waiting for game load");
+                    activeGame.ToGame(Msg.Make("resync_load", hostName, SnapshotControl.Payload(id, ResyncSaveName, source.Manifest.Transfer)));
+                    if (!WaitCurrent(() =>
+                    {
+                        lock(resyncWaiting)
+                        {
+                            if(resyncWaiting.Count==0)return true;
+                            return resyncWaiting.Where(n=>n!=hostName).Any(n=>loadWatches.TryGetValue(n,out var w) && w.Expired(DateTime.UtcNow));
+                        }
+                    }, LoadLiveness.HardSeconds) || resyncWaiting.Count!=0)
                     {
                         lock (resyncWaiting) Log.Err("Snapshot load not acknowledged: " + string.Join(", ", resyncWaiting) + "; session remains paused");
-                        foreach (var peer in peers) { lock (resyncWaiting) if (resyncWaiting.Contains(peer.Name)) activeRelay.Close(peer); }
+                        Log.Warn("Engine load is incomplete; healthy sockets stay connected. Launcher heartbeat does not prove engine progress.");
                         return;
                     }
                 }
                 Thread.Sleep(3000);
                 if (!Current()) return;
-                postResyncHashN = hashN + 1;
+                checkpointState.Clear(); postResyncHashN = hashN + 1;
                 RequestHash();
                 Thread.Sleep(2000);
                 success = Current();
@@ -1871,7 +1919,7 @@ namespace MPFever
                 if (Current())
                 {
                     lastResync = Now; diffStreak = 0; resyncing = false;
-                    lock (resyncWaiting) { snapshotTargets.Clear(); snapshotReceived.Clear(); }
+                    lock (resyncWaiting) { snapshotTargets.Clear(); snapshotReceived.Clear();loadWatches.Clear(); }
                     if (success) {resyncFailed=false;SetSpeed(prevSpeed, T("fin de resynchronisation", "end of resynchronisation"));}
                     else Log.Err("Resynchronisation failed; all games remain paused. Inspect the logs before restarting.");
                 }
@@ -1883,6 +1931,11 @@ namespace MPFever
         readonly Dictionary<GameLink, SnapshotReceiver> snapshotReceivers = new Dictionary<GameLink, SnapshotReceiver>();
         readonly Dictionary<string, SnapshotManifest> snapshotTargets = new Dictionary<string, SnapshotManifest>();
         readonly HashSet<string> snapshotReceived = new HashSet<string>();
+        readonly Dictionary<string,LoadLiveness> loadWatches=new Dictionary<string,LoadLiveness>();
+        int activeLoadTimeout=1800;
+        sealed class LoadingClient { public SnapshotManifest Manifest;public Client Client;public DateTime LastSent; }
+        readonly Dictionary<GameLink,LoadingClient> loadingClients=new Dictionary<GameLink,LoadingClient>();
+        static string LoadStatus(SnapshotManifest m,string phase) => "{[\"id\"]="+m.Id+",[\"transfer\"]="+LuaLit.Quote(m.Transfer)+",[\"phase\"]="+LuaLit.Quote(phase)+"}";
         CompanyBindings companyBindings = new CompanyBindings();
 
         void OnResyncFile(GameLink game, Msg m, Client client)
@@ -1893,7 +1946,13 @@ namespace MPFever
                 if (!snapshotReceivers.TryGetValue(game, out receiver))
                     snapshotReceivers[game] = receiver = new SnapshotReceiver(Path.Combine(game.Dir, "snapshots"));
             }
-            if (m.Kind == "resync_begin") { receiver.Begin(m.Payload); return; }
+            if (m.Kind == "resync_begin")
+            {
+                var manifest = SnapshotManifest.Parse(m.Payload);
+                receiver.Begin(m.Payload);
+                Log.W("[" + game.Name + "] receiving host snapshot: " + manifest.Bytes + " bytes, " + manifest.Parts + " parts, id " + manifest.Id);
+                return;
+            }
             using (var completed = receiver.Add(m.Payload))
             {
                 if (completed == null)
@@ -1910,14 +1969,15 @@ namespace MPFever
                 }
                 if (saved == 0) throw new IOException("No snapshot could be committed; game was not asked to load");
                 int id = completed.Manifest.Id;
+                lock(snapshotReceivers)loadingClients[game]=new LoadingClient{Manifest=completed.Manifest,Client=client,LastSent=DateTime.MinValue};
                 client.Send(Msg.Make("resync_received", game.Name, "{[\"id\"]=" + id + ",[\"transfer\"]=" + LuaLit.Quote(completed.Manifest.Transfer) + "}"));
                 Log.W("[" + game.Name + "] host snapshot verified and committed: " + completed.Manifest.Bytes + " bytes");
                 if (menuMode && !game.InGame)
                 {
-                    menuPhase = "loading"; menuText = T("Chargement de la partie de l'hôte...", "Loading the host's game..."); menuLoad = name; menuLoadSeq = "r" + id;
+                    menuPhase = "loading"; menuText = T("Chargement de la partie de l'hôte...", "Loading the host's game..."); menuLoad = name; menuLoadSeq = SnapshotControl.MenuSequence(completed.Manifest.Transfer);
                     MenuStatus(); return;
                 }
-                game.ToGame(Msg.Make("resync_load", m.From, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(name) + "}"));
+                game.ToGame(Msg.Make("resync_load", m.From, SnapshotControl.Payload(id, name, completed.Manifest.Transfer)));
             }
         }
 

@@ -2,6 +2,10 @@
 
 Ветка разработки WestDed: результаты offline hardening и их ограничения — [FEATURES](FEATURES.md), [TESTING](TESTING.md), [HANDOFF](HANDOFF.md). TF3 в нашей среде не запускалась; следующие описания upstream не являются подтверждением игровых функций этой копии. Журнал центрального порядка подготовлен отдельно и ещё не включён.
 
+В 0.3.7-experimental добавлено игровое окно **«Компании и соглашения»**: права на дороги, тарифы и собственные заказы. [Инструкция и правила](docs/BUSINESS_MECHANICS.md); игровой повтор новых механик пока NOT RETESTED. Текущий пакет: **0.3.7-westded.2-experimental, protocol 7**; нужен одинаковый полный набор у всех игроков.
+
+В [PR #15](https://github.com/WestDed/TransportFever3-Multiplayer/pull/15) добавлено **личное развитие**: отдельные опыт и уровни, подтверждение повышения, собственные открытия штаба/достопримечательностей и вкладка «Развитие». [Правила и игровая приёмка](docs/COMPANY_PROGRESSION.md). Это новый код с компонентными тестами, ещё не доказанный игровым испытанием.
+
 Experimental multiplayer for Transport Fever 3. Several players play the same world, each in their own copy of the game, over the internet or a local network. They play either:
 
 - in **one shared company** (co-op);
@@ -22,7 +26,7 @@ Player documentation is in [`docs/`](docs/): [README](docs/README.txt), [INSTALL
   - roads, tracks, tram tracks, signals, stops, stations, depots, buildings;
   - terrain edits, trees of the brush, the bulldozer;
   - vehicle purchases, lines, game speed and pause.
-- **Shared stations** (separate companies). Every station is shared at $100 per stop by default. Its owner sets the fee in the station window, from a list. Other companies' lines stop there and pay the fee.
+- **Shared stations** (separate companies). Every station is shared at $100 per stop by default. Its owner sets the fee in the station window, from presets or as a custom whole amount (0 means free). Other companies' lines stop there and pay the fee.
 - **In-game MPFever window**, opened from a card in the pause menu. It shows:
   - the players and their link (connected, behind, not responding, loading, left);
   - the sync state;

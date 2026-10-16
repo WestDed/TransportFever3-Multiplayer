@@ -58,7 +58,7 @@ local function execute(cmd, cb)
   if name == "steps" then GAME.stepBudget = GAME.stepBudget + cmd.args[1]; return end
   if name == "makeGameSetSpeedCmd" then GAME.speed = cmd.args[1]; if cb then cb({}, true, {}) end return end
   if name == "makeScriptingSendEventCmd" then
-    if cmd.args[1] == "mpfever" then SIM_EVENT(cmd.args[3], cmd.args[4]) end
+    if (cmd.args[1] == "mpfever" or cmd.args[1] == "") and cmd.args[2] == "mpfever" then SIM_EVENT(cmd.args[3], cmd.args[4]) end
     if cb then cb({}, true, {}) end
     return
   end

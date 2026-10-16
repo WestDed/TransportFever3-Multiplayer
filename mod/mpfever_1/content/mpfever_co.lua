@@ -181,18 +181,22 @@ end
 -- states; this is called in each one that needs it (the module tables are shared by the state, so it is done once per state).
 -- `req(name)` returns a game module by its file name (company_util.tl...), `logf` writes a line of the log.
 
--- Level, experience and permits of a company: the game keeps them for the savegame's company only, so every company of the
--- registry reads that one. `canonOf(entity)` answers the savegame company's entity when `entity` is one of the registry, else nil.
-function CO.patchProgression(req, canonOf, logf)
+-- read(entity) -> own progression, managed, optional legacy fallback entity.
+-- Once independent state exists, a missing own record must NEVER read the host.
+function CO.patchProgression(req, read, logf)
+	CO.progressionRead = read
 	if CO.progPatched then return true end
 	local M = req("company_progression_util.tl")
-	if not (M and M.getCompanyProgressionState) then return false end
+	if not (M and type(M.getCompanyProgressionState) == "function") then return false end
 	local orig = M.getCompanyProgressionState
+	CO.originalProgression = orig
 	M.getCompanyProgressionState = function(entity)
-		return orig(canonOf(entity) or entity)
+		local own, managed, fallback = CO.progressionRead(entity)
+		if managed then return own end
+		return orig(fallback or entity)
 	end
 	CO.progPatched = true
-	if logf then logf("companies: other companies read the savegame company's progression") end
+	if logf then logf("companies: progression reader uses each company's saved state") end
 	return true
 end
 
@@ -209,7 +213,7 @@ function CO.patchPermits(req, logf)
 		local owner = po.player
 		return owner == nil or owner == api.engine.util.getPlayer()
 	end
-	local origCache = cu.getConstructionDisableCacheData
+	local origCache, origCount = cu.getConstructionDisableCacheData, cu.countUsedConstructionPermits
 	cu.getConstructionDisableCacheData = function(allDefs)
 		local result = origCache(allDefs)
 		if type(result) ~= "table" then return result end
@@ -228,9 +232,9 @@ function CO.patchPermits(req, logf)
 		if ok then result.data = data end
 		return result
 	end
-	cu.countUsedConstructionPermits = function(_)
+	cu.countUsedConstructionPermits = function(...)
 		local used = {}
-		pcall(api.engine.system.streetConnectorSystem.forEachConstructionWithMetadata, cm.getKey(), true, false,
+		local ok = pcall(api.engine.system.streetConnectorSystem.forEachConstructionWithMetadata, cm.getKey(), true, false,
 			function(entity, construction, constructionId)
 				if not mine(entity) then return end
 				local okm, meta = pcall(function() return api.res.constructionRep.get(constructionId).metadata end)
@@ -238,6 +242,9 @@ function CO.patchPermits(req, logf)
 				local key = cu.getActualPermitKey(construction.fileName, meta)
 				if key then used[key] = 1 + (used[key] or 0) end
 			end)
+		-- A failed census is not an empty world: retain the restrictive original
+		-- result instead of silently granting unlimited headquarters/landmarks.
+		if not ok then return origCount(...) end
 		return used
 	end
 	CO.permitsPatched = true
@@ -281,13 +288,17 @@ local function contractIndex()
 	pcall(function()
 		local e = api.engine.system.gameScriptSystem.getEntityForGameScript("::/game_mechanics/subventions/subventions.gs")
 		local st = api.engine.getComponent(e, api.type.ComponentType.GAME_SCRIPT).state
-		for status, list in ipairs({ st.proposedSubventions, st.activeSubventions, st.completedSubventions, st.failedSubventions }) do
-			for _, v in ipairs(list or {}) do
+		for status, field in ipairs({ "proposedSubventions", "activeSubventions", "completedSubventions", "failedSubventions" }) do
+			for _, v in ipairs(st[field] or {}) do
 				if v.uid ~= nil then idx[v.uid] = { owner = v.mpfOwner or 1, declined = v.mpfDeclined, status = status } end
 			end
 		end
 	end)
 	return idx
+end
+
+function CO.contractOwners()
+	local out={};for uid,v in pairs(contractIndex())do if v.status~=1 then out[tostring(uid)]=v.owner end end;return out
 end
 
 local function visibleTo(info, me)
@@ -352,21 +363,41 @@ function CO.installContracts(env)
 		sub.__mpfCo = true
 		local oh = sub.handleEvent
 		sub.handleEvent = function(u, state, src, id, name, param, ...)
-			if id == "Subvention" and type(param) == "table" and param.mpfCo and activeReg(env) then
+			local reg = env.registry()
+			if id == "Subvention" and reg and reg.mode == "separate" and (name == "onAccept" or name == "onDecline") then
+				local company = type(param) == "table" and CO.find(reg, param.mpfCo)
+				if not company or type(company.ent) ~= "number" or type(param.uid) ~= "number" and type(param.uid) ~= "string" then
+					if env.log then env.log("companies: subsidy request rejected (unknown company or offer)") end
+					return nil
+				end
+				local st = state:get()
+				-- An offer's uid is global. Closed offers and retries must never
+				-- reach the game's reward handler, even if the UI still has a card.
+				for _, field in ipairs({ "activeSubventions", "completedSubventions", "failedSubventions" }) do
+					for _, v in ipairs(st[field] or {}) do
+						if v.uid == param.uid then
+							if env.log then env.log("companies: subsidy already taken: " .. tostring(param.uid)) end
+							return nil
+						end
+					end
+				end
+				local offer
+				for _, v in ipairs(st.proposedSubventions or {}) do
+					if v.uid == param.uid then
+						if offer or v.mpfOwner ~= nil then return nil end
+						offer = v
+					end
+				end
+				if not offer then return nil end
 				if name == "onAccept" then
-					-- the contract becomes the accepting company's before the game's script moves it to the active ones
-					local st = state:get()
-					for _, v in ipairs(st.proposedSubventions or {}) do if v.uid == param.uid then v.mpfOwner = param.mpfCo end end
+					-- Keep the claim in saved game state before calling the game.
+					-- A retained offer cannot be accepted or paid again either.
+					offer.mpfOwner = company.id
 					state:set(st)
 				elseif name == "onDecline" then
 					-- declined by one company only: the others keep the offer
-					local st = state:get()
-					for _, v in ipairs(st.proposedSubventions or {}) do
-						if v.uid == param.uid then
-							v.mpfDeclined = v.mpfDeclined or {}
-							v.mpfDeclined[tostring(param.mpfCo)] = true
-						end
-					end
+					offer.mpfDeclined = offer.mpfDeclined or {}
+					offer.mpfDeclined[tostring(company.id)] = true
 					state:set(st)
 					return nil
 				end
