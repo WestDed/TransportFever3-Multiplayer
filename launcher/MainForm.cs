@@ -1755,7 +1755,7 @@ namespace MPFever
                 syncText = T("SYNCHRONE ✔", "IN SYNC ✔");
                 if (changed || n % 6 == 1) Log.Ok(F("Synchronisation n°{0} (temps {1}) : IDENTIQUE sur {2} jeux ({3} mesures)", "Sync check #{0} (time {1}): IDENTICAL on {2} games ({3} measures)", n, time, names.Count, keys.Count));
             }
-            else if (diffKeys.Where(d => !ignoredParts.Contains(d) && !CorrectedParts.Contains(d)).All(DriftParts.Contains))
+            else if (pendingParts.All(DriftParts.Contains))
             {
                 // simulation drift (or money, corrected at once): no alarm, a line per minute
                 bool changed = syncState != 2;

@@ -1,4 +1,4 @@
-MPFever 0.3.7-experimental - Installation and first game
+MPFever 0.3.7-westded.1-experimental - Installation and first game
 ========================================================
 
 REQUIREMENTS (every player)
@@ -110,7 +110,7 @@ See docs/STAGE1_PERSISTENT_OWNERSHIP.md in the source repository for the request
 Actual save/restart/migration in TF3 has not yet been tested by this project.
 
 
-КОМПАНИИ И СОГЛАШЕНИЯ (0.3.7-experimental, protocol 5)
+КОМПАНИИ И СОГЛАШЕНИЯ (0.3.7-westded.1-experimental, protocol 6)
 -----------------------------------------------------
 Экспериментальная версия: проверки компонентов не заменяют испытания в игре.
 Оба игрока обновляют ВЕСЬ пакет: EXE, DLL и mod. Сначала сохраните исходный save
@@ -130,5 +130,6 @@ Actual save/restart/migration in TF3 has not yet been tested by this project.
 автоматически не повторяется, его нужно сверить с финансовым журналом.
 
 Полные правила, ограничения и игровой чек-лист: BUSINESS_MECHANICS.md.
+Исправления очередей/маршрутов/загрузки и оставшиеся пункты: OFFLINE_UPSTREAM_FIXES.md.
 При долгой загрузке мира launcher heartbeat означает лишь живую связь,
 а не движение процента игры. Не запускайте повторное подключение только из-за 50%.

@@ -1,3 +1,14 @@
+0.3.7-westded.1-experimental — offline-verifiable upstream fixes (game NOT RETESTED)
+- Portable large integers/control-byte handling; preserve typed line waypoints and geometry references.
+- Action-local indexed references; rotated heavy checks with per-part pending differences.
+- Saved one-purchase-per-step rule, callback ordering in pause, existing native replay quiet gate.
+- Unique save/load request tokens across host restarts; matching bridge/UI/menu dedup.
+- Speed UI acknowledgements/display, saved launcher name, release-notes window closure.
+- Bounded local dismissed-notification/filter preferences across resync.
+- Protocol 6, FileVersion 0.3.7.1; full package version/resource verification.
+- Native hook/proposal/financial-mechanics changes intentionally deferred until game testing.
+- Details, sources, regressions and limits: OFFLINE_UPSTREAM_FIXES.md.
+
 0.3.7-experimental — company agreements prototype (game NOT RETESTED)
 - Saved road use/connect/edit permissions; private/free/toll road and stop access.
 - Per-entry road fees, saved sequential journal transfers, escrow delivery orders.

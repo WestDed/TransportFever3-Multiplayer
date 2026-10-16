@@ -5,7 +5,9 @@ Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $root = Split-Path $PSScriptRoot
 $source = (Resolve-Path (Join-Path $root 'release/dist/MPFever')).Path
-$output = Join-Path $root 'release/MPFever-0.3.7-experimental.zip'
+$version = [regex]::Match([IO.File]::ReadAllText((Join-Path $root 'build.bat')), 'set "VERSION=([a-z0-9.-]+)"').Groups[1].Value
+if (!$version) { throw 'Cannot read package version from build.bat' }
+$output = Join-Path $root "release/MPFever-$version.zip"
 $archive = [IO.Compression.ZipFile]::Open($output, [IO.Compression.ZipArchiveMode]::Create)
 try {
     foreach ($file in Get-ChildItem -LiteralPath $source -File -Recurse) {

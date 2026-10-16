@@ -1,5 +1,7 @@
 # План разработки и критерии готовности
 
+16.10.2026: по запросу заказчика выполнен [offline набор из аудита upstream 0.3.11](docs/OFFLINE_UPSTREAM_FIXES.md). Выбраны проверяемые data/queue/UI fixes поверх наших security/ownership/business изменений; это не полный merge upstream. Native geometry/hold/capture и новые engine company mechanics оставлены без изменения до стенда. Следующие переносы — по реальным игровым доказательствам.
+
 Основа — существующий MPFever, не переписывание с нуля. PR #8 объединён в main 5f6cd58: постоянный владелец и net48 execution. [PR #9](https://github.com/WestDed/TransportFever3-Multiplayer/pull/9) исправляет roster/ownership проверки этой main. Main меняет только заказчик после review; следующие задачи — отдельной веткой от актуальной main с PR в main. Сроки до доступа к движку не обещаем.
 
 ## Этап 0 — аудит

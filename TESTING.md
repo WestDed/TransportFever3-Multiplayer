@@ -1,5 +1,7 @@
 # Тестирование и границы доказательства
 
+16.10.2026: [новые offline regressions и границы](docs/OFFLINE_UPSTREAM_FIXES.md). Локально 231 tests PASS, 282/282 переводов × 11 локалей. Production functions проверяются на constructor/clock/async/React fixtures и настоящих temporary files; game engine не запускался. Новые C# cases включены во все три runtime/OS jobs, Windows ZIP имеет WestDed номер/protocol 6. Exact итоговые head/run/counts — в PR после CI, до этого проверка не объявляется успешной.
+
 15.10.2026. В нашей среде TF3/Steam/game API не установлены. Локально Linux/Python 3.12/lupa 2.6, C#/Windows/native проверяются GitHub Actions. Заказчик и брат после PR #10 сообщили об успешном совместном startup/join через Porthole; большие карты/механики выявили отказы. Это пользовательский игровой результат, не мой запуск. [Полная запись, regressions и критерии повтора](docs/COOP_PLAYTEST_2026_10_15.md).
 
 ## Ручной тариф в окне остановки
