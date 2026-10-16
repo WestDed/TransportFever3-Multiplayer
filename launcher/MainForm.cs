@@ -136,6 +136,7 @@ namespace MPFever
         readonly HashSet<string> resyncWaiting = new HashSet<string>();
         volatile Dictionary<object, object> saveDone;
         string lastDiffKeys = "";
+        readonly CheckpointState checkpointState = new CheckpointState();
         int diffStreak;
         int postResyncHashN = -1;
         readonly HashSet<string> ignoredParts = new HashSet<string>();
@@ -829,7 +830,7 @@ namespace MPFever
             lock (chatLog) { chatLog.Clear(); chatId = 0; }
             lock (snapshotReceivers) { foreach (var receiver in snapshotReceivers.Values) receiver.Dispose(); snapshotReceivers.Clear(); loadingClients.Clear(); }
             hashN = 0; syncText = "—"; actsRelayed = actRefused = actFails = desyncs = 0;
-            resyncing = false; resyncFailed = false; resyncWaiting.Clear(); loadWatches.Clear(); ignoredParts.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = "";
+            resyncing = false; resyncFailed = false; resyncWaiting.Clear(); loadWatches.Clear(); ignoredParts.Clear(); checkpointState.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = "";
             joinPending = false;
             joinedAddr = null;
             if (steamConnect != null) { steamConnect = null; SteamCtl("clear", null); }
@@ -1397,7 +1398,7 @@ namespace MPFever
             Log.W(F("=== Partie démarrée avec {0} jeu(x) au temps {1} : vérification initiale... ===", "=== Game started with {0} game(s) at time {1}: initial check... ===", n, times.FirstOrDefault()));
             BroadcastSession();
             // every game just loaded the same savegame: a part already different now is a local measure
-            postResyncHashN = hashN + 1;
+            checkpointState.Clear(); postResyncHashN = hashN + 1;
             RequestHash();
             int startGen=sessionGen;
             new Thread(() => { Thread.Sleep(1500); if(startGen==sessionGen)SetSpeed(1, T("démarrage", "start")); }) { IsBackground = true }.Start();
@@ -1741,7 +1742,10 @@ namespace MPFever
                 if (local.Count > 0) Log.Warn(T("Mesures propres à chaque jeu (ignorées désormais) : ", "Local measures (ignored from now on): ") + string.Join(", ", local));
             }
             diffs = diffs.Where(d => !ignoredParts.Contains(DiffKey(d))).ToList();
-            CheckResync(diffs.Select(d => DiffKey(d)).Where(k => !CorrectedParts.Contains(k)).ToList(), n);
+            checkpointState.Observe(n, keys, diffs.Select(DiffKey));
+            var pendingParts = checkpointState.Pending.Where(k => !CorrectedParts.Contains(k) && !ignoredParts.Contains(k)).ToList();
+            CheckResync(pendingParts, n);
+            if (diffs.Count == 0 && pendingParts.Count > 0) return;
             if (diffs.Count == 0)
             {
                 bool changed = syncState != 1;
@@ -1798,7 +1802,7 @@ namespace MPFever
                 return;
             }
             driftSince = -1;
-            diffStreak = k == lastDiffKeys ? diffStreak + 1 : 1;
+            diffStreak = checkpointState.Streak(keys.Where(x => !DriftParts.Contains(x)));
             lastDiffKeys = k;
             if (diffStreak < 2) return;
             if (Now - lastResync < ResyncCooldownSeconds)
@@ -1902,7 +1906,7 @@ namespace MPFever
                 }
                 Thread.Sleep(3000);
                 if (!Current()) return;
-                postResyncHashN = hashN + 1;
+                checkpointState.Clear(); postResyncHashN = hashN + 1;
                 RequestHash();
                 Thread.Sleep(2000);
                 success = Current();

@@ -209,9 +209,22 @@ end
 
 local hashShown = false
 local hashCostsShown = 0
-local function simHash(terrainSig, reg)
+local function simHash(terrainSig, reg, n)
 	local tStart = os.clock()
-	local parts = R.contentHash(C.hashStr, C.dump)
+	local previous = R.hashSkip
+	local rot = os.getenv("MPFEVER_HASHROT")
+	R.hashSkip = nil
+	-- Every peer chooses the same group from the checkpoint number. Full
+	-- determinism/autotest runs keep hashing every part.
+	if n and (rot == "1" or (rot ~= "0" and not os.getenv("MPFEVER_SAVE"))) then
+		local groups = {{"conParams"},{"edges"},{"constructions","nodeConfigs"}}
+		R.hashSkip = {}
+		for _, group in ipairs(groups) do for _, part in ipairs(group) do R.hashSkip[part] = true end end
+		for _, part in ipairs(groups[(n % #groups)+1]) do R.hashSkip[part] = nil end
+	end
+	local okParts, parts = pcall(R.contentHash, C.hashStr, C.dump)
+	R.hashSkip = previous
+	if not okParts then error(parts, 0) end
 	-- diagnostic (MPFEVER_VDUMP set): every vehicle and every company's money at each checkpoint, to diff two games
 	if os.getenv("MPFEVER_VDUMP") then
 		pcall(function()
@@ -828,7 +841,7 @@ local function simApplyDue(state)
 				if a.kind == "hash" then
 					local c0 = os.clock()
 					local okA, auth = pcall(authValues, st.co)
-					st.hash = { n = a.n, parts = simHash(terrainSigAt(st, now), st.co), cost = os.clock() - c0, auth = okA and auth or nil }
+					st.hash = { n = a.n, parts = simHash(terrainSigAt(st, now), st.co, a.n), cost = os.clock() - c0, auth = okA and auth or nil }
 					st.authOwn = st.authOwn or {}
 					st.authOwn[#st.authOwn + 1] = { n = a.n, auth = okA and auth or nil }
 					while #st.authOwn > 10 do table.remove(st.authOwn, 1) end
@@ -3728,7 +3741,7 @@ local function runPausedActions()
 				local okA, auth = pcall(authValues, G.co)
 				G.authOwn = G.authOwn or {}
 				G.authOwn[a.n] = okA and auth or nil
-				send("sync_hash", { n = a.n, parts = simHash(G.simTerrainSig, G.co), cost = 0, auth = okA and auth or nil })
+				send("sync_hash", { n = a.n, parts = simHash(G.simTerrainSig, G.co, a.n), cost = 0, auth = okA and auth or nil })
 			elseif (a.fn == "mpfCoJoin" or a.fn == "mpfCoAssign") or coIsLoanEvent({ co = G.co }, a) then
 				toSim("co_apply", a)
 			else

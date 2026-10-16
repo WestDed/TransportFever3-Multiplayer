@@ -35,6 +35,7 @@ namespace MPFever
                 CompanyRosterTests();
                 SnapshotTests();
                 SnapshotControlTests();
+                CheckpointTests();
                 IdentityTests();
                 SchemaTests();
                 JournalTests();
