@@ -140,6 +140,15 @@ end
 function C.int(v)
 	return v == 0 and "0" or string.format("%.0f", v)
 end
+-- The network counter can repeat after a host restart. Claims for new commands
+-- use the unique request/transfer token; old local commands keep their id key.
+function C.controlKey(kind, p)
+	if kind ~= "resync_save" and kind ~= "resync_load" then return nil end
+	if type(p) ~= "table" or type(p.id) ~= "number" or p.id < 1 or p.id > 2147483647 or p.id % 1 ~= 0 then return nil end
+	local token = p.request
+	if token ~= nil and (type(token) ~= "string" or #token ~= 32 or not token:match("^[0-9a-f]+$")) then return nil end
+	return kind .. " " .. (token or C.int(p.id)) .. NL
+end
 local ESCAPED = "[" .. string.char(0) .. "-" .. string.char(31) .. string.char(127) .. QUOTE .. BS .. BS .. "]"
 
 function C.ser(v, depth)

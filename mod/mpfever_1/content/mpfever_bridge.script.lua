@@ -806,8 +806,8 @@ local function simApplyDue(state)
 		-- meanwhile) never holds them again (a player's purchase was once applied three times on the host)
 		local due, keep, bought = {}, {}, false
 		for _, a in ipairs(q) do
-			if a.at <= now and not (a.fn == "makeVehicleBuyCmd" and bought) then
-				if a.fn == "makeVehicleBuyCmd" then bought = true end
+			if a.at <= now and not (a.fn == "makeVehicleBuyCmd" and (bought or (st.buyAt and st.buyAt >= now))) then
+				if a.fn == "makeVehicleBuyCmd" then bought = true; st.buyAt = now end
 				due[#due + 1] = a
 			else
 				keep[#keep + 1] = a
@@ -875,7 +875,7 @@ local function simApplyDue(state)
 		local keepW = {}
 		for _, r in ipairs(st.watches) do
 			local w = r.watch
-			w.steps = w.steps + 1
+			if w.lastT ~= now then w.steps = w.steps + 1; w.lastT = now end
 			local seen = {}
 			for _, e in ipairs(w.before) do seen[e] = true end
 			local created = nil
@@ -3342,32 +3342,33 @@ end
 -- resync_save (host): save the paused game; resync_load (others): load the host's savegame received by the launcher.
 -- Handled here when the application functions are reachable from this state, otherwise by the UI hook (which waits
 -- for a claim in resync_claims.txt before acting, so that only one of them does it).
-local function claimResync(kind, id)
+local function claimResync(kind, p)
 	if type(app) ~= "table" or not app.saveGame then return false end
+	local key = C.controlKey(kind, p)
+	if not key then log("rejected invalid resync control"); return false end
 	local f = C.IO.open(C.DIR .. BS .. "resync_claims.txt", "rb")
 	local claims = f and (f:read("*a") or "") or ""
 	if f then f:close() end
-	local key = kind .. " " .. tostring(id) .. NL
 	if claims:find(key, 1, true) then return false end
 	C.appendFile(C.DIR .. BS .. "resync_claims.txt", key)
 	return true
 end
 
 H.resync_save = function(from, p)
-	if not claimResync("resync_save", p.id) then return end
+	if not claimResync("resync_save", p) then return end
 	log("resynchronisation: saving the game as '" .. tostring(p.name) .. "' at t=" .. tostring(gameTime()))
 	local ok, err = pcall(app.saveGame, p.name, function()
 		log("resynchronisation: game saved")
-		send("save_done", { id = p.id, name = p.name, ok = true, t = gameTime() })
+		send("save_done", { id = p.id, request = p.request, name = p.name, ok = true, t = gameTime() })
 	end, false, true)
 	if not ok then
 		log("resynchronisation: save failed: " .. tostring(err))
-		send("save_done", { id = p.id, name = p.name, ok = false, err = tostring(err) })
+		send("save_done", { id = p.id, request = p.request, name = p.name, ok = false, err = tostring(err) })
 	end
 end
 
 H.resync_load = function(from, p)
-	if not claimResync("resync_load", p.id) then return end
+	if not claimResync("resync_load", p) then return end
 	local ns = app.SaveGameNamespace.getSavegame()
 	local id = nil
 	for _, s in ipairs(app.findAllSavegames(ns) or {}) do
@@ -3711,8 +3712,17 @@ local function runPausedActions()
 	if gameSpeed() ~= 0 then return end
 	local keep = {}
 	table.sort(G.pendingPaused, before)
+	-- The engine creates the binding in its callback. Keep later actions ordered
+	-- behind it, including while paused. On a missing answer request recovery;
+	-- never turn a timeout into permission to run a dependent action early.
+	local waiting = G.pausedCreating
+	if waiting and G.frames - waiting.frame >= 600 and not waiting.failed then
+		waiting.failed = true
+		send("replay_failed", { uid = tostring(waiting.uid), why = "paused creation callback timed out" })
+	end
+	local creating = waiting ~= nil
 	for _, a in ipairs(G.pendingPaused) do
-		if a.at <= now then
+		if a.at <= now and not creating then
 			if a.at < now then log("paused action " .. tostring(a.uid) .. " for t=" .. tostring(a.at) .. " applied at " .. now .. " (desync risk)") end
 			if a.kind == "hash" then
 				local okA, auth = pcall(authValues, G.co)
@@ -3724,7 +3734,16 @@ local function runPausedActions()
 			else
 				if C.makesProposal(a.fn) then toSim("replaying", {}) end
 				-- paused: the engine answers in a callback, a frame later; the result is reported then
+				local ticket
+				if a.fn == "makeVehicleBuyCmd" or a.fn == "makeLineCreateCmd" then
+					ticket = { uid = a.uid, frame = G.frames }
+					G.pausedCreating = ticket
+				end
 				withActor(PL(a), executeAction, a, O.sendCommand, true, G.bind, function(r)
+					if ticket then
+						if G.pausedCreating ~= ticket or ticket.failed then return end
+						G.pausedCreating = nil
+					end
 					r.at = now
 					r.answered, r.returned = nil, nil
 					log("paused action " .. tostring(r.uid) .. " " .. tostring(r.fn) .. " at t=" .. tostring(now) .. " -> " .. (r.success and "OK" or "REFUSED"))
@@ -3734,6 +3753,7 @@ local function runPausedActions()
 					if r.created then C.appendFile(C.DIR .. BS .. "bindings.log", r.created.key .. " " .. tostring(r.created.e) .. NL) end
 					G.reportResult(r)
 				end)
+				creating = G.pausedCreating ~= nil
 			end
 		else
 			keep[#keep + 1] = a

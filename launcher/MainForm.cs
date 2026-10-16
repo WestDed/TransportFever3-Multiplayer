@@ -1834,8 +1834,9 @@ namespace MPFever
                 bool stopped = WaitCurrent(() => { lock (clocks) return clocks.Values.All(c => c.T >= at && c.Sp == 0); }, 120);
                 if (!stopped) { Log.Err(T("Resynchronisation abandonnée : les jeux ne se sont pas arrêtés.", "Resynchronisation cancelled: the games did not stop.")); return; }
                 saveDone = null;
-                activeGame.ToGame(Msg.Make("resync_save", hostName, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(ResyncSaveName) + "}"));
-                if (!WaitCurrent(() => saveDone != null && saveDone.TryGetValue("id", out var si) && si is double sd && sd == id, SnapshotLimits.SaveTimeoutSeconds))
+                string saveRequest = Guid.NewGuid().ToString("N");
+                activeGame.ToGame(Msg.Make("resync_save", hostName, SnapshotControl.Payload(id, ResyncSaveName, saveRequest)));
+                if (!WaitCurrent(() => saveDone != null && saveDone.TryGetValue("id", out var si) && si is double sd && sd == id && saveDone.TryGetValue("request", out var sr) && sr as string == saveRequest, SnapshotLimits.SaveTimeoutSeconds))
                 { Log.Err(T("Resynchronisation abandonnée : l'hôte n'a pas sauvegardé.", "Resynchronisation cancelled: the host did not save.")); return; }
                 if (!(saveDone.TryGetValue("ok", out var okv) && okv is bool ok && ok)) { Log.Err(T("Resynchronisation abandonnée : sauvegarde refusée.", "Resynchronisation cancelled: save refused.")); return; }
                 Thread.Sleep(1000);
@@ -1884,7 +1885,7 @@ namespace MPFever
                         return;
                     }
                     Log.W("Snapshot verified by " + peers.Length + " client(s); waiting for game load");
-                    activeGame.ToGame(Msg.Make("resync_load", hostName, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(ResyncSaveName) + "}"));
+                    activeGame.ToGame(Msg.Make("resync_load", hostName, SnapshotControl.Payload(id, ResyncSaveName, source.Manifest.Transfer)));
                     if (!WaitCurrent(() =>
                     {
                         lock(resyncWaiting)
@@ -1968,10 +1969,10 @@ namespace MPFever
                 Log.W("[" + game.Name + "] host snapshot verified and committed: " + completed.Manifest.Bytes + " bytes");
                 if (menuMode && !game.InGame)
                 {
-                    menuPhase = "loading"; menuText = T("Chargement de la partie de l'hôte...", "Loading the host's game..."); menuLoad = name; menuLoadSeq = "r" + id;
+                    menuPhase = "loading"; menuText = T("Chargement de la partie de l'hôte...", "Loading the host's game..."); menuLoad = name; menuLoadSeq = SnapshotControl.MenuSequence(completed.Manifest.Transfer);
                     MenuStatus(); return;
                 }
-                game.ToGame(Msg.Make("resync_load", m.From, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(name) + "}"));
+                game.ToGame(Msg.Make("resync_load", m.From, SnapshotControl.Payload(id, name, completed.Manifest.Transfer)));
             }
         }
 

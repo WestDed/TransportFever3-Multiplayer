@@ -1314,11 +1314,11 @@ local function resyncSave(p)
 	log("resynchronisation: saving the game as '" .. tostring(p.name) .. "'")
 	local ok, err = pcall(app.saveGame, p.name, function()
 		log("resynchronisation: game saved")
-		sendLine("save_done", { id = p.id, name = p.name, ok = true })
+		sendLine("save_done", { id = p.id, request = p.request, name = p.name, ok = true })
 	end, false, true)
 	if not ok then
 		log("resynchronisation: save failed: " .. tostring(err))
-		sendLine("save_done", { id = p.id, name = p.name, ok = false, err = tostring(err) })
+		sendLine("save_done", { id = p.id, request = p.request, name = p.name, ok = false, err = tostring(err) })
 	end
 end
 
@@ -1373,8 +1373,9 @@ local function pollControl()
 			local claims = ""
 			local cf = C.IO.open(C.DIR .. C.BS .. "resync_claims.txt", "rb")
 			if cf then claims = cf:read("*a") or ""; cf:close() end
-			if not claims:find(r.kind .. " " .. tostring(r.p.id) .. C.NL, 1, true) then
-				C.appendFile(C.DIR .. C.BS .. "resync_claims.txt", r.kind .. " " .. tostring(r.p.id) .. C.NL)
+			local key = C.controlKey(r.kind, r.p)
+			if key and not claims:find(key, 1, true) then
+				C.appendFile(C.DIR .. C.BS .. "resync_claims.txt", key)
 				local ok, err = pcall(r.kind == "resync_save" and resyncSave or resyncLoad, r.p)
 				if not ok then log(r.kind .. " failed: " .. tostring(err)) end
 			end
