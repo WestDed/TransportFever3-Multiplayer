@@ -181,18 +181,22 @@ end
 -- states; this is called in each one that needs it (the module tables are shared by the state, so it is done once per state).
 -- `req(name)` returns a game module by its file name (company_util.tl...), `logf` writes a line of the log.
 
--- Level, experience and permits of a company: the game keeps them for the savegame's company only, so every company of the
--- registry reads that one. `canonOf(entity)` answers the savegame company's entity when `entity` is one of the registry, else nil.
-function CO.patchProgression(req, canonOf, logf)
+-- read(entity) -> own progression, managed, optional legacy fallback entity.
+-- Once independent state exists, a missing own record must NEVER read the host.
+function CO.patchProgression(req, read, logf)
+	CO.progressionRead = read
 	if CO.progPatched then return true end
 	local M = req("company_progression_util.tl")
-	if not (M and M.getCompanyProgressionState) then return false end
+	if not (M and type(M.getCompanyProgressionState) == "function") then return false end
 	local orig = M.getCompanyProgressionState
+	CO.originalProgression = orig
 	M.getCompanyProgressionState = function(entity)
-		return orig(canonOf(entity) or entity)
+		local own, managed, fallback = CO.progressionRead(entity)
+		if managed then return own end
+		return orig(fallback or entity)
 	end
 	CO.progPatched = true
-	if logf then logf("companies: other companies read the savegame company's progression") end
+	if logf then logf("companies: progression reader uses each company's saved state") end
 	return true
 end
 
@@ -209,7 +213,7 @@ function CO.patchPermits(req, logf)
 		local owner = po.player
 		return owner == nil or owner == api.engine.util.getPlayer()
 	end
-	local origCache = cu.getConstructionDisableCacheData
+	local origCache, origCount = cu.getConstructionDisableCacheData, cu.countUsedConstructionPermits
 	cu.getConstructionDisableCacheData = function(allDefs)
 		local result = origCache(allDefs)
 		if type(result) ~= "table" then return result end
@@ -228,9 +232,9 @@ function CO.patchPermits(req, logf)
 		if ok then result.data = data end
 		return result
 	end
-	cu.countUsedConstructionPermits = function(_)
+	cu.countUsedConstructionPermits = function(...)
 		local used = {}
-		pcall(api.engine.system.streetConnectorSystem.forEachConstructionWithMetadata, cm.getKey(), true, false,
+		local ok = pcall(api.engine.system.streetConnectorSystem.forEachConstructionWithMetadata, cm.getKey(), true, false,
 			function(entity, construction, constructionId)
 				if not mine(entity) then return end
 				local okm, meta = pcall(function() return api.res.constructionRep.get(constructionId).metadata end)
@@ -238,6 +242,9 @@ function CO.patchPermits(req, logf)
 				local key = cu.getActualPermitKey(construction.fileName, meta)
 				if key then used[key] = 1 + (used[key] or 0) end
 			end)
+		-- A failed census is not an empty world: retain the restrictive original
+		-- result instead of silently granting unlimited headquarters/landmarks.
+		if not ok then return origCount(...) end
 		return used
 	end
 	CO.permitsPatched = true

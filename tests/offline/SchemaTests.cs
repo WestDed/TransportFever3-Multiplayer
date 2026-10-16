@@ -24,6 +24,11 @@ namespace MPFever
             Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("speed_req","Peer#1","{[\"speed\"]=3}")),"unsupported speed");
             Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("nat_cancel","Peer#1","{[\"origin\"]=\"spoof\",[\"id\"]=1}")),"forged native hold identity");
             Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("act","Peer#1",Act(fn:"makeScriptingSendEventCmd",args:"{[1]=\"script\",[2]=\"Company\",[3]=\"hack\",[4]={}}"))),"arbitrary scripting event");
+            string RankEvent(string p)=>Act(fn:"makeScriptingSendEventCmd",args:"{[1]=\"\",[2]=\"mpfever\",[3]=\"progression\",[4]="+p+"}");
+            Check(ProtocolSchema.ValidateClient(Msg.Make("act","Peer#1",RankEvent("{[\"level\"]=2}")))!=null,"personal rank request accepted");
+            foreach(var bad in new[]{"{}","{[\"level\"]=0}","{[\"level\"]=257}","{[\"level\"]=1.5}","{[\"level\"]=\"2\"}",
+                "{[\"level\"]=2,[\"mpfCo\"]=1}","{[\"level\"]=2,[\"experience\"]=99999}","{[\"level\"]=2,[\"mpfRequest\"]=\"old\"}","{[\"level\"]=2,[1]=true}"})
+                Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("act","Peer#1",RankEvent(bad))),"rank request cannot set experience or forge company");
             string BusinessEvent(string p)=>Act(fn:"makeScriptingSendEventCmd",args:"{[1]=\"mpfever\",[2]=\"mpfever\",[3]=\"business\",[4]="+p+"}");
             string create="{[\"op\"]=\"create\",[\"title\"]=\"Goods\",[\"target\"]=\"sg:A\",[\"cargo\"]=1,[\"amount\"]=100,[\"reward\"]=10000,[\"duration\"]=12}";
             string policy="{[\"op\"]=\"policy\",[\"kind\"]=\"road\",[\"key\"]=\"road:A\",[\"mode\"]=\"toll\",[\"fee\"]=100,[\"company\"]=3,[\"use\"]=true,[\"connectGrant\"]=true,[\"edit\"]=false}";

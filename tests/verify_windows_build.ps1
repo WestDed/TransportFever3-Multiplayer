@@ -79,7 +79,7 @@ try {
 }
 finally { $zip.Dispose() }
 $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $root 'launcher/bin/Release/MPFever.exe'))
-if ($versionInfo.FileVersion -ne '0.3.7.1') { throw "Wrong launcher file version: $($versionInfo.FileVersion)" }
+if ($versionInfo.FileVersion -ne '0.3.7.2') { throw "Wrong launcher file version: $($versionInfo.FileVersion)" }
 $manifest = [ordered]@{
     packageVersion = $packageVersion
     sourceCommit = $env:GITHUB_SHA

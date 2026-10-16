@@ -90,9 +90,14 @@ namespace MPFever
             {
                 Text(args,1L,512); string id = Text(args,2L,64), name = Text(args,3L,64);
                 var parameters=Table(Get(args,4L),"event parameters");
-                bool allowed = id == "Loan" && (name == "Obtain" || name == "Repay") || id == "Subvention" && (name == "onAccept" || name == "onDecline") || id == "mpfever" && (name == "share" || name == "business");
+                bool allowed = id == "Loan" && (name == "Obtain" || name == "Repay") || id == "Subvention" && (name == "onAccept" || name == "onDecline") || id == "mpfever" && (name == "share" || name == "business" || name == "progression");
                 if (!allowed) throw new InvalidDataException("Unapproved scripting event");
                 if(id=="mpfever" && name=="business") Business(parameters);
+                if(id=="mpfever" && name=="progression")
+                {
+                    if(parameters.Count != 1 || !parameters.ContainsKey("level")) throw new InvalidDataException("Rank request may contain only level");
+                    Integer(parameters,"level",1,256);
+                }
             }
             else if (fn == "makeWorldBuildProposalCmd") { Table(Get(args,1L),"proposal"); Table(Get(args,2L),"context"); }
             else if (fn == "makeVehicleBuyCmd" || fn == "makeVehicleReplaceCmd") Table(Get(args,fn == "makeVehicleBuyCmd" ? 3L : 2L),"vehicle config");

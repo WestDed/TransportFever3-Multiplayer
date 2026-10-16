@@ -25,6 +25,11 @@ do
 	if not ok then m=ug_require("mpfever_1::/mpfever_business_engine.lua") end
 	CO.business=m;m.configure(C,R,CO,log)
 end
+do
+	local ok, m = pcall(ug_require, "mpfever_progression.lua")
+	if not ok then m = ug_require("mpfever_1::/mpfever_progression.lua") end
+	CO.progression = m; m.engine.configure(C, R, CO, log)
+end
 -- companies: the registry of this state (set from the simulation state / the GUI mirror) maps company numbers and player entities
 R.coEntity = function(id) return R.CO and CO.entityOf(R.CO, id) or nil end
 R.coIdOf = function(e) return R.CO and CO.idOfEntity(R.CO, e) or nil end
@@ -108,7 +113,7 @@ local function flatten(v, path, out, d)
 	end
 end
 
-local function extendedParts(parts)
+local function extendedParts(parts, reg)
 	local dump = SDUMP and sdumps < 40 and {}
 	for name, res in pairs(GAME_SCRIPTS) do
 		local ok, v = pcall(function()
@@ -117,7 +122,9 @@ local function extendedParts(parts)
 			local c = api.engine.getComponent(e, api.type.ComponentType.GAME_SCRIPT)
 			if not c then return "absent" end
 			if dump then flatten(c.state, name, dump, 0) end
-			return tostring(valueHash(c.state, 0))
+			local data = c.state
+			if name == "progression" and reg and reg.progression then data = CO.progression.nativeDigest(data, reg) end
+			return tostring(valueHash(data, 0))
 		end)
 		if ok and v ~= "absent" then parts["script:" .. name] = v end
 	end
@@ -252,6 +259,7 @@ local function simHash(terrainSig, reg, n)
 	local tMark = os.clock()
 	if reg and reg.mode == "separate" then
 		parts.companies = CO.signature(reg)
+		parts.progression = tostring(valueHash(CO.progression.sharedState(reg), 0))
 		parts.business = tostring(valueHash(CO.business.core.sharedState(reg),0))
 		-- who owns what: roads, constructions and vehicles counted per company (0 = nobody's)
 		pcall(function()
@@ -289,7 +297,7 @@ local function simHash(terrainSig, reg, n)
 	-- the terrain edits applied so far (the sum of their cells' checksums, kept in the simulation state)
 	parts.terrain = tostring(terrainSig or 0)
 	tMark = os.clock()
-	local okx, errx = pcall(extendedParts, parts)
+	local okx, errx = pcall(extendedParts, parts, reg)
 	if not okx then parts.extended = "ERR " .. tostring(errx):sub(1, 80) end
 	costs.extended = os.clock() - tMark
 	if hashCostsShown < 3 then
@@ -1141,6 +1149,8 @@ local function update(userParams, state, dt)
 	if not okl then log("companies: loans failed: " .. tostring(errl)) end
 	local okB,errB=pcall(CO.business.update,state,dt,gameTime())
 	if not okB then log("business update failed: "..tostring(errB)) end
+	local okP, errP = pcall(CO.progression.engine.update, state)
+	if not okP then log("company progression update failed: " .. tostring(errP)) end
 end
 
 -- A native build by this machine's player, announced by the engine just BEFORE it is applied (onPreBuildProposal).
@@ -1555,6 +1565,8 @@ end
 
 local function handleEvent(userParams, state, src, id, name, param)
 	if not C.ACTIVE then return end
+	local okP, errP = pcall(CO.progression.engine.engineEvent, state, id, name, param, gameTime())
+	if not okP then log("company progression event failed: " .. tostring(errP)) end
 	local okB,errB=pcall(CO.business.engineEvent,state,id,name,param,gameTime())
 	if not okB then log("business delivery event failed: "..tostring(errB)) end
 	if id == "apply_command" and name == "onPostBuildProposal" then
@@ -1603,6 +1615,7 @@ local function handleEvent(userParams, state, src, id, name, param)
 	end
 
 	if id ~= "mpfever" then return end
+	if name == "progression" then CO.progression.engine.command(state, param); return end
 	if name=="business" then CO.business.command(state,param,gameTime());CO.business.flush(state);return end
 	local ok, err = pcall(function()
 		local st = state:get() or {}
@@ -6973,9 +6986,8 @@ local function coMySid()
 	return G.mySid
 end
 
--- The level of a company (rank, experience, permits) lives in a game script that only follows the savegame's company. The interface
--- reads it for the player it acts as: another company would find nothing (rank 0, most things locked). They share the savegame
--- company's progression: the reader maps any company of the registry to it.
+-- Native formulas still define thresholds/permits. The GUI reads the persistent
+-- per-company record; the old canonical fallback is used only before activation.
 local function coReq(name)
 	for _, path in ipairs({ "/game_mechanics/company/" .. name, "::/game_mechanics/company/" .. name }) do
 		local ok, m = pcall(ug_require, path)
@@ -6986,11 +6998,12 @@ end
 
 local function coPatchProgression()
 	if G.progPatched then return end
-	G.progPatched = true
 	local okP = CO.patchProgression(coReq, function(entity)
-		if R.coIdOf and R.coIdOf(entity) and R.CO and R.CO.canon then return R.CO.canon end
-		return nil
+		local reg = R.CO; local id = CO.idOfEntity(reg, entity)
+		if id and reg.progression then return CO.progression.view(reg, id), true end
+		return nil, false, id and reg.canon or nil
 	end, log)
+	G.progPatched = okP
 	if not okP then log("companies: the progression module is not reachable from here (rank of other companies stays empty)") end
 	if not CO.patchPermits(coReq, log) then log("companies: the permit modules are not reachable from here (unique buildings stay shared)") end
 end
@@ -7003,11 +7016,22 @@ local function coGui(st)
 		G.gpWrapped = true
 		local real = api.engine.util.getPlayer
 		api.engine.util.getPlayer = function() if G.actor then return G.actor end return real() end
-		pcall(coPatchProgression)
+	end
+	if not G.progPatched then pcall(coPatchProgression) end
+	-- Local UI mirror only: commands never accept XP, ranks or ownership from it.
+	do
+		local reg = st.co
+		local view = reg and reg.progression and CO.progression.sharedState(reg) or {}
+		view.world = reg and reg.world
+		local txt = C.ser(view)
+		if txt ~= G.progressionFile then
+			local f = C.IO.open(C.DIR .. BS .. "progressionview.txt", "wb")
+			if f then f:write(txt); f:close(); G.progressionFile = txt end
+		end
 	end
 	-- the interface's own Lua state (tools, windows) maps player entities to company numbers through this file
 	if st.co then
-		local lines = { "me	" .. tostring(G.myCo or 0) }
+		local lines = { "me	" .. tostring(G.myCo or 0), "world\t" .. tostring(st.co.world or "") }
 		for _, c in ipairs(st.co.list) do if c.ent then lines[#lines + 1] = c.id .. "	" .. c.ent .. "	" .. tostring(c.name or ""):gsub("[%c]", " ") end end
 		local txt = table.concat(lines, NL) .. NL
 		local rosterSig = CO.signature(st.co)

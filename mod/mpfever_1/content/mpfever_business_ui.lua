@@ -80,8 +80,21 @@ function V.install(react,builtin,windowApi)
 		local draft=state:old();local m=draft;local v=U.business or {orders={},companies={},roadCatalog={},targets={},cargos={},roads={},stations={},payments={}}
 		local function set(k,value) local n={};for a,b in pairs(draft)do n[a]=b end;n[k]=value;draft=n;state:set(n) end
 		local function name(id) for _,c in ipairs(v.companies or {}) do if c.id==id then return c.name end end;return tostring(id or "") end
-		local rows={row{button(T("Infrastructure","Infrastructure"),function()set("tab","access")end),button(T("Commandes","Orders"),function()set("tab","orders")end),button(T("Paiements","Payments"),function()set("tab","payments")end)}}
-		if not U.business then rows[#rows+1]=text(T("En attente des entreprises…","Waiting for companies…"))
+		local rows={row{button(T("Développement","Development"),function()set("tab","development")end),button(T("Infrastructure","Infrastructure"),function()set("tab","access")end),button(T("Commandes","Orders"),function()set("tab","orders")end),button(T("Paiements","Payments"),function()set("tab","payments")end)}}
+		if m.tab=="development" then
+			local progress=U.progression
+			local own=progress and progress.companies and progress.companies[tostring(U.myCo)]
+			if progress and progress.version==1 and own then
+				rows[#rows+1]=text(T("Rang personnel","Personal rank")..": "..own.level.." / "..#progress.ranks)
+				rows[#rows+1]=text(T("Expérience personnelle","Personal experience")..": "..C.int(own.experience))
+				rows[#rows+1]=text(T("Gagnez 1 XP par passager ou unité de fret sur votre étape de transport payante.","Earn 1 XP per passenger or cargo item on your paid transport leg."))
+				if own.potentialLevel>own.level then
+					rows[#rows+1]=button(T("Confirmer le rang acquis","Apply earned rank").." · "..own.potentialLevel,function()
+						api.cmd.sendCommand(api.cmd.makeScriptingSendEventCmd("mpfever","mpfever","progression",{level=own.potentialLevel}))
+					end)
+				end
+			else rows[#rows+1]=text(T("Le développement personnel n’est pas encore disponible.","Personal development is not available yet."))end
+		elseif not U.business then rows[#rows+1]=text(T("En attente des entreprises…","Waiting for companies…"))
 		elseif m.tab=="access" then
 			local choices={};local selected
 			for _,list in ipairs({v.roadCatalog or {},v.targets or {}}) do for _,r in ipairs(list) do if r.owner==U.myCo then

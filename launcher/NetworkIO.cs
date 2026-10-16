@@ -10,7 +10,7 @@ namespace MPFever
     // Limits are checked before a frame or file delta can grow the allocation.
     static class Wire
     {
-        public const int Version = 6;
+        public const int Version = 7;
         public const int MaxFrameBytes = LuaLit.MaxBytes + 256;
         public const int MaxPeers = 8;
         public const int HandshakeReserve = 4;

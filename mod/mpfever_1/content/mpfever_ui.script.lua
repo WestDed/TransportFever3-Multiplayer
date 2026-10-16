@@ -103,6 +103,11 @@ local function install()
 			sendLine("act_fail", { fn = tag.name, stage = "marshal", err = tostring(margs) })
 			return O.sendCommand(cmd, cb, progress)
 		end
+		-- The base rank button emits applyLevel. Normalize only the company
+		-- progression operation to our strictly validated wire command.
+		if U.coMap and tag.name == "makeScriptingSendEventCmd" and margs[3] == "applyLevel" then
+			margs = { n = 4, [1] = "", [2] = "mpfever", [3] = "progression", [4] = { level = type(margs[4]) == "table" and margs[4].level or nil } }
+		end
 		local okt, errt = pcall(R.translateOut, tag.name, margs, U.rev)
 		if not okt then log("reference translation failed for " .. tag.name .. ": " .. tostring(errt)) end
 		U.seq = U.seq + 1
@@ -164,19 +169,45 @@ local function patchGameModules()
 		end
 		return nil
 	end
-	CO.patchProgression(req, function(entity)
-		if U.coMap and U.coMap[entity] and U.canon then return U.canon end
-		return nil
+	local progressionOK = CO.patchProgression(req, function(entity)
+		local id = U.coMap and U.coMap[entity]
+		if id and U.progression and U.progression.version == 1 then
+			local own = U.progression.companies and U.progression.companies[tostring(id)]
+			if not own then return nil, true end
+			return { experience = own.experience, level = own.level, potentialLevel = own.potentialLevel, ticketPriceMultiplier = own.ticketPriceMultiplier }, true
+		end
+		return nil, false, id and U.canon or nil
 	end, log)
-	CO.patchPermits(req, log)
+	local permitsOK = CO.patchPermits(req, log)
+	return progressionOK and permitsOK
+end
+
+local function pollProgression()
+	local f = C.IO.open(C.DIR .. C.BS .. "progressionview.txt", "rb")
+	if not f then return end
+	local txt = f:read(1048577) or ""; f:close()
+	if #txt > 1048576 or txt == U.progressionTxt then return end
+	local view = C.deser(txt)
+	if type(view) ~= "table" then return end
+	if tostring(view.world or "") ~= tostring(U.coWorld or "") then return end
+	U.progressionTxt, U.progression = txt, view
+	U.businessVersion = (U.businessVersion or 0) + 1
 end
 local function pollCompanies()
 	local f = C.IO.open(C.DIR .. C.BS .. "companies.txt", "rb")
 	if not f then return end
 	local txt = f:read("*a") or ""
 	f:close()
-	if txt == U.coTxt then return end
+	if txt == U.coTxt then
+		if U.canon and not U.coPatched then
+			local ok, result = pcall(patchGameModules); U.coPatched = ok and result == true
+		end
+		return
+	end
 	U.coTxt = txt
+	local world = txt:match("world" .. C.TAB .. "([^" .. C.NL .. "]*)")
+	if U.coWorld ~= world then U.progression, U.progressionTxt = nil, nil end
+	U.coWorld = world
 	local map, names = {}, {}
 	for line in txt:gmatch("[^" .. C.NL .. "]+") do
 		local a, b, n = line:match("^(%d+)" .. C.TAB .. "(%d+)" .. C.TAB .. "?([^" .. C.TAB .. "]*)")
@@ -188,9 +219,9 @@ local function pollCompanies()
 	U.coNames = names
 	for e, id in pairs(map) do if id == 1 then U.canon = e end end
 	if U.canon and not U.coPatched then
-		U.coPatched = true
-		local okp, errp = pcall(patchGameModules)
-		if not okp then log("companies: patching the game modules failed: " .. tostring(errp)) end
+		local okp, result = pcall(patchGameModules)
+		U.coPatched = okp and result == true
+		if not okp then log("companies: patching the game modules failed: " .. tostring(result)) end
 	end
 	log("companies known to the interface: " .. txt:gsub(C.NL, " "))
 end
@@ -1575,6 +1606,7 @@ local function tick(pendingState)
 	end)
 	pcall(pollBindings)
 	pcall(pollCompanies)
+	pcall(pollProgression)
 	if not U.terrainWatch then
 		local okt, errt = pcall(installTerrainWatch)
 		if not okt then U.terrainWatch = true; log("terrain tools: not watched: " .. tostring(errt)) end

@@ -152,4 +152,19 @@ class BusinessUiTests(unittest.TestCase):
     def test_free_station_selection_and_specific_denial(self):
         self.check('local B=ug_require("mpfever_business.lua");U.business.stations["sg:A"]={key="sg:A",owner=2,mode="free",fee=0,grants={}};assert(V.stationFee("sg:A",100)==-1);U.business.stations["sg:A"].grants["1"]={use=false};assert(V.stationFee("sg:A",100)==0)')
 
+    def test_personal_development_shows_own_rank_and_sends_only_earned_target(self):
+        self.check('''C.int=tostring;U.progression={version=1,ranks={{},{},{}},companies={["1"]={level=1,potentialLevel=2,experience=120},["2"]={level=3,potentialLevel=3,experience=999}}}
+            render();click("Development");render();local texts={};for _,v in ipairs(nodes("TextView"))do texts[v.text]=true end
+            assert(texts["Personal rank: 1 / 3"] and texts["Personal experience: 120"] and not texts["Personal experience: 999"])
+            click("Apply earned rank · 2");assert(sent[1][3]=="progression" and sent[1][4].level==2 and sent[1][4].mpfCo==nil)''')
+
+    def test_no_rank_button_before_personal_experience_reaches_next_rank(self):
+        self.check('''C.int=tostring;U.progression={version=1,ranks={{},{}},companies={["1"]={level=1,potentialLevel=1,experience=100}}}
+            render();click("Development");render();for _,b in ipairs(nodes("Button"))do assert(not b.content.text:find("Apply earned rank",1,true))end''')
+
+    def test_development_tab_reports_unavailable_without_claiming_shared_rank_as_own(self):
+        self.check('''render();click("Development");render();local found=false
+            for _,v in ipairs(nodes("TextView"))do if v.text=="Personal development is not available yet."then found=true end end
+            assert(found and #sent==0)''')
+
 if __name__=='__main__':unittest.main()
