@@ -8,7 +8,7 @@ CONTENT=Path(__file__).resolve().parents[1]/'mod/mpfever_1/content'
 class AdapterTests(unittest.TestCase):
     def setUp(self):
         self.L=LuaRuntime(unpack_returned_tuples=True)
-        self.L.globals().B=self.L.execute((CONTENT/'mpfever_business.lua').read_text())
+        self.L.globals().B=self.L.execute((CONTENT/'mpfever_business.lua').read_text(encoding='utf-8'))
         self.L.execute('''
             ug_require=function()return B end
             reg={mode="separate",list={{id=1,ent=7,name="Host"},{id=2,ent=8,name="Guest"}}}
@@ -46,7 +46,7 @@ class AdapterTests(unittest.TestCase):
             C={origCmds=function()return {}end,marshal=function(t)return t end,shareFee=function(s,k)return s and s[k] or 100 end}
             log=function(t)logs[#logs+1]=t end
         ''')
-        self.L.globals().E=self.L.execute((CONTENT/'mpfever_business_engine.lua').read_text())
+        self.L.globals().E=self.L.execute((CONTENT/'mpfever_business_engine.lua').read_text(encoding='utf-8'))
         self.L.execute('E.configure(C,R,CO,log);key=B.roadKey(E.geometry(20))')
     def check(self,s):self.L.execute(s)
     def test_api_policy_sets_public_graph_but_keeps_company_owner(self):
@@ -89,7 +89,7 @@ class AdapterTests(unittest.TestCase):
 class PrivacyTests(unittest.TestCase):
     def setUp(self):
         self.L=LuaRuntime(unpack_returned_tuples=True)
-        self.L.globals().P=self.L.execute((CONTENT/'mpfever_privacy.lua').read_text())
+        self.L.globals().P=self.L.execute((CONTENT/'mpfever_privacy.lua').read_text(encoding='utf-8'))
         self.L.execute('ctx={me=2,coMap={[7]=1,[8]=2},ownerOf=function(e)if e==100 then return 7 elseif e==200 then return 8 end end}; own={notification={params={entities={{200,0}}}}};foreign={notification={params={vehicles={{100,0}}}}};global={notification={params={entities={{999,0}}}}}')
     def check(self,s):self.L.execute(s)
     def test_foreign_hidden_own_and_shared_world_kept(self):
@@ -109,7 +109,7 @@ class PrivacyTests(unittest.TestCase):
 class BusinessUiTests(unittest.TestCase):
     def setUp(self):
         self.L=LuaRuntime(unpack_returned_tuples=True)
-        self.L.globals().sources=self.L.table_from({p.name:p.read_text() for p in CONTENT.glob('*.lua')})
+        self.L.globals().sources=self.L.table_from({p.name:p.read_text(encoding='utf-8') for p in CONTENT.glob('*.lua')})
         self.L.execute('''
             local modules={};ug_require=function(n) n=n:gsub("^mpfever_1::/","");if not modules[n]then modules[n]=assert(load(sources[n]))()end;return modules[n]end
             C={T=function(_,en)return en end,shareFee=function(s,k)return s and s[k] or 100 end}
@@ -151,5 +151,20 @@ class BusinessUiTests(unittest.TestCase):
         self.check('U.business.orders={{id="order1",issuer=2,status="open",title="A",target="sg:A",progress=0,amount=2,reward=500}};render();click("Orders");render();click("Accept");assert(sent[1][4].op=="accept" and sent[1][4].id=="order1");U.business.orders[1].issuer=1;render();click("Cancel");assert(sent[2][4].op=="cancel")')
     def test_free_station_selection_and_specific_denial(self):
         self.check('local B=ug_require("mpfever_business.lua");U.business.stations["sg:A"]={key="sg:A",owner=2,mode="free",fee=0,grants={}};assert(V.stationFee("sg:A",100)==-1);U.business.stations["sg:A"].grants["1"]={use=false};assert(V.stationFee("sg:A",100)==0)')
+
+    def test_personal_development_shows_own_rank_and_sends_only_earned_target(self):
+        self.check('''C.int=tostring;U.progression={version=1,ranks={{},{},{}},companies={["1"]={level=1,potentialLevel=2,experience=120},["2"]={level=3,potentialLevel=3,experience=999}}}
+            render();click("Development");render();local texts={};for _,v in ipairs(nodes("TextView"))do texts[v.text]=true end
+            assert(texts["Personal rank: 1 / 3"] and texts["Personal experience: 120"] and not texts["Personal experience: 999"])
+            click("Apply earned rank · 2");assert(sent[1][3]=="progression" and sent[1][4].level==2 and sent[1][4].mpfCo==nil)''')
+
+    def test_no_rank_button_before_personal_experience_reaches_next_rank(self):
+        self.check('''C.int=tostring;U.progression={version=1,ranks={{},{}},companies={["1"]={level=1,potentialLevel=1,experience=100}}}
+            render();click("Development");render();for _,b in ipairs(nodes("Button"))do assert(not b.content.text:find("Apply earned rank",1,true))end''')
+
+    def test_development_tab_reports_unavailable_without_claiming_shared_rank_as_own(self):
+        self.check('''render();click("Development");render();local found=false
+            for _,v in ipairs(nodes("TextView"))do if v.text=="Personal development is not available yet."then found=true end end
+            assert(found and #sent==0)''')
 
 if __name__=='__main__':unittest.main()

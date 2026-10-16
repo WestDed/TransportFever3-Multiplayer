@@ -42,7 +42,7 @@ namespace MPFever
 
     sealed class MainForm : Form
     {
-        public const string Version = "0.3.7-experimental";
+        public const string Version = "0.3.7-westded.2-experimental";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -60,7 +60,7 @@ namespace MPFever
         const double UnitsPerSecond = 1000;    // game time units per real second at x1
         const double HashEverySeconds = 10;
 
-        readonly TextBox nameBox = new TextBox { Text = Environment.UserName };
+        readonly TextBox nameBox = new TextBox { Text = SavedName() };
         readonly TextBox hostBox = new TextBox { Text = "127.0.0.1" };
         readonly NumericUpDown portBox = new NumericUpDown { Minimum = 1024, Maximum = 65535, Value = 28090 };
         readonly ModernButton hostBtn = new ModernButton(ButtonKind.Primary);
@@ -136,6 +136,7 @@ namespace MPFever
         readonly HashSet<string> resyncWaiting = new HashSet<string>();
         volatile Dictionary<object, object> saveDone;
         string lastDiffKeys = "";
+        readonly CheckpointState checkpointState = new CheckpointState();
         int diffStreak;
         int postResyncHashN = -1;
         readonly HashSet<string> ignoredParts = new HashSet<string>();
@@ -563,6 +564,8 @@ namespace MPFever
 
         static string SettingsFile => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "mpfever_settings.txt");
 
+        static string SavedName() => LoadSettings().TryGetValue("name", out var name) && !string.IsNullOrWhiteSpace(name) ? name : Environment.UserName;
+
         internal static Dictionary<string, string> LoadSettings()
         {
             var d = new Dictionary<string, string>();
@@ -584,8 +587,7 @@ namespace MPFever
             menuMode = true;
             running = true;
             hostBtn.Enabled = joinBtn.Enabled = localBtn.Enabled = false;
-            var st = LoadSettings();
-            menuGame = new GameLink(st.TryGetValue("name", out var n) && n != "" ? n : Environment.UserName, "menu");
+            menuGame = new GameLink(SavedName(), "menu");
             games.Add(menuGame);
             menuGame.Exited += () => { Log.W(T("Transport Fever 3 fermé : fin de MPFever.", "Transport Fever 3 closed: MPFever exits.")); try { BeginInvoke((Action)Close); } catch { } };
             MenuStatus();
@@ -829,7 +831,7 @@ namespace MPFever
             lock (chatLog) { chatLog.Clear(); chatId = 0; }
             lock (snapshotReceivers) { foreach (var receiver in snapshotReceivers.Values) receiver.Dispose(); snapshotReceivers.Clear(); loadingClients.Clear(); }
             hashN = 0; syncText = "—"; actsRelayed = actRefused = actFails = desyncs = 0;
-            resyncing = false; resyncFailed = false; resyncWaiting.Clear(); loadWatches.Clear(); ignoredParts.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = "";
+            resyncing = false; resyncFailed = false; resyncWaiting.Clear(); loadWatches.Clear(); ignoredParts.Clear(); checkpointState.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = "";
             joinPending = false;
             joinedAddr = null;
             if (steamConnect != null) { steamConnect = null; SteamCtl("clear", null); }
@@ -1397,7 +1399,7 @@ namespace MPFever
             Log.W(F("=== Partie démarrée avec {0} jeu(x) au temps {1} : vérification initiale... ===", "=== Game started with {0} game(s) at time {1}: initial check... ===", n, times.FirstOrDefault()));
             BroadcastSession();
             // every game just loaded the same savegame: a part already different now is a local measure
-            postResyncHashN = hashN + 1;
+            checkpointState.Clear(); postResyncHashN = hashN + 1;
             RequestHash();
             int startGen=sessionGen;
             new Thread(() => { Thread.Sleep(1500); if(startGen==sessionGen)SetSpeed(1, T("démarrage", "start")); }) { IsBackground = true }.Start();
@@ -1741,7 +1743,10 @@ namespace MPFever
                 if (local.Count > 0) Log.Warn(T("Mesures propres à chaque jeu (ignorées désormais) : ", "Local measures (ignored from now on): ") + string.Join(", ", local));
             }
             diffs = diffs.Where(d => !ignoredParts.Contains(DiffKey(d))).ToList();
-            CheckResync(diffs.Select(d => DiffKey(d)).Where(k => !CorrectedParts.Contains(k)).ToList(), n);
+            checkpointState.Observe(n, keys, diffs.Select(DiffKey));
+            var pendingParts = checkpointState.Pending.Where(k => !CorrectedParts.Contains(k) && !ignoredParts.Contains(k)).ToList();
+            CheckResync(pendingParts, n);
+            if (diffs.Count == 0 && pendingParts.Count > 0) return;
             if (diffs.Count == 0)
             {
                 bool changed = syncState != 1;
@@ -1750,7 +1755,7 @@ namespace MPFever
                 syncText = T("SYNCHRONE ✔", "IN SYNC ✔");
                 if (changed || n % 6 == 1) Log.Ok(F("Synchronisation n°{0} (temps {1}) : IDENTIQUE sur {2} jeux ({3} mesures)", "Sync check #{0} (time {1}): IDENTICAL on {2} games ({3} measures)", n, time, names.Count, keys.Count));
             }
-            else if (diffKeys.Where(d => !ignoredParts.Contains(d) && !CorrectedParts.Contains(d)).All(DriftParts.Contains))
+            else if (pendingParts.All(DriftParts.Contains))
             {
                 // simulation drift (or money, corrected at once): no alarm, a line per minute
                 bool changed = syncState != 2;
@@ -1798,7 +1803,7 @@ namespace MPFever
                 return;
             }
             driftSince = -1;
-            diffStreak = k == lastDiffKeys ? diffStreak + 1 : 1;
+            diffStreak = checkpointState.Streak(keys.Where(x => !DriftParts.Contains(x)));
             lastDiffKeys = k;
             if (diffStreak < 2) return;
             if (Now - lastResync < ResyncCooldownSeconds)
@@ -1834,8 +1839,9 @@ namespace MPFever
                 bool stopped = WaitCurrent(() => { lock (clocks) return clocks.Values.All(c => c.T >= at && c.Sp == 0); }, 120);
                 if (!stopped) { Log.Err(T("Resynchronisation abandonnée : les jeux ne se sont pas arrêtés.", "Resynchronisation cancelled: the games did not stop.")); return; }
                 saveDone = null;
-                activeGame.ToGame(Msg.Make("resync_save", hostName, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(ResyncSaveName) + "}"));
-                if (!WaitCurrent(() => saveDone != null && saveDone.TryGetValue("id", out var si) && si is double sd && sd == id, SnapshotLimits.SaveTimeoutSeconds))
+                string saveRequest = Guid.NewGuid().ToString("N");
+                activeGame.ToGame(Msg.Make("resync_save", hostName, SnapshotControl.Payload(id, ResyncSaveName, saveRequest)));
+                if (!WaitCurrent(() => saveDone != null && saveDone.TryGetValue("id", out var si) && si is double sd && sd == id && saveDone.TryGetValue("request", out var sr) && sr as string == saveRequest, SnapshotLimits.SaveTimeoutSeconds))
                 { Log.Err(T("Resynchronisation abandonnée : l'hôte n'a pas sauvegardé.", "Resynchronisation cancelled: the host did not save.")); return; }
                 if (!(saveDone.TryGetValue("ok", out var okv) && okv is bool ok && ok)) { Log.Err(T("Resynchronisation abandonnée : sauvegarde refusée.", "Resynchronisation cancelled: save refused.")); return; }
                 Thread.Sleep(1000);
@@ -1884,7 +1890,7 @@ namespace MPFever
                         return;
                     }
                     Log.W("Snapshot verified by " + peers.Length + " client(s); waiting for game load");
-                    activeGame.ToGame(Msg.Make("resync_load", hostName, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(ResyncSaveName) + "}"));
+                    activeGame.ToGame(Msg.Make("resync_load", hostName, SnapshotControl.Payload(id, ResyncSaveName, source.Manifest.Transfer)));
                     if (!WaitCurrent(() =>
                     {
                         lock(resyncWaiting)
@@ -1901,7 +1907,7 @@ namespace MPFever
                 }
                 Thread.Sleep(3000);
                 if (!Current()) return;
-                postResyncHashN = hashN + 1;
+                checkpointState.Clear(); postResyncHashN = hashN + 1;
                 RequestHash();
                 Thread.Sleep(2000);
                 success = Current();
@@ -1968,10 +1974,10 @@ namespace MPFever
                 Log.W("[" + game.Name + "] host snapshot verified and committed: " + completed.Manifest.Bytes + " bytes");
                 if (menuMode && !game.InGame)
                 {
-                    menuPhase = "loading"; menuText = T("Chargement de la partie de l'hôte...", "Loading the host's game..."); menuLoad = name; menuLoadSeq = "r" + id;
+                    menuPhase = "loading"; menuText = T("Chargement de la partie de l'hôte...", "Loading the host's game..."); menuLoad = name; menuLoadSeq = SnapshotControl.MenuSequence(completed.Manifest.Transfer);
                     MenuStatus(); return;
                 }
-                game.ToGame(Msg.Make("resync_load", m.From, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(name) + "}"));
+                game.ToGame(Msg.Make("resync_load", m.From, SnapshotControl.Payload(id, name, completed.Manifest.Transfer)));
             }
         }
 

@@ -33,9 +33,12 @@ if ($exportMap.Count -ne 14) { throw "Unexpected native export count: $($exportM
 $dependencies = (& $dumpbin /nologo /dependents (Join-Path $root 'native/out/winhttp.dll') | Out-String)
 if ($LASTEXITCODE -ne 0 -or $dependencies -notmatch '(?i)\bKERNEL32\.dll\b' -or $dependencies -match '(?i)(vcruntime|msvcp|ucrtbase|msvcrt)[^\s]*\.dll') { throw 'Unexpected freestanding DLL dependencies' }
 $exports | Set-Content (Join-Path $root 'release/native-exports.txt') -Encoding UTF8
-$zip = [IO.Compression.ZipFile]::OpenRead((Join-Path $root 'release/MPFever-0.3.7-experimental.zip'))
+$packageVersion = [regex]::Match([IO.File]::ReadAllText((Join-Path $root 'launcher/MainForm.cs')), 'public const string Version = "([a-z0-9.-]+)"').Groups[1].Value
+$buildVersion = [regex]::Match([IO.File]::ReadAllText((Join-Path $root 'build.bat')), 'set "VERSION=([a-z0-9.-]+)"').Groups[1].Value
+if (!$packageVersion -or $packageVersion -ne $buildVersion) { throw 'Launcher/package versions differ' }
+$zip = [IO.Compression.ZipFile]::OpenRead((Join-Path $root "release/MPFever-$packageVersion.zip"))
 try {
-    foreach ($entry in @('MPFever/MPFever.exe','MPFever/MPFever.exe.config','MPFever/winhttp.dll','MPFever/LICENSE','MPFever/BUSINESS_MECHANICS.md','MPFever/mod/mpfever_1/content/mpfever_common.lua')) {
+    foreach ($entry in @('MPFever/MPFever.exe','MPFever/MPFever.exe.config','MPFever/winhttp.dll','MPFever/LICENSE','MPFever/BUSINESS_MECHANICS.md','MPFever/OFFLINE_UPSTREAM_FIXES.md','MPFever/COMPANY_PROGRESSION.md','MPFever/mod/mpfever_1/content/mpfever_common.lua')) {
         $found = $zip.GetEntry($entry)
         if ($null -eq $found -or $found.Length -eq 0) { throw "Missing or empty packaged entry: $entry" }
         Write-Host "PASS package entry: $entry"
@@ -76,9 +79,9 @@ try {
 }
 finally { $zip.Dispose() }
 $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $root 'launcher/bin/Release/MPFever.exe'))
-if ($versionInfo.FileVersion -ne '0.3.7.0') { throw "Wrong launcher file version: $($versionInfo.FileVersion)" }
+if ($versionInfo.FileVersion -ne '0.3.7.2') { throw "Wrong launcher file version: $($versionInfo.FileVersion)" }
 $manifest = [ordered]@{
-    packageVersion = '0.3.7-experimental'
+    packageVersion = $packageVersion
     sourceCommit = $env:GITHUB_SHA
     protocolVersion = [int]([regex]::Match([IO.File]::ReadAllText((Join-Path $root 'launcher/NetworkIO.cs')), 'const int Version = (\d+)').Groups[1].Value)
     experimental = $true

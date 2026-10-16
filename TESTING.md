@@ -1,6 +1,18 @@
 # Тестирование и границы доказательства
 
+16.10.2026, PR #15: [матрица личного развития](docs/COMPANY_PROGRESSION.md#приёмка-в-игре). Локально 281 Python/Lua/C++ tests PASS, 288/288 keys × 11 локалей, git diff --check. Новые проверки: миграция, личные XP/уровни, настоящий Lua scheduler, цена по владельцу линии, bounded dedup, native hash normalization, permits census failure, GUI/view/schema. C# и Windows exact-head CI фиксируются в PR #15 после завершения. **Game NOT TESTED для новых изменений.** Сведения ниже о PR #14 и более ранних heads — исторические.
+
+16.10.2026: [новые offline regressions и границы](docs/OFFLINE_UPSTREAM_FIXES.md). Локально 231 tests PASS, 282/282 переводов × 11 локалей. Production functions проверяются на constructor/clock/async/React fixtures и настоящих temporary files; game engine не запускался. Новые C# cases включены во все три runtime/OS jobs, Windows ZIP имеет WestDed номер/protocol 6. Exact итоговые head/run/counts — в PR после CI, до этого проверка не объявляется успешной.
+
 15.10.2026. В нашей среде TF3/Steam/game API не установлены. Локально Linux/Python 3.12/lupa 2.6, C#/Windows/native проверяются GitHub Actions. Заказчик и брат после PR #10 сообщили об успешном совместном startup/join через Porthole; большие карты/механики выявили отказы. Это пользовательский игровой результат, не мой запуск. [Полная запись, regressions и критерии повтора](docs/COOP_PLAYTEST_2026_10_15.md).
+
+## Ручной тариф в окне остановки
+
+Ветка `feat/custom-station-fee-2026-10-16` продолжает ещё не объединённый PR #11. `test_station_fee_ui.py` исполняет **настоящие** helper/recipe/sendShare из `mpfever_ui.script.lua` и `shareFee` из `mpfever_common.lua`, подставляя React и engine dependencies. 13 новых сценариев: кнопка/Enter, typing без отправки, произвольный тариф, UI-ноль → wire `-1` (бесплатно) против private preset `0`, граница 1e9, неверные числа/выражения/длинный ввод, исправление ошибки, неизменённая сумма, другая остановка, read-only чужая остановка, default 100, external updates/draft, pending ack/timeout и reopening nonpreset fee. Fixtures поддерживают сброс state в nil, чтобы проверить очистку draft/pending, а не скрыть её ошибку.
+
+Локально: **175 tests PASS**, включая прежние 162; переводы **282/282** для каждой из 11 локалей; `git diff --check` PASS. Первоначально отсутствовала зависимость lupa в локальной Python-среде; установка точного `tests/requirements-offline.txt` восстановила harness без изменения требований или исключений. CI и полный Windows ZIP проверяются на точном опубликованном head; ссылки и результаты — в новом PR.
+
+В игре ещё **NOT RETESTED**. На двух ПК проверить: свою сумму `1234` кнопкой и Enter; одинаковый тариф в обоих окнах и платёж ровно 1234 при визите чужого транспорта; свои визиты бесплатны; `0` бесплатно, пункт «Не общая» запрещает доступ; неверный ввод не меняет тариф и не разрывает связь. Повторить после закрытия окна, смены остановки, save/host restart и reconnect. Проверить ширину/фокус/Enter/цвет ошибки в настоящем GUI; офлайн recipe не проверяет rendering и native widget callbacks. Использовать один полный новый пакет на обоих ПК.
 
 ## Фактические автоматические проверки
 

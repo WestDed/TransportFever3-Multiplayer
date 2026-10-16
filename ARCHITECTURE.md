@@ -1,5 +1,7 @@
 # Архитектура Transport Fever 3 Multiplayer
 
+16.10.2026, PR #15: [личное развитие компаний](docs/COMPANY_PROGRESSION.md) хранится в `co.progression` по стабильному company id. Собственные XP за транспортные участки, подтверждение уровня, штатные пороги/permits/ticket multipliers, native state mirror и нормализованный hash; GUI получает world-scoped view. Старый общий reader используется до успешного перехода. Новые engine adapters ещё NOT TESTED в TF3; города и городские эффекты остаются общими. Пакет 0.3.7-westded.2-experimental, protocol 7.
+
 15.10.2026. Main `937318b7` содержит PR #10. Заказчик и брат сообщили об успешном startup/join и совместной игре через Porthole; большие карты и часть механик выявили отказы. У разработчика игра/API/saves не установлены. [PR #11](https://github.com/WestDed/TransportFever3-Multiplayer/pull/11) исправляет подтверждённые исходниками/регрессиями дефекты; игровой повтор ещё нужен. Основа — MPFever 0.3.6, MIT, автор arthur; upstream не изменяется.
 
 ## Действующая схема
@@ -8,7 +10,7 @@
 
 ```mermaid
 flowchart TD
-  H["Лаунчер хоста"] -->|"TCP, протокол 4"| C["Лаунчер клиента"]
+  H["Лаунчер хоста"] -->|"TCP, протокол 7"| C["Лаунчер клиента"]
   H -->|"Файловый IPC"| HL["Lua хоста"]
   C -->|"Файловый IPC"| CL["Lua клиента"]
   HL --> HN["Нативные hooks хоста"]
@@ -19,13 +21,13 @@ flowchart TD
 
 `launcher/Core.cs` — сообщения, безопасный LuaLit, GameLink, Relay/Client, установка. `NetworkIO.cs` — bounded UTF-8 reader/tail/outboxes. `ProtocolSchema.cs` — client kinds/actions/company bindings; `PeerIdentity.cs` — session credentials и proven owner; `OwnerIdentity.cs` — постоянные RSA profiles, SHA-256 owner, signed challenge и fail-closed file/marker. `Snapshots.cs` — manifest/source/receiver/atomic commit. `MainForm.cs` — lifecycle, clocks/hashes/resync/UI. Native C++ строится в winhttp.dll; hooks/addresses зависят от game build.
 
-Lua common содержит serializer и data-only decoder; bridge связывает GUI, native proposals и simulation state; refs разрешает стабильные ссылки в локальные entity IDs; co ведёт реестр/контракты/кредиты; permissions проверяет fleet/line owners после разрешения refs. ACCOUNT/PLAYER/progression/pathfinding принадлежат движку.
+Lua common содержит serializer и data-only decoder; bridge связывает GUI, native proposals и simulation state; refs разрешает стабильные ссылки в локальные entity IDs; co ведёт реестр/контракты/кредиты; permissions проверяет fleet/line owners после разрешения refs. ACCOUNT/PLAYER/pathfinding принадлежат движку; личный progression хранится модом и проецируется в документированное состояние игры.
 
 ## Компании и общий мир
 
 Стабильный company id передаётся по сети; локальные ent/canon не являются общими IDs. Реестр сохраняется Lua game state. Подпись включает sid, ключ/имя/цвет/id/стартовый бюджет с однозначными границами. Это не Steam authentication.
 
-Host GameLink сообщает roster/readiness/owner/world. Client доказывает владение постоянным RSA key по свежему nonce/session epoch/host fingerprint; owner сохраняется в Lua registry. После restart CompanyBindings восстанавливается по owner независимо от session peer id, имени или sid. Старый save без owner требует явного host-only assignment, scoped by saved world. Session token без соответствующего key не заменяет сокет. Общая progression хоста и monetary corrections upstream сохранены и требуют анализа. Все города/заводы/грузы/пассажиры симулируются в каждой копии; эквивалентность этих миров не доказана без игры.
+Host GameLink сообщает roster/readiness/owner/world. Client доказывает владение постоянным RSA key по свежему nonce/session epoch/host fingerprint; owner сохраняется в Lua registry. После restart CompanyBindings восстанавливается по owner независимо от session peer id, имени или sid. Старый save без owner требует явного host-only assignment, scoped by saved world. Session token без соответствующего key не заменяет сокет. Monetary corrections upstream сохранены и требуют анализа. Личный progression заменяет общий fallback после совместимого одноразового перехода; до него сохраняется прежний reader. Все города/заводы/грузы/пассажиры симулируются в каждой копии; эквивалентность этих миров не доказана без игры.
 
 ## Порядок и восстановление
 

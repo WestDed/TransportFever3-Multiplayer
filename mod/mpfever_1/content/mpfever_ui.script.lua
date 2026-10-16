@@ -24,6 +24,7 @@ local U = {
 	resOff = 0, bindOff = 0, rev = {},
 	stats = { held = 0, speed = 0, failed = 0, untracked = 0, answered = 0 },
 }
+local N = {} -- session-local notification preferences, adapted from upstream PR #42
 
 local function sendLine(kind, payload)
 	if not C.appendFile(C.DIR .. C.BS .. "ui.log", C.line(kind, payload)) then log("cannot write ui.log") end
@@ -73,6 +74,8 @@ local function install()
 		end
 		-- notification events (popup sound, dismiss) are sent automatically by each game's own interface: local only
 		if tag.name == "makeScriptingSendEventCmd" and tag.args[2] == "Notifications" then
+			local okn, errn = pcall(N.record, tag.args[3], tag.args[4])
+			if not okn then log("notification preference not saved: " .. tostring(errn)) end
 			U.notifLogged = (U.notifLogged or 0) + 1
 			if U.notifLogged <= 40 then log("local notification event " .. tostring(tag.args[1]) .. "/" .. tostring(tag.args[3]) .. " " .. C.ser(C.marshal(tag.args[4])):sub(1, 200)) end
 			if os.getenv("MPFEVER_NONOTIF") then return end
@@ -86,6 +89,7 @@ local function install()
 				U.lastSpeedReq, U.lastSpeedAt = tag.args[1], now
 				sendLine("speed_req", { speed = tag.args[1] })
 			end
+			if cb then pcall(cb, nil, true, {}) end
 			return
 		end
 		local okm, margs = pcall(function()
@@ -98,6 +102,11 @@ local function install()
 			log("marshal failed for " .. tag.name .. ": " .. tostring(margs) .. " -> executed locally only (desync risk)")
 			sendLine("act_fail", { fn = tag.name, stage = "marshal", err = tostring(margs) })
 			return O.sendCommand(cmd, cb, progress)
+		end
+		-- The base rank button emits applyLevel. Normalize only the company
+		-- progression operation to our strictly validated wire command.
+		if U.coMap and tag.name == "makeScriptingSendEventCmd" and margs[3] == "applyLevel" then
+			margs = { n = 4, [1] = "", [2] = "mpfever", [3] = "progression", [4] = { level = type(margs[4]) == "table" and margs[4].level or nil } }
 		end
 		local okt, errt = pcall(R.translateOut, tag.name, margs, U.rev)
 		if not okt then log("reference translation failed for " .. tag.name .. ": " .. tostring(errt)) end
@@ -119,6 +128,27 @@ local function install()
 			end
 		end
 	end
+	-- the game's speed buttons (GameSpeedHelper in gui/main/game.tl) show the engine's speed, which the lockstep holds at 0
+	-- between steps: they are shown the session's speed instead (mp_status.txt), or for 2 s the speed this player asked for
+	local okSp, errSp = pcall(function()
+		orig.getComponent = orig.getComponent or api.engine.getComponent
+		local origGet = orig.getComponent
+		local speedType = api.type.ComponentType.GAME_SPEED
+		api.engine.getComponent = function(e, ct, ...)
+			local c = origGet(e, ct, ...)
+			if ct == speedType and c ~= nil then
+				local sp = U.shownSpeed()
+				-- (mpfRealSpeedup: the engine's own speed, which the lockstep reads, see gameSpeed in the bridge)
+				if sp ~= nil and U.shownLogged ~= sp then
+					U.shownLogged = sp
+					log("speed buttons: session speed " .. tostring(sp) .. " shown (engine " .. tostring(c.speedup) .. ")")
+				end
+				if sp ~= nil then return setmetatable({ speedup = sp, mpfRealSpeedup = c.speedup }, { __index = function(_, key) return c[key] end }) end
+			end
+			return c
+		end
+	end)
+	if not okSp then log("speed buttons: not redirected: " .. tostring(errSp)) end
 	local k = {}
 	for t, _ in pairs(kinds) do k[#k + 1] = t end
 	log("UI interception installed on " .. wrapped .. " factories (types: " .. table.concat(k, ",") .. ")" .. (#missing > 0 and (", missing: " .. table.concat(missing, ",")) or ""))
@@ -139,19 +169,45 @@ local function patchGameModules()
 		end
 		return nil
 	end
-	CO.patchProgression(req, function(entity)
-		if U.coMap and U.coMap[entity] and U.canon then return U.canon end
-		return nil
+	local progressionOK = CO.patchProgression(req, function(entity)
+		local id = U.coMap and U.coMap[entity]
+		if id and U.progression and U.progression.version == 1 then
+			local own = U.progression.companies and U.progression.companies[tostring(id)]
+			if not own then return nil, true end
+			return { experience = own.experience, level = own.level, potentialLevel = own.potentialLevel, ticketPriceMultiplier = own.ticketPriceMultiplier }, true
+		end
+		return nil, false, id and U.canon or nil
 	end, log)
-	CO.patchPermits(req, log)
+	local permitsOK = CO.patchPermits(req, log)
+	return progressionOK and permitsOK
+end
+
+local function pollProgression()
+	local f = C.IO.open(C.DIR .. C.BS .. "progressionview.txt", "rb")
+	if not f then return end
+	local txt = f:read(1048577) or ""; f:close()
+	if #txt > 1048576 or txt == U.progressionTxt then return end
+	local view = C.deser(txt)
+	if type(view) ~= "table" then return end
+	if tostring(view.world or "") ~= tostring(U.coWorld or "") then return end
+	U.progressionTxt, U.progression = txt, view
+	U.businessVersion = (U.businessVersion or 0) + 1
 end
 local function pollCompanies()
 	local f = C.IO.open(C.DIR .. C.BS .. "companies.txt", "rb")
 	if not f then return end
 	local txt = f:read("*a") or ""
 	f:close()
-	if txt == U.coTxt then return end
+	if txt == U.coTxt then
+		if U.canon and not U.coPatched then
+			local ok, result = pcall(patchGameModules); U.coPatched = ok and result == true
+		end
+		return
+	end
 	U.coTxt = txt
+	local world = txt:match("world" .. C.TAB .. "([^" .. C.NL .. "]*)")
+	if U.coWorld ~= world then U.progression, U.progressionTxt = nil, nil end
+	U.coWorld = world
 	local map, names = {}, {}
 	for line in txt:gmatch("[^" .. C.NL .. "]+") do
 		local a, b, n = line:match("^(%d+)" .. C.TAB .. "(%d+)" .. C.TAB .. "?([^" .. C.TAB .. "]*)")
@@ -163,9 +219,9 @@ local function pollCompanies()
 	U.coNames = names
 	for e, id in pairs(map) do if id == 1 then U.canon = e end end
 	if U.canon and not U.coPatched then
-		U.coPatched = true
-		local okp, errp = pcall(patchGameModules)
-		if not okp then log("companies: patching the game modules failed: " .. tostring(errp)) end
+		local okp, result = pcall(patchGameModules)
+		U.coPatched = okp and result == true
+		if not okp then log("companies: patching the game modules failed: " .. tostring(result)) end
 	end
 	log("companies known to the interface: " .. txt:gsub(C.NL, " "))
 end
@@ -243,6 +299,16 @@ local function pollShares()
 end
 
 local SHARE_FEES = { -1, 0, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000 }
+
+local function parseShareFee(value)
+	if type(value) ~= "string" or #value > 32 then return nil end
+	local digits = value:match("^%s*(%d+)%s*$")
+	local amount = digits and tonumber(digits)
+	if not amount or amount > 1000000000 then return nil end
+	-- UI zero means free access; the existing wire value -1 distinguishes it
+	-- from private access (0), which remains an explicit preset.
+	return amount == 0 and -1 or amount
+end
 
 local function money(n)
 	local ok, s = pcall(api.util.formatMoney, n)
@@ -466,22 +532,24 @@ local function installOwnerLine(react, builtin)
 	local Wrap = react.RegisterRecipe("MPFeverOwnerLine", function(p)
 		-- the fee changes while the window is open (this player's choice, or the owner's): read again from shares.txt
 		local ver = react.useState(U.shareVersion or 0)
-		local pending = react.useState(nil)   -- the fee just chosen, until every game has applied it: { fee, at }
+		local pending = react.useState(nil)   -- the fee just chosen, until every game has applied it: { key, fee, at }
+		local edit = react.useState(nil)      -- preserve a typed draft while shares.txt refreshes
 		react.onStepTimer(function()
 			local v = U.shareVersion or 0
 			if ver:old() ~= v then ver:set(v) end
 			local pd = pending:old()
-			if pd and ((U.shares and U.shares[p.shareKey] or 0) == pd.fee or os.clock() - pd.at > 10) then pending:set(nil) end
+			if pd and (pd.key ~= p.shareKey or C.shareFee(U.shares, p.shareKey) == pd.fee or os.clock() - pd.at > 10) then pending:set(nil) end
 		end, 0.5)
 		local inner = nil
 		if p.innerRecipe then inner = p.innerRecipe(p.innerParam)
 		elseif p.innerBuiltin then inner = p.innerBuiltin({ entity = p.innerParam and p.innerParam.keyEntity }) end
 		local children = { builtin.TextView { meta = { class = "font-scale-body" }, text = p.ownerText } }
 		if p.shareKey then
-			local fee = U.shares and U.shares[p.shareKey] or 0
+			local fee = C.shareFee(U.shares, p.shareKey)
 			if p.shareEdit then
 				-- the owner chooses the fee per stop of the other companies' vehicles (0: not shared)
 				local pd = pending:old()
+				if pd and pd.key ~= p.shareKey then pd = nil end
 				local shown = pd and pd.fee or fee
 				local items = {}
 				for _, f in ipairs(shareChoices(shown)) do
@@ -492,6 +560,20 @@ local function installOwnerLine(react, builtin)
 					}
 				end
 				local key = p.shareKey
+				local draft = edit:old()
+				if draft and draft.key ~= key then draft = nil end
+				local inputText = draft and draft.text or (shown > 0 and tostring(shown) or shown == -1 and "0" or "")
+				local function applyFee(value)
+					edit:set(nil)
+					if value == shown then return end
+					sendShare(key, value)
+					pending:set({ key = key, fee = value, at = os.clock() })
+				end
+				local function applyCustom(value)
+					local amount = parseShareFee(value)
+					if amount == nil then edit:set({ key = key, text = value or "", error = true }); return end
+					applyFee(amount)
+				end
 				children[#children + 1] = builtin.BoxLayout { orientation = builtin.type.Orientation.Horizontal, children = {
 					builtin.TextView { meta = { class = "font-scale-body" }, text = T("Partage avec les autres entreprises :  ", "Sharing with the other companies:  ") },
 					builtin.ComboBox {
@@ -499,12 +581,25 @@ local function installOwnerLine(react, builtin)
 						items = items,
 						onValueChange = function(v)
 							v = tonumber(v)
-							if v == nil or v == shown then return end
-							sendShare(key, v)
-							pending:set({ fee = v, at = os.clock() })
+							if v ~= nil then applyFee(v) end
 						end,
 					},
 				} }
+				children[#children + 1] = builtin.BoxLayout { orientation = builtin.type.Orientation.Horizontal, children = {
+					builtin.TextView { meta = { class = "font-scale-body" }, text = T("Tarif personnalisé par arrêt : ", "Custom fee per stop: ") },
+					builtin.TextInputField {
+						meta = { class = "font-scale-body", localKey = "mpfever-stop-fee-" .. key .. ":" .. tostring(shown) },
+						value = inputText, maxLength = 32, acceptOnFocusLoss = false,
+						onTyping = function(value) edit:set({ key = key, text = value or "" }) end,
+						onValueChange = applyCustom,
+					},
+					builtin.Button { content = builtin.TextView { text = T("Appliquer", "Apply") }, onClick = function()
+						local current = edit:old()
+						applyCustom(current and current.key == key and current.text or inputText)
+					end },
+				} }
+				children[#children + 1] = builtin.TextView { meta = { class = "font-scale-body" .. (draft and draft.error and ", error" or "") },
+					text = T("Montant entier de 0 à 1000000000 ; 0 est gratuit.", "Whole amount from 0 to 1000000000; 0 is free.") }
 				local note
 				if pd then note = T("Modification en cours pour tous les joueurs…", "Applying for every player…")
 				elseif shown==-1 then note=T("Partagée gratuitement", "Shared for free")
@@ -544,6 +639,15 @@ end
 -- MPFever.exe writes mp_status.txt every second (the host's view, relayed to every player): "key=value" lines and one
 -- "p=id TAB name TAB state TAB lag TAB role" line per player. It is shown in MPFever's own window, opened from a card that
 -- MPFever puts in the game's pause menu (no button in the game's HUD).
+
+U.shownSpeed = function()
+	local st = U.status
+	local t = st and tonumber(st.t)
+	if not st or st.started ~= "1" or t == nil or os.time() - t > 6 then return nil end
+	if U.lastSpeedReq ~= nil and os.clock() - (U.lastSpeedAt or -10) < 2 then return U.lastSpeedReq end
+	return tonumber(st.speed)
+end
+
 
 local function pollStatus()
 	local now = os.clock()
@@ -1275,11 +1379,11 @@ local function resyncSave(p)
 	log("resynchronisation: saving the game as '" .. tostring(p.name) .. "'")
 	local ok, err = pcall(app.saveGame, p.name, function()
 		log("resynchronisation: game saved")
-		sendLine("save_done", { id = p.id, name = p.name, ok = true })
+		sendLine("save_done", { id = p.id, request = p.request, name = p.name, ok = true })
 	end, false, true)
 	if not ok then
 		log("resynchronisation: save failed: " .. tostring(err))
-		sendLine("save_done", { id = p.id, name = p.name, ok = false, err = tostring(err) })
+		sendLine("save_done", { id = p.id, request = p.request, name = p.name, ok = false, err = tostring(err) })
 	end
 end
 
@@ -1334,14 +1438,159 @@ local function pollControl()
 			local claims = ""
 			local cf = C.IO.open(C.DIR .. C.BS .. "resync_claims.txt", "rb")
 			if cf then claims = cf:read("*a") or ""; cf:close() end
-			if not claims:find(r.kind .. " " .. tostring(r.p.id) .. C.NL, 1, true) then
-				C.appendFile(C.DIR .. C.BS .. "resync_claims.txt", r.kind .. " " .. tostring(r.p.id) .. C.NL)
+			local key = C.controlKey(r.kind, r.p)
+			if key and not claims:find(key, 1, true) then
+				C.appendFile(C.DIR .. C.BS .. "resync_claims.txt", key)
 				local ok, err = pcall(r.kind == "resync_save" and resyncSave or resyncLoad, r.p)
 				if not ok then log(r.kind .. " failed: " .. tostring(err)) end
 			end
 		end
 	end
 	U.resyncQueue = keep
+end
+
+-- Dismissals belong to this interface, not to the host's save. Store bounded
+-- data in this game's session directory; never send preferences to other PCs.
+N.file, N.MAX_KEYS, N.MAX_TIMES, N.KEY_BYTES, N.FILE_BYTES = "notif_preferences.lua", 512, 16, 2048, 2*1024*1024
+N.TOLERANCE, N.done = 120000, {}
+function N.native()
+	if not N.util then
+		if N.retry and os.clock() < N.retry then return nil end
+		N.retry = os.clock()+2
+		local ok, util = pcall(ug_require, "/game_mechanics/notifications/notification_util.tl")
+		if ok and type(util) == "table" then N.util = util end
+	end
+	if N.util then
+		local ok, state = pcall(N.util.externalGetNotificationsStateNative)
+		if ok then return state end
+	end
+end
+function N.canon(value)
+	local count = 0
+	local function item(v, depth)
+		count = count+1
+		if depth > 8 or count > 256 then error("notification key limit") end
+		local t, result = type(v), nil
+		if t == "number" then
+			if v~=v or v==math.huge or v==-math.huge then error("nonfinite notification key") end
+			result = "n" .. C.ser(v)
+		elseif t == "string" then result = "s" .. C.ser(v)
+		elseif t == "nil" or t == "boolean" then result = t .. tostring(v)
+		elseif t == "table" then
+			if v.entity~=nil and type(v.revision)=="table" and type(v.revision.num)=="table" then
+				result = "E" .. item(v.entity,depth+1) .. "@" .. item(v.revision.num[1],depth+1)
+			else
+				local fields = {}
+				for k, val in pairs(v) do fields[#fields+1] = item(k,depth+1) .. "=" .. item(val,depth+1) end
+				table.sort(fields);result = "{" .. table.concat(fields,",") .. "}"
+			end
+		else error("unsupported notification key") end
+		if #result > N.KEY_BYTES then error("notification key bytes") end
+		return result
+	end
+	return item(value,0)
+end
+function N.key(entry)
+	local n = entry and entry.notification
+	if type(n)~="table" or type(n.type)~="string" then return nil end
+	local ok, key, oneShot = pcall(function()
+		local body = N.canon(n.type) .. "|" .. N.canon(n.params)
+		if type(entry.persisting)=="table" and next(entry.persisting) then return "P|"..N.canon(entry.persisting).."|"..body,false end
+		return "O|"..body,true
+	end)
+	if ok and #key<=N.KEY_BYTES then return key,oneShot end
+end
+function N.load()
+	if N.keys then return end
+	N.keys,N.order = {},{}
+	local f = C.IO.open(C.DIR..C.BS..N.file,"rb")
+	if not f then return end
+	local size = f:seek("end")
+	if not size or size>N.FILE_BYTES then f:close();log("notification preferences exceed file limit");return end
+	f:seek("set",0);local raw = C.deser(f:read("*a") or "");f:close()
+	if type(raw)~="table" or raw.version~=1 or type(raw.keys)~="table" or type(raw.order)~="table" then return end
+	local seen = {}
+	for _, key in ipairs(raw.order) do
+		local times = raw.keys[key]
+		if #N.order>=N.MAX_KEYS then break end
+		if type(key)=="string" and #key<=N.KEY_BYTES and not seen[key] and type(times)=="table" then
+			local valid = {}
+			for i=1,math.min(#times,N.MAX_TIMES) do
+				local t=times[i];if type(t)=="number" and t==t and math.abs(t)<1e15 then valid[#valid+1]=t end
+			end
+			if #valid>0 then seen[key]=true;N.keys[key]=valid;N.order[#N.order+1]=key end
+		end
+	end
+	if type(raw.filter)=="table" and #C.ser(raw.filter)<=65536 then N.filter=raw.filter end
+end
+function N.save()
+	while #N.order>N.MAX_KEYS do N.keys[table.remove(N.order,1)]=nil end
+	local data = C.ser({version=1,keys=N.keys,order=N.order,filter=N.filter})
+	while #data>N.FILE_BYTES and #N.order>0 do
+		N.keys[table.remove(N.order,1)]=nil
+		data=C.ser({version=1,keys=N.keys,order=N.order,filter=N.filter})
+	end
+	if #data>N.FILE_BYTES then return false end
+	local f = C.IO.open(C.DIR..C.BS..N.file,"wb")
+	if not f then log("cannot write local notification preferences");return false end
+	local ok, err = f:write(data);f:close()
+	if not ok then log("notification preferences write failed: "..tostring(err));return false end
+	return true
+end
+function N.record(ev,p)
+	if ev~="dismiss" and ev~="enlist" and ev~="updateIgnoredTypes" then return end
+	N.load()
+	if ev=="updateIgnoredTypes" then
+		local value=C.marshal(p);local encoded=C.ser(value)
+		if type(value)=="table" and #encoded<=65536 then N.filter=C.deser(encoded);N.filterDone=true;N.save() end
+		return
+	end
+	local id=type(p)=="table" and tonumber(p.id)
+	local native=id and N.native()
+	if not native then return end
+	local ok, entry=pcall(N.util.getNotificationEntryFromNative,native,id)
+	if not ok then return end
+	local key,oneShot=N.key(entry)
+	if not key then return end
+	local order={};for _,k in ipairs(N.order) do if k~=key then order[#order+1]=k end end;N.order=order
+	if ev=="dismiss" then
+		local t=oneShot and (tonumber(entry.timestamp) or 0) or 0
+		if t~=t or math.abs(t)>=1e15 then return end
+		local list=N.keys[key] or {};if list[#list]~=t then list[#list+1]=t end
+		while #list>N.MAX_TIMES do table.remove(list,1) end
+		N.keys[key]=list;N.order[#N.order+1]=key
+	else N.keys[key]=nil end
+	N.done[id]=true;N.save()
+end
+function N.dismissedBefore(entry)
+	local key,oneShot=N.key(entry);local list=key and N.keys[key]
+	if not list then return false end
+	if not oneShot then return true end
+	local t=tonumber(entry.timestamp) or 0
+	for _,old in ipairs(list) do if math.abs(t-old)<=N.TOLERANCE then return true end end
+	return false
+end
+function N.tick()
+	local now=os.clock();if N.at and now-N.at<1 then return end;N.at=now
+	N.load();local native=N.native();if not native then return end
+	local ok,history=pcall(N.util.getHistoryFromNative,native)
+	if not ok or type(history)~="table" then return end
+	local orig=C.origCmds();if not(orig.sendCommand and orig.event)then return end
+	if N.filter and not N.filterDone then
+		N.filterDone=pcall(function()orig.sendCommand(orig.event("","Notifications","updateIgnoredTypes",N.filter))end)
+	end
+	local done={}
+	for i=math.max(1,#history-4095),#history do
+		local id=history[i]
+		if N.done[id] then done[id]=true
+		else
+			local oke,entry=pcall(N.util.getNotificationEntryFromNative,native,id)
+			if oke and type(entry)=="table" and not entry.dismissed and N.dismissedBefore(entry) then
+				if pcall(function()orig.sendCommand(orig.event("","Notifications","dismiss",{id=id}))end)then done[id]=true end
+			end
+		end
+	end
+	N.done=done
 end
 
 local function tick(pendingState)
@@ -1357,6 +1606,7 @@ local function tick(pendingState)
 	end)
 	pcall(pollBindings)
 	pcall(pollCompanies)
+	pcall(pollProgression)
 	if not U.terrainWatch then
 		local okt, errt = pcall(installTerrainWatch)
 		if not okt then U.terrainWatch = true; log("terrain tools: not watched: " .. tostring(errt)) end
@@ -1426,6 +1676,7 @@ local function tick(pendingState)
 	end
 	pcall(pollLoanView)
 	pcall(pollStatus)
+	local okn,errn=pcall(N.tick);if not okn then log("local notification preferences: "..tostring(errn))end
 	local okch, errch = pcall(pollChat)
 	if not okch then log("chat poll failed: " .. tostring(errch)) end
 	if not U.sessionInstalled and U.react and U.builtin then
