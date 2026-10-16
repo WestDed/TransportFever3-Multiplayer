@@ -42,7 +42,7 @@ namespace MPFever
 
     sealed class MainForm : Form
     {
-        public const string Version = "0.3.7-experimental";
+        public const string Version = "0.3.7-westded.1-experimental";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -60,7 +60,7 @@ namespace MPFever
         const double UnitsPerSecond = 1000;    // game time units per real second at x1
         const double HashEverySeconds = 10;
 
-        readonly TextBox nameBox = new TextBox { Text = Environment.UserName };
+        readonly TextBox nameBox = new TextBox { Text = SavedName() };
         readonly TextBox hostBox = new TextBox { Text = "127.0.0.1" };
         readonly NumericUpDown portBox = new NumericUpDown { Minimum = 1024, Maximum = 65535, Value = 28090 };
         readonly ModernButton hostBtn = new ModernButton(ButtonKind.Primary);
@@ -564,6 +564,8 @@ namespace MPFever
 
         static string SettingsFile => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "mpfever_settings.txt");
 
+        static string SavedName() => LoadSettings().TryGetValue("name", out var name) && !string.IsNullOrWhiteSpace(name) ? name : Environment.UserName;
+
         internal static Dictionary<string, string> LoadSettings()
         {
             var d = new Dictionary<string, string>();
@@ -585,8 +587,7 @@ namespace MPFever
             menuMode = true;
             running = true;
             hostBtn.Enabled = joinBtn.Enabled = localBtn.Enabled = false;
-            var st = LoadSettings();
-            menuGame = new GameLink(st.TryGetValue("name", out var n) && n != "" ? n : Environment.UserName, "menu");
+            menuGame = new GameLink(SavedName(), "menu");
             games.Add(menuGame);
             menuGame.Exited += () => { Log.W(T("Transport Fever 3 fermé : fin de MPFever.", "Transport Fever 3 closed: MPFever exits.")); try { BeginInvoke((Action)Close); } catch { } };
             MenuStatus();

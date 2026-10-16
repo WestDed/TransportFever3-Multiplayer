@@ -40,6 +40,7 @@ end
 
 local function gameSpeed()
 	local gs = api.engine.getComponent(api.engine.util.getWorld(), api.type.ComponentType.GAME_SPEED)
+	if type(gs) == "table" and gs.mpfRealSpeedup ~= nil then return gs.mpfRealSpeedup end
 	return gs and gs.speedup or 0
 end
 
@@ -3308,8 +3309,14 @@ local function runNativeReplays()
 	local now = gameTime()
 	table.sort(G.nativeQueue, before)
 	local keep = {}
+	-- A following edit can refer to the station/segments created by the previous
+	-- engine callback. Preserve the upstream replay quiet period before resolving it.
+	local function replayBusy()
+		return ((G.replayOut or 0)>0 or G.frames<(G.replayQuiet or 0)) and G.frames-(G.replaySince or 0)<1200
+	end
 	for _, a in ipairs(G.nativeQueue) do
-		if a.at <= now and ((a.fn == "terrainEdit" and G.terrainBusy) or ((a.fn == "mpfCoJoin" or a.fn == "mpfCoAssign") and (G.coBusy or G.frames - (a.recvFrame or 0) < JOIN_GATHER))) then
+		if a.at <= now and ((a.fn == "terrainEdit" and G.terrainBusy) or ((a.fn == "mpfCoJoin" or a.fn == "mpfCoAssign") and (G.coBusy or G.frames - (a.recvFrame or 0) < JOIN_GATHER))
+			or (a.fn~="terrainEdit" and a.fn~="mpfCoJoin" and a.fn~="mpfCoAssign" and replayBusy())) then
 			keep[#keep + 1] = a      -- the previous one is still being handed to the engine
 		elseif a.at <= now then
 			if a.at < now then

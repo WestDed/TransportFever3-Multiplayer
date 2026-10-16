@@ -38,6 +38,13 @@ class SchedulingTests(unittest.TestCase):
         ''')
         self.lua.execute(function_source('simApplyDue') + '\napply=simApplyDue')
         self.lua.execute(function_source('runPausedActions') + '\npaused=runPausedActions')
+        self.lua.execute('''
+            JOIN_GATHER=120;nativeArrived=function()end
+            pumpTerrain=function()end;pumpCompanies=function()end
+            replayNative=function(a)applied[#applied+1]=a.uid;G.replayOut=1;G.replaySince=G.frames end
+            G.nativeQueue={}
+        ''')
+        self.lua.execute(function_source('runNativeReplays') + '\nreplays=runNativeReplays')
 
     def check(self, code):
         self.lua.execute(code)
@@ -82,6 +89,17 @@ class SchedulingTests(unittest.TestCase):
             paused();local old=callbacks[1];G.pausedCreating=nil
             G.pendingPaused={{fn="makeLineCreateCmd",at=100,uid="2"}};paused()
             local current=G.pausedCreating;old();assert(G.pausedCreating==current)''')
+
+    def test_following_native_edit_waits_for_previous_callback_and_quiet_period(self):
+        self.check('''G.nativeQueue={{fn="makeWorldBuildProposalCmd",at=100,uid="1"},{fn="makeWorldBuildProposalCmd",at=100,uid="2"}}
+            replays();assert(#applied==1 and #G.nativeQueue==1)
+            G.replayOut=0;G.replayQuiet=4;G.frames=2;replays();assert(#applied==1)
+            G.frames=4;replays();assert(#applied==2 and #G.nativeQueue==0)''')
+
+    def test_native_edit_gate_keeps_explicit_legacy_owner_assignment_path(self):
+        self.check('''G.frames=200;G.replayOut=1;G.replaySince=200
+            G.nativeQueue={{fn="mpfCoAssign",at=100,uid="1",recvFrame=0}}
+            replays();assert(G.coBusy and G.coBusy.a.fn=="mpfCoAssign" and #G.nativeQueue==0)''')
 
 
 if __name__ == '__main__':
