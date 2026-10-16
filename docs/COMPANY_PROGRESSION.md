@@ -45,7 +45,9 @@
 
 ## Автоматическая проверка
 
-Локальный итог: **278 Python/Lua/C++ tests PASS** (231 из PR #14 + 47 новых), **288/288 текстов × 11 локалей**, `git diff --check`. Включены чистая сериализация/миграция, собственные XP/уровни, отсутствие унаследованного текущего уровня у новой компании, повторные/невалидные события, ограничения памяти, census failure, настоящий Lua scheduler и GUI recipes/IPC mirror. Harness дополнена корректной доставкой глобального `mpfever` event; первые ошибки новой GUI fixture были связаны с не заданным каталогом диагностического лога, исправлена fixture, production guard не обходился.
+Локальный итог: **281 Python/Lua/C++ tests PASS** (231 из PR #14 + 50 новых), **288/288 текстов × 11 локалей**, `git diff --check`. Включены чистая сериализация/миграция, собственные XP/уровни, отсутствие унаследованного текущего уровня у новой компании, повторные/невалидные события, ограничения памяти, census failure, настоящий Lua scheduler и GUI recipes/IPC mirror. Harness дополнена корректной доставкой глобального `mpfever` event; первые ошибки новой GUI fixture были связаны с не заданным каталогом диагностического лога, исправлена fixture, production guard не обходился.
+
+При дополнительном review сверены поля SimPerson/SimCargo с опубликованными типами. XP adapter не читает грузовой `startTime` у пассажира. Strict-field regression сначала воспроизвела ошибку, затем прошла; проверены также повторно использованная cargo entity с новым временем производства и отсутствие временного компонента нахождения в транспорте после выгрузки. Идентификатор участка основан на pickupTime/линии, поэтому исчезновение этого компонента не теряет и не удваивает XP. Это моделирование отказа typed binding, не запуск userdata двигателя.
 
 В C# suite добавлены допустимый rank request и девять отрицательных payload: лишний XP, чужой `mpfCo`, replay marker, неверные типы/границы/числовые ключи. Дополнительно проверяются пустой штатный и именованный src, отказ при неверном типе, control characters и длине >512. При первом CI реальный validator ошибочно требовал непустой src: исправлено только это поле для разрешённых events, полномочия отправителя по-прежнему проверяются отдельно. Windows fixture читает Lua как UTF-8; провал поиска Unicode-кнопки устранён без изменения проверяемой кнопки.
 
@@ -69,6 +71,7 @@
 - [Company progression state и штатные функции](https://tf3-docs.transportfever.net/en/reference/base/game_mechanics/company/company_progression_util.html).
 - [GameScriptState, события и возвращаемые множители цены](https://tf3-docs.transportfever.net/en/reference/base/scripts/gamescript.html).
 - [Перечень company mechanics и permits](https://tf3-docs.transportfever.net/en/guides/game-mechanics.html), [company_util](https://tf3-docs.transportfever.net/en/reference/base/game_mechanics/company/company_util.html).
+- [Типы SimPerson/SimCargo/SimEntityAtVehicle](https://tf3-docs.transportfever.net/en/reference/api/api/engine/Engine.Component.html).
 - [Городские эффекты landmark/headquarters](https://tf3-docs.transportfever.net/en/reference/base/landmarks/landmark_util.html), [ресурсные репозитории](https://tf3-docs.transportfever.net/en/reference/api/api/res.html).
 
 MIT и исходное авторство MPFever сохранены. Полного engine source/runtime у разработчика нет; совпадение установленного game build с этими интерфейсами должно быть проверено в игре.

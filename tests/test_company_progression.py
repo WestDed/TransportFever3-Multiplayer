@@ -135,6 +135,18 @@ class ProgressionEngine(unittest.TestCase):
     def test_person_leg_and_resync_do_not_repeat_recent_credit(self):
         self.check('E.update(state);world[40].SIM_PERSON=world[40].SIM_CARGO;world[40].SIM_CARGO=nil;E.engineEvent(state,"SimEntityAtVehicleSystem","OnCalcTicketPrice",event,10);state.value=C.deser(C.ser(state.value));reg=state.value.co;E.update(state);E.engineEvent(state,"SimEntityAtVehicleSystem","OnCalcTicketPrice",event,10);assert(P.view(reg,2).experience==106)')
 
+    def test_passenger_component_does_not_have_cargo_start_time(self):
+        self.check('''E.update(state);world[40].SIM_CARGO=nil
+            world[40].SIM_PERSON=setmetatable({cargoType=0,pickupTime=1},{__index=function(_,k)error("unknown SimPerson field "..k)end})
+            E.engineEvent(state,"SimEntityAtVehicleSystem","OnCalcTicketPrice",event,10)
+            assert(P.view(reg,2).experience==106)''')
+
+    def test_new_cargo_with_reused_entity_and_new_production_time_is_not_old_delivery(self):
+        self.check('E.update(state);E.engineEvent(state,"TransportVehicleSystem","OnCalcTicketPrice",event,10);world[40].SIM_CARGO.startTime=20;E.engineEvent(state,"TransportVehicleSystem","OnCalcTicketPrice",event,30);assert(P.view(reg,2).experience==107)')
+
+    def test_unloaded_item_does_not_need_at_vehicle_component_or_repeat_xp(self):
+        self.check('E.update(state);world[40].SIM_ENTITY_AT_VEHICLE=nil;E.engineEvent(state,"TransportVehicleSystem","OnCalcTicketPrice",event,10);world[40].SIM_ENTITY_AT_VEHICLE={lineStop1=0,roundTripCounter=1};E.engineEvent(state,"TransportVehicleSystem","OnCalcTicketPrice",event,10);assert(P.view(reg,2).experience==106)')
+
     def test_base_debug_and_unrouted_rank_events_cannot_modify_host(self):
         self.check('E.update(state);assert(growth.handleEvent(nil,nil,"","Company","applyLevel",{level=3})==nil);growth.handleEvent(nil,nil,"","","_debugAddExperience",{experience=999});assert(originalEvents==0);assert(growth.handleEvent(nil,nil,"","","handleLegacy",{})=="original")')
 

@@ -247,11 +247,14 @@ function E.engineEvent(state, id, name, param, now)
 		local lineOwner, vehicleOwner = owner(p.lineEntity), owner(p.vehicleEntity)
 		local co = lineOwner and lineOwner == vehicleOwner and CO.idOfEntity(reg, lineOwner)
 		local item = comp(p.simEntity, id == "TransportVehicleSystem" and "SIM_CARGO" or "SIM_PERSON")
-		local journey = comp(p.simEntity, "SIM_ENTITY_AT_VEHICLE")
-		if co and item and journey and type(p.basePrice) == "number" and p.basePrice > 0 and type(p.distance) == "number" and p.distance > 0 then
-			-- Engine-local entity + journey/leg identity; paid legs on different
-			-- companies' lines each earn that company's point.
-			local token = table.concat({ tostring(p.simEntity), tostring(item.startTime or 0), tostring(item.pickupTime), tostring(p.lineEntity), tostring(journey.lineStop1), tostring(journey.roundTripCounter) }, ":")
+		if co and item and integer(item.pickupTime, 0, P.MAX_XP) and type(p.basePrice) == "number" and p.basePrice > 0 and type(p.distance) == "number" and p.distance > 0 then
+			-- Boarding identity remains available after unloading too. Requiring
+			-- SIM_ENTITY_AT_VEHICLE here would lose XP when that component is gone.
+			-- One item on one boarding leg earns one point, not one per stop.
+			-- SimPerson has pickupTime, but startTime belongs to SimCargo only.
+			-- A native component can throw on a field that is not in its type.
+			local startTime = id == "TransportVehicleSystem" and item.startTime or 0
+			local token = table.concat({ tostring(p.simEntity), tostring(startTime), tostring(item.pickupTime), tostring(p.lineEntity) }, ":")
 			changed = P.credit(reg, co, token, now) or changed
 		end
 	end
