@@ -1,12 +1,27 @@
 # Продолжение проекта в следующей сессии
 
+## Личное развитие — PR #15, 16.10.2026
+
+Новый запрос заказчика разрешает реализовать личные уровни/опыт/штаб/уникальные здания, расширяя прежнее ограничение game-only. Ветка `feat/company-progression-2026-10-16` создана от свежей main 937318b7, затем fast-forward к открытому #14 для сохранения полного набора исправлений. [PR #15](https://github.com/WestDed/TransportFever3-Multiplayer/pull/15) stacked в ветку #14; автоматического merge нет. [Правила, реализация, источники, ограничения и приёмка](docs/COMPANY_PROGRESSION.md).
+
+Реализованы `co.progression` по стабильному id, 1 XP за собственный перевозочный участок с положительными basePrice/distance, отдельные level/potentialLevel, explicit rank request, vanilla thresholds/permits/ticket multipliers, frozen world-population XP update, native mirror/hash normalization, UI world-scoped mirror и вкладка развития. Initial migration сохраняет открытия существующих компаний; новые после перехода начинают с rank 1/basePopulation XP. Fixed enforcedLevel сохраняется. HQ/landmarks считаются по владельцу; census failure больше не даёт пустой used permits. Городские эффекты общие, не обещать частные бонусы всех зданий.
+
+Новый пакет **0.3.7-westded.2-experimental**, **protocol 7**, **FileVersion 0.3.7.2**; обновить полный набор у обоих. Локально **281 tests PASS**, **288 texts × 11 languages**; C# schema adds 15 checks во все runtime jobs. Exact final CI/head/artifact — в PR #15. Предыдущий artifact #14 не содержит этого развития. Документ включён в новый Windows ZIP; catalog содержит 20 ресурсов. Game NOT TESTED: реальные XP events/price booking, native HQ/Колизей/upgrade/пермишены, save/restart/resync и темп развития.
+
+Dedup хранит последние 8192 local leg tokens вне общего hash; одинаковый step не вытесняет уже учтённые tokens. При переполнении в этом step дополнительный XP не начисляется; очень поздний дубль после вытеснения из cache не имеет пожизненной защиты. Не объявлять реальные journal reconciliation/achievements/bankruptcy/другие Company actions или прежний CommandJournal cutover выполненными.
+
+Следующие записи — история предыдущих задач.
+
+
 Основной репозиторий: https://github.com/WestDed/TransportFever3-Multiplayer. Пользователь разрешил автономную работу без игры, отдельные ветки и PR, без автоматического merge. GitHub write доступ восстановлен; Desktop не требуется. Авторские репозитории не изменяем, MIT copyright arthur сохранён.
 
-## Текущее состояние 15.10.2026
+## Текущее состояние 16.10.2026
+
+Новый запрос 16.10: выполнить все проверяемые без игры пункты аудита, game-only оставить. Ветка `fix/offline-upstream-gaps-2026-10-16` поверх PR #12 ad6b6f9, отдельный stacked PR; main напрямую не меняется. [Полная матрица результата и отложенного](docs/OFFLINE_UPSTREAM_FIXES.md). Версия 0.3.7-westded.1-experimental, protocol 6, FileVersion 0.3.7.1. Выполнены portable numbers/ASCII control classes, typed waypoints/track refs/hash, indexed translateIn, rotated heavy checks с host pending state, saved purchase step/watch, paused creation callback barrier, unique save/load requests/GUI token, Lua native replay quiet gate, speed UI/real engine speed split, saved name, release-notes closure, bounded local notification preferences. Локально 231 PASS, 282 keys ×11 локалей. C# и full Windows ZIP требуют итогового CI exact head; ссылка/counters/artifact в новом PR. Native hooks/geometry proposals/hold-capture/Company actions/progression/депо/Obtain/new free transfers не менялись по явному ограничению пользователя. Не объявлять их выполненными; game NOT RETESTED. Все предыдущие записи ниже — история.
 
 Новая задача пользователя — произвольная сумма прямо в окне остановки вместо одного списка. Ветка `feat/custom-station-fee-2026-10-16` создана поверх актуального ещё открытого PR #11 (`de3dca1e3a596e2e29536d8ff3004c7a5cd7788a`, tree `cc7801106fbad3cc36e2d31bd825e804d160bf48`); отдельный PR направляется в его ветку, чтобы не потерять полный пакет механик. Реализованы input/«Применить»/Enter, целые 0..1e9, 0 в поле = free (-1 на wire), closed остаётся отдельным preset. Команда/ownership/save прежние; ошибка default 100 в старом отображении также исправлена. Добавлены 13 настоящих recipe/helper regressions, локально 175 PASS, все 282 keys переведены на 11 локалей. Точный новый PR/head/CI/artifact смотреть в GitHub; main и PR #11 автоматически не объединять. Новый GUI и расчёты с ручным тарифом ещё NOT RETESTED в игре. Порядок игрового повтора — в начале TESTING.md.
 
-Main `937318b7747eaf9048a3ebf35d30efd4d211ea0c`, PR #10 объединён пользователем. После catalog fix/Porthole пользователи действительно сыграли вместе. Porthole — TCP proxy: host предлагает localhost TCP 28090, guest принимает и вручную подключается к своему localhost. Не возвращать их на Radmin IP/Steam public-IP invite для этой схемы.
+Main `937318b7747eaf9048a3ebf35d30efd4d211ea0c`, PR #10 объединён пользователем. После catalog fix/Porthole пользователи действительно сыграли вместе. Porthole — TCP proxy: host предлагает localhost TCP 28190, guest принимает и вручную подключается к своему localhost. Не возвращать их на Radmin IP/Steam public-IP invite для этой схемы.
 
 [PR #11](https://github.com/WestDed/TransportFever3-Multiplayer/pull/11) открыт в `fix/first-coop-gameplay-2026-10-15`, прямо в main; merge не делался. Пользователь потребовал реализовать **все** замечания PLAY-01–08 до следующего игрового теста. Уточнил: 50% **на экране загрузки самой игры у брата**, после transfer. Не спрашивать это ещё раз. Новые механики/интерфейс не оставлены только в плане.
 

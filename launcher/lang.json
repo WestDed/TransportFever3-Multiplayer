@@ -3744,6 +3744,84 @@
       "ko": "0부터 1000000000까지의 정수 금액입니다. 0은 무료입니다.",
       "zh-CN": "请输入0至1000000000的整数；0表示免费。",
       "zh-TW": "請輸入0至1000000000的整數；0表示免費。"
+    },
+    "Development": {
+      "de": "Entwicklung",
+      "es": "Desarrollo",
+      "it": "Sviluppo",
+      "nl": "Ontwikkeling",
+      "pl": "Rozwój",
+      "pt-BR": "Desenvolvimento",
+      "ru": "Развитие",
+      "ja": "発展",
+      "ko": "성장",
+      "zh-CN": "发展",
+      "zh-TW": "發展"
+    },
+    "Personal rank": {
+      "de": "Eigener Rang",
+      "es": "Rango propio",
+      "it": "Rango personale",
+      "nl": "Eigen rang",
+      "pl": "Własna ranga",
+      "pt-BR": "Nível pessoal",
+      "ru": "Личный уровень",
+      "ja": "自社ランク",
+      "ko": "개인 등급",
+      "zh-CN": "本公司等级",
+      "zh-TW": "本公司等級"
+    },
+    "Personal experience": {
+      "de": "Eigene Erfahrung",
+      "es": "Experiencia propia",
+      "it": "Esperienza personale",
+      "nl": "Eigen ervaring",
+      "pl": "Własne doświadczenie",
+      "pt-BR": "Experiência pessoal",
+      "ru": "Личный опыт",
+      "ja": "自社経験値",
+      "ko": "개인 경험치",
+      "zh-CN": "本公司经验",
+      "zh-TW": "本公司經驗"
+    },
+    "Earn 1 XP per passenger or cargo item on your paid transport leg.": {
+      "de": "Erhalte 1 EP pro Fahrgast oder Frachteinheit auf deinem bezahlten Transportabschnitt.",
+      "es": "Gana 1 EXP por pasajero o unidad de carga en tu tramo de transporte de pago.",
+      "it": "Ottieni 1 PE per passeggero o unità di merce nella tua tratta a pagamento.",
+      "nl": "Verdien 1 XP per passagier of vrachteenheid op je betaalde vervoerstraject.",
+      "pl": "Zdobywaj 1 PD za pasażera lub jednostkę ładunku na swoim płatnym odcinku przewozu.",
+      "pt-BR": "Ganhe 1 EXP por passageiro ou unidade de carga no seu trecho de transporte pago.",
+      "ru": "Получайте 1 ед. опыта за пассажира или единицу груза на оплачиваемом участке своей перевозки.",
+      "ja": "自社の有料輸送区間で、乗客または貨物1単位につき経験値を1獲得します。",
+      "ko": "자사 유료 운송 구간에서 승객 또는 화물 1단위당 경험치 1을 얻습니다.",
+      "zh-CN": "在本公司的收费运输区段，每位乘客或每单位货物可获得1点经验。",
+      "zh-TW": "在本公司的收費運輸區段，每位乘客或每單位貨物可獲得1點經驗。"
+    },
+    "Apply earned rank": {
+      "de": "Erreichten Rang bestätigen",
+      "es": "Confirmar rango obtenido",
+      "it": "Conferma rango ottenuto",
+      "nl": "Behaalde rang bevestigen",
+      "pl": "Zatwierdź zdobytą rangę",
+      "pt-BR": "Confirmar nível conquistado",
+      "ru": "Подтвердить заработанный уровень",
+      "ja": "到達ランクを確定",
+      "ko": "획득한 등급 적용",
+      "zh-CN": "确认已达成等级",
+      "zh-TW": "確認已達成等級"
+    },
+    "Personal development is not available yet.": {
+      "de": "Die eigene Entwicklung ist noch nicht verfügbar.",
+      "es": "El desarrollo individual aún no está disponible.",
+      "it": "Lo sviluppo personale non è ancora disponibile.",
+      "nl": "Eigen ontwikkeling is nog niet beschikbaar.",
+      "pl": "Własny rozwój nie jest jeszcze dostępny.",
+      "pt-BR": "O desenvolvimento pessoal ainda não está disponível.",
+      "ru": "Личное развитие пока недоступно.",
+      "ja": "自社の発展はまだ利用できません。",
+      "ko": "개별 성장은 아직 사용할 수 없습니다.",
+      "zh-CN": "独立发展暂不可用。",
+      "zh-TW": "獨立發展暫不可用。"
     }
   }
 }

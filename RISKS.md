@@ -1,5 +1,9 @@
 # Риски и текущие ограничения
 
+16.10.2026, PR #15: [риски личного развития и engine gates](docs/COMPANY_PROGRESSION.md). XP теперь связан с собственными перевозками; баланс и сверка события цены с окончательным journal ещё не измерены. Городские эффекты остаются общими; личный уровень/подсчёт зданий не доказывают правильное применение всех native ограничений/улучшений.
+
+16.10: [offline fixes](docs/OFFLINE_UPSTREAM_FIXES.md) устраняют ряд data/queue/UI дефектов; оставленные game-only риски перечислены там отдельно. Rotated hash проверяет каждую тяжёлую группу раз в три checkpoints, сохраняет прежний pending mismatch и требует двух собственных наблюдений для hard difference. Это снижение числа операций, не измеренная скорость на большой карте. Native geometry, hold/capture deadlines и независимая engine economy этой работой не подтверждены.
+
 Результаты offline tests не подтверждают работу Transport Fever 3. В нашей среде игровые бинарники/saves не использовались; заказчик и брат сообщили о первом совместном запуске и обнаруженных отказах. Исправленные memory/code-execution risks и изоляция незавершённых TCP-подключений описаны в STAGE1 docs; ниже остающиеся ограничения.
 
 | Риск | Наблюдение по исходникам/стенду | Что нужно для снятия |
@@ -7,7 +11,7 @@
 | Разные симуляции мира | Каждый ПК рассчитывает мир; не полный authoritative world server | Same build/mods, game census, action-free drift и длительность |
 | Premature native apply | Автор мог применить стройку до server verdict | Hold/release/replay автору и engine gate ADR 0001 |
 | Save/load boundary | Нет production epoch/frontier transaction и drain всех callbacks | Привязать snapshot к applied frontier; crash/reconnect игровые сценарии |
-| Shared progression | Upstream читает прогресс savegame компании | Engine feasibility независимых state/permits; не считать fallback решением |
+| Личный progression | Новый adapter #15 заменяет общий reader после миграции | Совпадение game modules/payloads, реальные XP/цены/permits/save; fallback не считается PASS |
 | Финансы | CorrectMoney, частичный loan/contract routing; Obtain ещё принимает недоказанные terms | Штатный loan_util/API, ledger history/owners/insufficient funds в игре |
 | Station billing | Per-stop index не является stable visit ID | Loop/reroute/stop reorder/reload, одна оплата/нулевая сумма transfers |
 | Identity | RSA key possession и saved owner реализованы; это не Steam authentication/initial invitation | Host admission, TLS/server trust, реальные save/load/migration и backup key |

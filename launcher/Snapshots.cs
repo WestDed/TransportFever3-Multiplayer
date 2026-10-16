@@ -8,6 +8,23 @@ using System.Threading;
 
 namespace MPFever
 {
+    // Separate command identity from the host's small session counter. The same
+    // transfer is idempotent; a new host/transfer with id=1 is a different load.
+    static class SnapshotControl
+    {
+        public static string MenuSequence(string request)
+        {
+            if (!SnapshotLimits.Hex(request, 32)) throw new InvalidDataException("Invalid load request token");
+            return "r" + request;
+        }
+        public static string Payload(int id, string name, string request)
+        {
+            MenuSequence(request);
+            if (id < 1 || string.IsNullOrEmpty(name) || name.Length > 512) throw new InvalidDataException("Invalid load control");
+            return "{[\"id\"]=" + id.ToString(CultureInfo.InvariantCulture) + ",[\"name\"]=" + LuaLit.Quote(name) + ",[\"request\"]=" + LuaLit.Quote(request) + "}";
+        }
+    }
+
     static class SnapshotLimits
     {
         public const int ChunkBytes = 256 * 1024;
