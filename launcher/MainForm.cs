@@ -27,6 +27,7 @@ namespace MPFever
             Application.SetCompatibleTextRenderingDefault(false);
             Log.Init(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs"));
             MainForm.InitLanguage();
+            Log.W("MPFever " + MainForm.Version + "; protocol " + Wire.Version + "; UTC " + DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
             bool auto = args.Length > 0 && args[0] == "--autotest";
             MainForm.Dev = auto || args.Contains("--dev");
             // default: the game starts at once and the session is set up from its main menu (MPFever window)
@@ -42,7 +43,7 @@ namespace MPFever
 
     sealed class MainForm : Form
     {
-        public const string Version = "0.3.7-westded.3-experimental";
+        public const string Version = "0.3.7-westded.4-experimental";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;

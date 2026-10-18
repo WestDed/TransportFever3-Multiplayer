@@ -1,3 +1,12 @@
+0.3.7-westded.4-experimental — snapshot status backpressure (game retest pending)
+- Coalesce queued peer clocks per player and UI statuses within ordered segments.
+- Deduplicate identical session heartbeats at their earlier position; preserve every real pause/speed transition.
+- Preserve actions, money operations, chunks, load directives and all other ordered frames.
+- Keep byte/frame/in-flight/send/transfer bounds; add queue stats and startup version/UTC.
+- Real TCP benchmark now includes concurrent state traffic; deterministic blocked-writer regressions.
+- Protocol 9 / FileVersion 0.3.7.4, full package on both PCs.
+- Evidence and retest: INCIDENT_2026_10_18_SNAPSHOT_QUEUE.md.
+
 0.3.7-westded.3-experimental — map-load callback lifetime fix (game retest pending)
 - Fix the reported activeCount assertion in progression registry during map startup.
 - Never retain a callback GameScriptState; cross-script readers use current GAME_SCRIPT.state.

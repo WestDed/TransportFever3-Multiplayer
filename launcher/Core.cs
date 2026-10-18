@@ -820,7 +820,8 @@ namespace MPFever
         {
             if (!SendBulk(p, m, false))
             {
-                Log.Warn("Outgoing queue full or closed for " + (p?.Name ?? "unknown peer") + ": " + m.Kind);
+                Log.Warn("Outgoing queue full or closed for " + (p?.Name ?? "unknown peer") + ": " + m.Kind
+                    + " (" + (p?.Outbox?.Describe() ?? "no outbox") + ")");
                 if (p != null) Close(p);
             }
         }

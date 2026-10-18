@@ -1,5 +1,12 @@
 # Продолжение проекта в следующей сессии
 
+## Обрыв передачи сохранения — PR #17, 18.10.2026
+
+Main c06a075 содержит объединённый заказчиком PR #16. Новые 8 логов: host принимает клиента и сохраняет мир 171–174 MB, но исходящая очередь закрывает peer на session/peerclock/mpstatus. Последняя попытка сопоставлена по id 8/174497012 bytes/666 parts; часы двух ПК отличаются примерно на 7 часов. Verified/commit/load клиента в logs нет. В 5 из 8 попыток прямо указан queue overflow; остальные разрывы не имеют установленной причины. Raw logs/адреса/owner fingerprints в репозиторий не копировать.
+
+Ветка fix/snapshot-status-backpressure-2026-10-18 от main, PR #17 прямо в main без auto merge. BoundedOutbox: linked pending frames + bounded index последнего state segment, latest peerclock отдельно по sender/player, latest mpstatus, точный duplicate session сохраняется на прежнем месте; любая новая session и любой ordered frame очищают индекс. Вылет .3 GameScriptState fix сохранён, правила компаний/финансы/save schema прежние. Пакет .4/protocol 9/FileVersion 0.3.7.4, полный набор обоим. Логи теперь содержат версию/UTC/queue stats. [Инцидент и приёмка](docs/INCIDENT_2026_10_18_SNAPSHOT_QUEUE.md). Exact green head/run/artifact — в PR после CI, не ссылаться на прежнюю .3 как на новый фикс.
+
+
 ## Вылет запуска карты — 18.10.2026
 
 Пользователь и брат уже имеют игру и выполняют игровые испытания. На двух скриншотах fatal `m_gameScriptData.activeCount == m_initCounter + m_numUsed`, стек `[C]:get → mpfever_progression.lua:106 registry → 126 active → 176 growth.update`. Это запуск карты, не лаунчера, и не доказанная причина прежнего reconnect на 50%.
