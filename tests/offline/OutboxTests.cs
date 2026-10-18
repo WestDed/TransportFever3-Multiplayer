@@ -26,12 +26,13 @@ namespace MPFever
                 int count = 1;
                 while (count < 128 && box.Enqueue(bulk)) count++;
                 Check(count < 128, "snapshot producer respects reserved capacity");
+                Check(box.Enqueue(Session(200)), "transfer pause is queued before periodic clocks");
                 bool accepted = true;
                 var watch = Stopwatch.StartNew();
                 for (int i = 0; i < 1000; i++)
                 {
                     accepted &= box.Enqueue(Clock("Host", i));
-                    accepted &= box.Enqueue(Session(i));
+                    accepted &= box.Enqueue(Session(200));
                     accepted &= box.Enqueue(Status(i));
                 }
                 Check(accepted, "ongoing periodic statuses do not exhaust a slow snapshot peer's finite reserve");
@@ -43,7 +44,7 @@ namespace MPFever
                 var frames = sink.Messages();
                 Check(frames.Count(m => m.Kind == "resync_file") == count, "no snapshot chunk is coalesced");
                 Check(frames.Single(m => m.Kind == "peerclock").Payload == Clock("Host", 999).Payload
-                    && frames.Single(m => m.Kind == "session").Payload == Session(999).Payload
+                    && frames.Single(m => m.Kind == "session").Payload == Session(200).Payload
                     && frames.Single(m => m.Kind == "mpstatus").Payload == Status(999).Payload,
                     "latest complete clock session and UI status survive the flood");
                 Check(frames[frames.Length - 2].Kind == "act" && frames.Last().Kind == "resync_load",
@@ -55,8 +56,8 @@ namespace MPFever
                 Check(box.Enqueue(Msg.Make("chatmsg", "Host", "{}")) && sink.Started.Wait(5000), "ordering fixture writer is blocked");
                 foreach (string barrier in new[] { "act", "resync_begin", "resync_file", "resync_load", "peerleft", "hash", "money" })
                 {
-                    box.Enqueue(Clock("A", 1)); box.Enqueue(Session(1)); box.Enqueue(Status(1));
-                    box.Enqueue(Clock("A", 2)); box.Enqueue(Session(2)); box.Enqueue(Status(2));
+                    box.Enqueue(Session(1)); box.Enqueue(Clock("A", 1)); box.Enqueue(Status(1));
+                    box.Enqueue(Clock("A", 2)); box.Enqueue(Session(1)); box.Enqueue(Status(2));
                     Check(box.Enqueue(Msg.Make(barrier, "Host", "{}")), "queue accepts ordering barrier " + barrier);
                 }
                 sink.Release.Set();
@@ -65,7 +66,7 @@ namespace MPFever
                 int at = 1;
                 foreach (string barrier in new[] { "act", "resync_begin", "resync_file", "resync_load", "peerleft", "hash", "money" })
                 {
-                    Check(frames[at++].Payload == Clock("A", 2).Payload && frames[at++].Payload == Session(2).Payload
+                    Check(frames[at++].Payload == Session(1).Payload && frames[at++].Payload == Clock("A", 2).Payload
                         && frames[at++].Payload == Status(2).Payload && frames[at++].Kind == barrier,
                         "coalescing preserves state and order on each side of " + barrier);
                 }
@@ -74,7 +75,7 @@ namespace MPFever
             using (var box = new BoundedOutbox(sink, () => sink.Release.Set(), "State identity"))
             {
                 box.Enqueue(Clock("InFlight", 0)); Check(sink.Started.Wait(5000), "state frame can be in flight");
-                box.Enqueue(Clock("A", 1)); box.Enqueue(Session(1)); box.Enqueue(Clock("B", 1));
+                box.Enqueue(Session(1)); box.Enqueue(Clock("A", 1)); box.Enqueue(Clock("B", 1));
                 box.Enqueue(Clock("A", 2)); box.Enqueue(Clock("A", 3, "OtherHost"));
                 box.Enqueue(Clock("InFlight", 1));
                 sink.Release.Set();
@@ -85,6 +86,21 @@ namespace MPFever
                     "replacement moves to tail instead of advancing a newer clock ahead of earlier state");
                 Check(frames[4].From == "OtherHost" && frames[5].Payload == Clock("InFlight", 1).Payload,
                     "clock key includes player and sender without touching the active write");
+            }
+            using (var sink = new PausedWriter())
+            using (var box = new BoundedOutbox(sink, () => sink.Release.Set(), "Session transitions"))
+            {
+                box.Enqueue(Msg.Make("chatmsg", "Host", "{}")); Check(sink.Started.Wait(5000), "session transition fixture is blocked");
+                box.Enqueue(Session(1)); box.Enqueue(Clock("A", 1)); box.Enqueue(Session(1));
+                box.Enqueue(Session(2)); box.Enqueue(Clock("A", 2)); box.Enqueue(Session(2));
+                box.Enqueue(Session(1)); box.Enqueue(Clock("A", 3));
+                sink.Release.Set();
+                Wait(() => sink.Messages().Length == 7, "every changed session and clock on either side is retained");
+                var frames = sink.Messages();
+                Check(frames[1].Payload == Session(1).Payload && frames[2].Payload == Clock("A", 1).Payload
+                    && frames[3].Payload == Session(2).Payload && frames[4].Payload == Clock("A", 2).Payload
+                    && frames[5].Payload == Session(1).Payload && frames[6].Payload == Clock("A", 3).Payload,
+                    "pause and resume transitions remain ordering fences and identical heartbeats stay before later clocks");
             }
             using (var sink = new PausedWriter())
             using (var box = new BoundedOutbox(sink, () => sink.Release.Set(), "Hard cap"))
