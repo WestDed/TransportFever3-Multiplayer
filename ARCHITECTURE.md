@@ -1,5 +1,7 @@
 # Архитектура Transport Fever 3 Multiplayer
 
+18.10: [snapshot queue backpressure](docs/INCIDENT_2026_10_18_SNAPSHOT_QUEUE.md), пакет .4/protocol 9. BoundedOutbox объединяет pending peerclock/mpstatus только в последнем сегменте между ordered frames. Session changes — отдельные границы порядка; идентичный heartbeat сохраняет прежнюю позицию. FIFO команд/частей snapshot и лимиты 8 MiB/128 frames, включая in-flight, сохранены.
+
 18.10.2026: [исправление вылета загрузки](docs/INCIDENT_2026_10_18_MAP_LOAD.md). `GameScriptState` используется только в получившем его callback. Чужие progression handlers/readers находят `mpfever_1::/mpfever.gs` через `gameScriptSystem` и читают `GAME_SCRIPT.state.co`; engine handle и entity не кешируются между вызовами/мирами. Пакет .3, protocol 8. Ниже — история прежних версий.
 
 16.10.2026, PR #15: [личное развитие компаний](docs/COMPANY_PROGRESSION.md) хранится в `co.progression` по стабильному company id. Собственные XP за транспортные участки, подтверждение уровня, штатные пороги/permits/ticket multipliers, native state mirror и нормализованный hash; GUI получает world-scoped view. Старый общий reader используется до успешного перехода. Новые engine adapters ещё NOT TESTED в TF3; города и городские эффекты остаются общими. Пакет 0.3.7-westded.2-experimental, protocol 7.
@@ -12,7 +14,7 @@
 
 ```mermaid
 flowchart TD
-  H["Лаунчер хоста"] -->|"TCP, протокол 8"| C["Лаунчер клиента"]
+  H["Лаунчер хоста"] -->|"TCP, протокол 9"| C["Лаунчер клиента"]
   H -->|"Файловый IPC"| HL["Lua хоста"]
   C -->|"Файловый IPC"| CL["Lua клиента"]
   HL --> HN["Нативные hooks хоста"]
@@ -41,7 +43,7 @@ Snapshot — read-only source, chunks 256 KiB, SHA-256, bounded per-peer writers
 
 ## Протокол и доверие
 
-UTF-8 строки `kind TAB from TAB payload LF`, payload — ограниченные data-only Lua tables. Protocol 8 согласуется в challenge/signed join до принятия входа; sender определяется сокетом. До принятия join сокет не получает Broadcast/адресные сообщения сессии. Подтверждение connection ставится в очередь до публикации Joined под общим lock; первый frame ограничен 4 КиБ, после него сохраняется общий лимит и уже buffered data. Повторный join, неизвестные join fields, host controls с клиента, malformed types/limits отказывают. Восемь TCP-клиентов (хост играет дополнительно) + четыре ограниченных handshakes, reconnect по credential допускается на полном сервере.
+UTF-8 строки `kind TAB from TAB payload LF`, payload — ограниченные data-only Lua tables. Protocol 9 согласуется в challenge/signed join до принятия входа; sender определяется сокетом. До принятия join сокет не получает Broadcast/адресные сообщения сессии. Подтверждение connection ставится в очередь до публикации Joined под общим lock; первый frame ограничен 4 КиБ, после него сохраняется общий лимит и уже buffered data. Повторный join, неизвестные join fields, host controls с клиента, malformed types/limits отказывают. Восемь TCP-клиентов (хост играет дополнительно) + четыре ограниченных handshakes, reconnect по credential допускается на полном сервере.
 
 Версия wire не проверяет одинаковость EXE/DLL/mods/game build. TCP не шифруется; initial invitation, server authentication/Steam proof остаются задачами. Межсессионный possession claim реализован; engine save/load/reconnect требует испытаний. Для выпуска нужна подтверждённая identity и матрица game permissions/цены/refs.
 

@@ -25,7 +25,7 @@ namespace MPFever
         {
             var rows=new List<Result>();
             foreach(int peers in new[]{1,4,8}) rows.Add(RunCase(peers,32*1024*1024));
-            var report=new {schema=1,gameTested=false,network="loopback TCP",generatedData=true,os=Environment.OSVersion.ToString(),runtime=Environment.Version.ToString(),results=rows};
+            var report=new {schema=1,gameTested=false,network="loopback TCP",generatedData=true,periodicStateTraffic=true,os=Environment.OSVersion.ToString(),runtime=Environment.Version.ToString(),results=rows};
             Directory.CreateDirectory("audit-results");
             File.WriteAllText("audit-results/tcp-load.json",JsonSerializer.Serialize(report,new JsonSerializerOptions{WriteIndented=true}));
             Console.WriteLine("PASS loopback TCP benchmark, JSON saved to audit-results/tcp-load.json. No game.");
@@ -82,9 +82,34 @@ namespace MPFever
                     {
                         var peers=relay.Peers();var workers=peers.Select(peer=>new Thread(()=>
                         {try{source.SendTo(m=>relay.SendBulk(peer,m),"Host",()=>Volatile.Read(ref tearingDown)!=0);}catch(Exception e){errors.Enqueue(e);relay.Close(peer);}}){IsBackground=true}).ToArray();
-                        foreach(var worker in workers)worker.Start();
-                        if(!complete.Wait(TimeSpan.FromMinutes(2)))throw new Exception("Benchmark transfer timed out");
-                        if(!workers.All(w=>w.Join(5000)) || !errors.IsEmpty)throw new AggregateException("Benchmark transfer failed",errors);
+                        using(var stopStatus=new ManualResetEventSlim())
+                        {
+                            var statuses=new Thread(()=>
+                            {
+                                int n=0;
+                                try
+                                {
+                                    while(!stopStatus.IsSet)
+                                    {
+                                        relay.Broadcast(Msg.Make("session","Host","{[\"started\"]=true,[\"speed\"]=0,[\"pauseAt\"]=200}"));
+                                        relay.Broadcast(Msg.Make("mpstatus","Host","{[\"text\"]=\"loading "+(n++)+"\"}"));
+                                        foreach(var peer in peers)
+                                            relay.Broadcast(Msg.Make("peerclock","Host","{[\"name\"]="+LuaLit.Quote(peer.Name)+",[\"t\"]=200,[\"ah\"]=3}"));
+                                        stopStatus.Wait(25);
+                                    }
+                                }
+                                catch(Exception e){errors.Enqueue(e);}
+                            }){IsBackground=true,Name="Snapshot benchmark status updates"};
+                            statuses.Start();
+                            try
+                            {
+                                foreach(var worker in workers)worker.Start();
+                                if(!complete.Wait(TimeSpan.FromMinutes(2)))throw new Exception("Benchmark transfer timed out");
+                                if(!workers.All(w=>w.Join(5000)))throw new Exception("Benchmark send workers did not stop");
+                            }
+                            finally {stopStatus.Set();if(!statuses.Join(5000))throw new Exception("Benchmark status worker did not stop");}
+                            if(!errors.IsEmpty)throw new AggregateException("Benchmark transfer failed",errors);
+                        }
                         time.Stop();process.Refresh();peak=Math.Max(peak,process.WorkingSet64);
                         var result=new Result {Peers=count,SnapshotBytes=size,Seconds=time.Elapsed.TotalSeconds,AggregateMiBPerSecond=(double)size*count/1048576/time.Elapsed.TotalSeconds,CpuSeconds=(process.TotalProcessorTime-cpu).TotalSeconds,PeakWorkingSetBytes=peak,Sha256=source.Manifest.Sha256};
                         Console.WriteLine(JsonSerializer.Serialize(result));return result;

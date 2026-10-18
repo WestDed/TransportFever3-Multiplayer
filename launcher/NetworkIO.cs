@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 
@@ -10,7 +11,7 @@ namespace MPFever
     // Limits are checked before a frame or file delta can grow the allocation.
     static class Wire
     {
-        public const int Version = 8;
+        public const int Version = 9;
         public const int MaxFrameBytes = LuaLit.MaxBytes + 256;
         public const int MaxPeers = 8;
         public const int HandshakeReserve = 4;
@@ -157,12 +158,21 @@ namespace MPFever
         public const int MaxQueuedBytes = 8 * 1024 * 1024, MaxQueuedFrames = 128;
         public const int ReservedControlBytes = 512 * 1024, ReservedControlFrames = 96;
         readonly object gate = new object();
-        readonly Queue<byte[]> queue = new Queue<byte[]>();
+        sealed class Frame
+        {
+            public byte[] Data;
+            public string StateKey;
+        }
+        readonly LinkedList<Frame> queue = new LinkedList<Frame>();
+        // Only the final contiguous state-update segment is replaceable. Any
+        // ordered message (including every snapshot part) starts a new segment.
+        readonly Dictionary<string, LinkedListNode<Frame>> latest = new Dictionary<string, LinkedListNode<Frame>>(StringComparer.Ordinal);
         readonly Stream stream;
         readonly Action close;
         readonly string name;
         readonly int byteLimit;
         int bytes, frames;
+        long coalesced;
         bool stopped;
         public BoundedOutbox(Stream stream, Action close, string name, int byteLimit = MaxQueuedBytes)
         {
@@ -172,6 +182,8 @@ namespace MPFever
         public bool Enqueue(Msg m, bool wait = false)
         {
             var data = Wire.Encode(m);
+            string key = StateKey(m);
+            bool session = m.Kind == "session";
             // A snapshot producer must not consume the slots needed by ordinary
             // status/session messages: Relay.Send would otherwise close a healthy
             // downloading peer. Keep the existing FIFO and total memory limits.
@@ -182,16 +194,55 @@ namespace MPFever
             var time = Stopwatch.StartNew();
             lock (gate)
             {
-                while (!stopped && (bytes + data.Length > budget || frames >= frameBudget))
+                LinkedListNode<Frame> previous;
+                while (true)
                 {
+                    if (stopped) return false;
+                    previous = null;
+                    if (key != null) latest.TryGetValue(key, out previous);
+                    if (session && previous != null)
+                    {
+                        // A repeated pause/speed heartbeat adds no information.
+                        // Keep its EARLIER position so the pause still precedes
+                        // later clocks. Every actual session change is a fence.
+                        if (data.SequenceEqual(previous.Value.Data)) { coalesced++; return true; }
+                        previous = null;
+                    }
+                    int oldBytes = previous == null ? 0 : previous.Value.Data.Length;
+                    int oldFrames = previous == null ? 0 : 1;
+                    if (bytes - oldBytes + data.Length <= budget && frames - oldFrames < frameBudget) break;
                     if (!wait || time.ElapsedMilliseconds >= 120000) return false;
                     Monitor.Wait(gate, 100);
                 }
-                if (stopped) return false;
-                queue.Enqueue(data); bytes += data.Length; frames++;
+                if (previous != null)
+                {
+                    queue.Remove(previous); bytes -= previous.Value.Data.Length; frames--; coalesced++;
+                }
+                // Append a replacement at its NEW position. Updating the old
+                // slot would let a newer clock overtake earlier traffic.
+                if (key == null || session) latest.Clear();
+                var node = queue.AddLast(new Frame { Data = data, StateKey = key });
+                if (key != null) latest[key] = node;
+                bytes += data.Length; frames++;
                 Monitor.PulseAll(gate);
                 return true;
             }
+        }
+        static string StateKey(Msg m)
+        {
+            if (m.Kind == "session" || m.Kind == "mpstatus") return m.From + "\0" + m.Kind;
+            if (m.Kind != "peerclock" || m.Payload.Length > 4096) return null;
+            // All forwarded clocks have the HOST as From; payload.name is the
+            // player whose clock must be kept independently. Malformed/unknown
+            // clocks remain ordered instead of being accidentally discarded.
+            var data = LuaLit.Parse(m.Payload) as Dictionary<object, object>;
+            if (data == null || !data.TryGetValue("name", out var value) || !(value is string name) || name.Length == 0 || name.Length > 128) return null;
+            return m.From + "\0peerclock\0" + name;
+        }
+        public string Describe()
+        {
+            lock (gate) return "frames=" + frames + "/" + MaxQueuedFrames + ", bytes=" + bytes + "/" + byteLimit
+                + ", coalesced=" + coalesced + ", closed=" + stopped;
         }
         void WriteLoop()
         {
@@ -204,7 +255,11 @@ namespace MPFever
                     {
                         while (!stopped && queue.Count == 0) Monitor.Wait(gate);
                         if (stopped) return;
-                        data = queue.Dequeue();
+                        var node = queue.First;
+                        queue.RemoveFirst();
+                        data = node.Value.Data;
+                        if (node.Value.StateKey != null && latest.TryGetValue(node.Value.StateKey, out var pending) && pending == node)
+                            latest.Remove(node.Value.StateKey);
                     }
                     stream.Write(data, 0, data.Length);
                     lock (gate) { bytes -= data.Length; frames--; Monitor.PulseAll(gate); }
@@ -220,7 +275,7 @@ namespace MPFever
         }
         public void Dispose()
         {
-            lock (gate) { stopped = true; queue.Clear(); Monitor.PulseAll(gate); }
+            lock (gate) { stopped = true; queue.Clear(); latest.Clear(); Monitor.PulseAll(gate); }
         }
     }
 }
