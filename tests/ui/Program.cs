@@ -78,6 +78,8 @@ static class LauncherUiTests
                 Check((bool)Get(form,"lobbyLaunchFailed") && !(bool)Get(form,"lobbyGameLaunched"),"current launch reaches guarded path and missing executable fails closed");
                 Check(((Button)Get(form,"lobbyLaunch")).Enabled,"failed process start offers explicit retry in actual window");
                 Check(!(bool)link.GetType().GetProperty("GameRunning",Instance).GetValue(link),"queued launch tests never started a game process");
+                Set(form,"running",true);Call(form,"UpdateLobbyUi");((Button)Get(form,"lobbyCancel")).PerformClick();Call(form,"UpdateLobbyUi");Layout(form);
+                Check(!(bool)Get(form,"lobbyLaunchFailed") && !((Button)Get(form,"lobbyLaunch")).Enabled,"cancel clears failed-launch retry and cannot launch outside a room");
                 form.Close();
             }
             Console.WriteLine("Windows WinForms lobby: "+checks+" checks passed; game initialization disabled, no game was run.");return 0;
