@@ -1,3 +1,8 @@
+ОБНОВЛЕНИЕ .5 / protocol 10: лобби перед запуском TF3, проверка точных локальных .sav.
+Одинаковый полный новый пакет обоим. Инструкция, ограничения и игровой повтор:
+LOBBY_AND_SNAPSHOT_CACHE.md. Игра не запускается до кнопки хоста после готовности клиентов.
+Это экспериментальная сборка; новые изменения в TF3 ещё не проверены.
+
 ОБНОВЛЕНИЕ .4: исправлен overflow периодических статусов во время передачи большого мира.
 Полный пакет обоим; старый save отдельно. Игра/лаунчер полностью закрыты перед обновлением.
 Описание и повтор: INCIDENT_2026_10_18_SNAPSHOT_QUEUE.md. Проверка в игре ещё нужна.
@@ -7,7 +12,7 @@
 Описание и повтор исходного запуска: INCIDENT_2026_10_18_MAP_LOAD.md.
 Новый запуск карты ещё требует проверки в TF3.
 
-MPFever 0.3.7-westded.4-experimental - Installation and first game
+MPFever 0.3.7-westded.5-experimental - Installation and first game
 ========================================================
 
 REQUIREMENTS (every player)
@@ -62,8 +67,7 @@ c) Same local network: use the host's local address (for example 192.168.1.20).
 
 4. PLAY
 -------
-Everybody: start MPFever.exe. Transport Fever 3 starts by itself (the MPFever window
-stays minimized). In the game's main menu, click "Multiplayer (MPFever)" (under the
+Legacy in-game path after TF3 is already running: click "Multiplayer (MPFever)" (under the
 cards) and type your player name.
 
 Host:

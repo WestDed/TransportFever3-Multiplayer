@@ -1,5 +1,7 @@
 # Архитектура Transport Fever 3 Multiplayer
 
+19.10: [лобби и точный кеш снимков](docs/LOBBY_AND_SNAPSHOT_CACHE.md), .5/protocol 10. Нормальный Init теперь открывает лобби без игрового процесса; существующие Relay/Client и порт используются для room/revision/ready. Перед bulk — offer → exact local SHA+atomic commit/receipt либо need → прежние chunks. Подтверждения привязаны к Peer+id+transfer; при уходе клиентов ожидание прекращается. Подробности, ограничения и реальные наблюдения .4 — в документе.
+
 18.10: [snapshot queue backpressure](docs/INCIDENT_2026_10_18_SNAPSHOT_QUEUE.md), пакет .4/protocol 9. BoundedOutbox объединяет pending peerclock/mpstatus только в последнем сегменте между ordered frames. Session changes — отдельные границы порядка; идентичный heartbeat сохраняет прежнюю позицию. FIFO команд/частей snapshot и лимиты 8 MiB/128 frames, включая in-flight, сохранены.
 
 18.10.2026: [исправление вылета загрузки](docs/INCIDENT_2026_10_18_MAP_LOAD.md). `GameScriptState` используется только в получившем его callback. Чужие progression handlers/readers находят `mpfever_1::/mpfever.gs` через `gameScriptSystem` и читают `GAME_SCRIPT.state.co`; engine handle и entity не кешируются между вызовами/мирами. Пакет .3, protocol 8. Ниже — история прежних версий.

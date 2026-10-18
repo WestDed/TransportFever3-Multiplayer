@@ -1,10 +1,12 @@
 # MPFever – Multiplayer for Transport Fever 3
 
+19.10: [лобби перед запуском игры, проверка сохранений и исправление reconnect](docs/LOBBY_AND_SNAPSHOT_CACHE.md), PR #18. Текущий пакет **.5 / protocol 10**. Игра запускается кнопкой хоста после готовности участников; точный локальный снимок можно использовать без bulk-передачи. Новый код требует игрового повтора.
+
 18.10: [исправление обрыва передачи большого сохранения](docs/INCIDENT_2026_10_18_SNAPSHOT_QUEUE.md). Старые периодические статусы больше не заполняют конечный резерв исходящей очереди. Изменения паузы/скорости, команды и части сохранения сохраняют порядок. Новый пакет .4 требует игрового повтора на обоих ПК.
 
 Ветка разработки WestDed: результаты offline hardening и их ограничения — [FEATURES](FEATURES.md), [TESTING](TESTING.md), [HANDOFF](HANDOFF.md). TF3 в нашей среде не запускалась; следующие описания upstream не являются подтверждением игровых функций этой копии. Журнал центрального порядка подготовлен отдельно и ещё не включён.
 
-В 0.3.7-experimental добавлено игровое окно **«Компании и соглашения»**: права на дороги, тарифы и собственные заказы. [Инструкция и правила](docs/BUSINESS_MECHANICS.md); игровой повтор новых механик пока NOT RETESTED. Текущий пакет: **0.3.7-westded.4-experimental, protocol 9**; нужен одинаковый полный набор у всех игроков.
+В 0.3.7-experimental добавлено игровое окно **«Компании и соглашения»**: права на дороги, тарифы и собственные заказы. [Инструкция и правила](docs/BUSINESS_MECHANICS.md); игровой повтор новых механик пока NOT RETESTED. Текущий пакет: **0.3.7-westded.5-experimental, protocol 10**; нужен одинаковый полный набор у всех игроков.
 
 18.10: исправлен [вылет при запуске карты](docs/INCIDENT_2026_10_18_MAP_LOAD.md) со стеком `mpfever_progression.lua: registry → active → update`. Межскриптовый reader больше не использует сохранённый `GameScriptState`; читает текущую таблицу через `GAME_SCRIPT.state`. Автоматические проверки не заменяют повтор исходного запуска в TF3.
 
@@ -15,7 +17,7 @@ Experimental multiplayer for Transport Fever 3. Several players play the same wo
 - in **one shared company** (co-op);
 - or **each with their own company**. This second mode is still in development and has many bugs: use it to test and help.
 
-The game starts from `MPFever.exe`. A multiplayer button in the main menu lets you host one of your savegames or join a host by IP address; the host's game is received automatically. Steam invitations are supported.
+Start `MPFever.exe` to open the prelaunch lobby. The host selects an existing save and company mode; clients connect and confirm readiness before the host launches TF3 on the connected PCs. The authoritative snapshot is verified against local saves/cache before downloading. See [setup, limits and game acceptance](docs/LOBBY_AND_SNAPSHOT_CACHE.md). The in-game menu remains available once TF3 is running.
 
 Enjoying MPFever? You can support its development on [Ko-fi](https://ko-fi.com/H2H717LY5N).
 

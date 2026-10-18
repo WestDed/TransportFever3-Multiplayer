@@ -1,3 +1,9 @@
+WESTDED .5 / protocol 10: PRELAUNCH LOBBY + EXACT LOCAL SAVE CACHE.
+Start MPFever.exe with TF3 closed; host selects a save, clients connect and ready,
+then the host launches TF3. See LOBBY_AND_SNAPSHOT_CACHE.md for the current flow.
+Full same package on both PCs. New TF3/Porthole acceptance pending.
+Earlier notes below are historical.
+
 WESTDED .4 SNAPSHOT QUEUE FIX: protocol 9.
 See INCIDENT_2026_10_18_SNAPSHOT_QUEUE.md. Install the full package on both PCs.
 The .3 map-load fix is preserved; real game/Porthole retest pending.
@@ -7,7 +13,7 @@ See INCIDENT_2026_10_18_MAP_LOAD.md; restart TF3 and install the full package on
 Personal company development, migration, headquarters/landmarks and game acceptance: COMPANY_PROGRESSION.md. Component tests are not game tests. The upstream text below describes older behavior where noted.
 
 MPFever - Multiplayer for Transport Fever 3
-Version 0.3.7-westded.4-experimental
+Version 0.3.7-westded.5-experimental
 ===========================================
 
 MPFever lets several players play the same Transport Fever 3 world together, each one

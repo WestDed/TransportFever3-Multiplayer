@@ -1,5 +1,7 @@
 # Риски и текущие ограничения
 
+19.10: [новые результаты .4 и ограничения .5](docs/LOBBY_AND_SNAPSHOT_CACHE.md). Повторный download 21:33 при ~189 MB против 1:47/~169 MB; причина падения темпа не установлена. Подтверждены отказы schema для speed=3, исправлены в .5. Лобби readiness не равно engine-ready. Кеш требует точного SHA и дополнительного диска, не проверяет все сторонние моды/версию TF3. Команды во время recovery и script:loan/nodeConfigs drift не объявлены устранёнными.
+
 18.10: [подтверждённый обрыв передачи большого snapshot](docs/INCIDENT_2026_10_18_SNAPSHOT_QUEUE.md). Конечный reserve для control traffic не выдерживал непрерывных session/peerclock/mpstatus. .4 ограничивает повторные статусы без потери ordered traffic. Это не исправление качества Porthole/WAN и не проверка engine load; send/transfer limits остаются конечными. Нагрузка теперь включает concurrent periodic status traffic.
 
 18.10.2026: **подтверждён игровой вылет .2** в progression registry при старте карты. Сохранённый GameScriptState читался из другого callback; этот доступ удалён в .3. [Инцидент, граница доказательства и приёмка](docs/INCIDENT_2026_10_18_MAP_LOAD.md). Native assertion не ловится Lua pcall. Fixtures теперь моделируют истечение callback handle, но безопасный ECS reader и запуск карты должны пройти игровой повтор. Прежний зелёный CI не закрывал этот риск.

@@ -164,7 +164,7 @@ namespace MPFever
         readonly List<string> autoReport = new List<string>();
         readonly Dictionary<string, string> autoDone = new Dictionary<string, string>();
 
-        public MainForm(bool autotest = false)
+        public MainForm(bool autotest = false,bool initializeOnShown = true)
         {
             this.autotest = autotest;
             BackColor = Theme.Bg;
@@ -193,7 +193,7 @@ namespace MPFever
             x4Btn.Click += (s, e) => SetSpeed(4, T("hôte", "host"));
             detBtn.Click += (s, e) => new Thread(RunDeterminism) { IsBackground = true }.Start();
 
-            Shown += (s, e) => Init();
+            if(initializeOnShown)Shown += (s, e) => Init();
             var uiTimer = new System.Windows.Forms.Timer { Interval = 500 };
             uiTimer.Tick += (s, e) => RefreshStatus();
             uiTimer.Start();
