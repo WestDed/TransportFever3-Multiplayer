@@ -61,7 +61,23 @@ static class LauncherUiTests
                 Check(!((Button)Get(form,"lobbyLaunch")).Enabled,"actual window disables start after reconnect invalidates ready");
                 ((Button)Get(form,"lobbyCancel")).PerformClick();Call(form,"UpdateLobbyUi");Layout(form);
                 Check(Get(form,"hostLobby")==null && ((Button)Get(form,"hostBtn")).Enabled,"actual cancel button resets room and enables hosting again");
-                Check(Get(form,"menuGame")==null,"UI tests never create or launch a game");
+                Check(Get(form,"menuGame")==null,"lobby controls do not create a game process");
+                // Exercise the actual queued callbacks, not a reimplementation.
+                // A null gameDir guarantees any attempted launch fails before
+                // Process.Start; lobbyLaunchFailed reveals such an attempt.
+                var link=Activator.CreateInstance(assembly.GetType("MPFever.GameLink"),Instance,null,new object[]{"ui-lifetime","menu"},null);
+                Set(form,"menuGame",link);((IList)Get(form,"games")).Add(link);Set(form,"gameDir",null);
+                Call(form,"QueueLobbyLaunch",new object[]{null,null});
+                Call(form,"EndSession",new object[]{null});Layout(form);
+                Check(!(bool)Get(form,"lobbyLaunchFailed"),"actual queued launch is discarded after session cancellation");
+                Call(form,"QueueLobbyLaunch",new object[]{null,(Func<bool>)(()=>false)});Layout(form);
+                Check(!(bool)Get(form,"lobbyLaunchFailed"),"actual queued launch is discarded for disconnected client in same session");
+                Call(form,"QueueLobbyLaunch",new object[]{"different-room",null});Layout(form);
+                Check(!(bool)Get(form,"lobbyLaunchFailed"),"actual queued launch is bound to current lobby room");
+                Call(form,"QueueLobbyLaunch",new object[]{null,(Func<bool>)(()=>true)});Layout(form);
+                Check((bool)Get(form,"lobbyLaunchFailed") && !(bool)Get(form,"lobbyGameLaunched"),"current launch reaches guarded path and missing executable fails closed");
+                Check(((Button)Get(form,"lobbyLaunch")).Enabled,"failed process start offers explicit retry in actual window");
+                Check(!(bool)link.GetType().GetProperty("GameRunning",Instance).GetValue(link),"queued launch tests never started a game process");
                 form.Close();
             }
             Console.WriteLine("Windows WinForms lobby: "+checks+" checks passed; game initialization disabled, no game was run.");return 0;
