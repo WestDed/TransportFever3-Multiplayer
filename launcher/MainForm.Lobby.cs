@@ -116,7 +116,7 @@ namespace MPFever
             if(view.Phase=="launching" && !lobbyGameLaunched && lobbyPeerName!=null && view.Members.TryGetValue(lobbyPeerName,out var memberReady) && memberReady)
             {
                 if(view.Version!=Version || view.Content!=lobbyContent || !view.Members.Values.All(v=>v))throw new InvalidDataException("Incompatible or unready lobby launch");
-                BeginInvoke((Action)LaunchLobbyGame);
+                QueueLobbyLaunch(view.Room);
             }
         }
         void LaunchLobby()
@@ -131,6 +131,15 @@ namespace MPFever
                 BroadcastLobby();LaunchLobbyGame();
             }
             catch(Exception e) { Log.Err("Lobby launch: "+e.Message); }
+        }
+        void QueueLobbyLaunch(string room=null,Func<bool> current=null)
+        {
+            int generation=sessionGen;
+            BeginInvoke((Action)(()=>
+            {
+                lock(sessionGate)
+                    if(generation==sessionGen && (current==null || current()) && (room==null || lobbyView!=null && lobbyView.Room==room))LaunchLobbyGame();
+            }));
         }
         void LaunchLobbyGame()
         {

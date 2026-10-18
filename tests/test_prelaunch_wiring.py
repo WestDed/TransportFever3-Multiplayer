@@ -38,7 +38,10 @@ class PrelaunchWiringTests(unittest.TestCase):
         receive=body(self.lobby,'void ReceiveLobby(','void LaunchLobby()')
         self.assertIn('view.Members.Values.All',receive)
         self.assertIn('view.Content!=lobbyContent',receive)
-        self.assertIn('BeginInvoke((Action)LaunchLobbyGame)',receive)
+        self.assertIn('QueueLobbyLaunch(view.Room)',receive)
+        scheduled=body(self.lobby,'void QueueLobbyLaunch(','void LaunchLobbyGame()')
+        self.assertIn('lock(sessionGate)',scheduled)
+        self.assertIn('generation==sessionGen',scheduled)
 
     def test_cache_negotiation_is_on_live_network_path(self):
         self.assertIn('OnSnapshotOffer(game,m,client)',self.main)
@@ -62,6 +65,8 @@ class PrelaunchWiringTests(unittest.TestCase):
         self.assertIn('gen==sessionGen',self.cache)
         commit=self.cache[self.cache.index('void CommitSnapshot('):]
         self.assertIn('lock(snapshotCommitGate)',commit)
+        self.assertIn('lock(sessionGate)',commit)
+        self.assertIn('lock(sessionGate) { sessionGen++;clientCancelled = true; }',self.main)
         self.assertLess(commit.index('if(!current())return;'),commit.index('completed.CommitTo'))
         self.assertLess(commit.rindex('if(!current())return;'),commit.index('loadingClients[game]'))
 

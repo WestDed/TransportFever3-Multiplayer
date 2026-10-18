@@ -68,20 +68,23 @@ namespace MPFever
                 }
                 if(saved==0)throw new IOException("No snapshot could be committed; game was not asked to load");
                 try {snapshotCache.Store(completed);} catch(IOException e) {Log.Warn("Optional snapshot cache: "+e.Message);} catch(UnauthorizedAccessException e) {Log.Warn("Optional snapshot cache: "+e.Message);}
-                if(!current())return;
-                lock(snapshotReceivers)loadingClients[game]=new LoadingClient {Manifest=completed.Manifest,Client=client,LastSent=DateTime.MinValue};
-                client.Send(Msg.Make("resync_received",game.Name,"{[\"id\"]="+completed.Manifest.Id+",[\"transfer\"]="+LuaLit.Quote(completed.Manifest.Transfer)+"}"));
-                Log.W("["+game.Name+"] host snapshot verified and committed: "+completed.Manifest.Bytes+" bytes; "+(cached?"exact local cache/save hit, no bulk download":"downloaded"));
-                if(menuMode && !game.InGame)
+                lock(sessionGate)
                 {
-                    menuPhase="loading";menuText=T("Chargement de la partie de l'hôte...","Loading the host's game...");
-                    menuLoad=name;menuLoadSeq=SnapshotControl.MenuSequence(completed.Manifest.Transfer);MenuStatus();
-                    // A late joiner has no waiting-room launch packet. Its game is
-                    // started only after the authoritative snapshot has been verified.
-                    if(prelaunchLobby && !lobbyGameLaunched)BeginInvoke((Action)LaunchLobbyGame);
-                    return;
+                    if(!current())return;
+                    lock(snapshotReceivers)loadingClients[game]=new LoadingClient {Manifest=completed.Manifest,Client=client,LastSent=DateTime.MinValue};
+                    client.Send(Msg.Make("resync_received",game.Name,"{[\"id\"]="+completed.Manifest.Id+",[\"transfer\"]="+LuaLit.Quote(completed.Manifest.Transfer)+"}"));
+                    Log.W("["+game.Name+"] host snapshot verified and committed: "+completed.Manifest.Bytes+" bytes; "+(cached?"exact local cache/save hit, no bulk download":"downloaded"));
+                    if(menuMode && !game.InGame)
+                    {
+                        menuPhase="loading";menuText=T("Chargement de la partie de l'hôte...","Loading the host's game...");
+                        menuLoad=name;menuLoadSeq=SnapshotControl.MenuSequence(completed.Manifest.Transfer);MenuStatus();
+                        // A late joiner has no waiting-room launch packet. Its game is
+                        // started only after the authoritative snapshot has been verified.
+                        if(prelaunchLobby && !lobbyGameLaunched)QueueLobbyLaunch(current:current);
+                        return;
+                    }
+                    game.ToGame(Msg.Make("resync_load",from,SnapshotControl.Payload(completed.Manifest.Id,name,completed.Manifest.Transfer)));
                 }
-                game.ToGame(Msg.Make("resync_load",from,SnapshotControl.Payload(completed.Manifest.Id,name,completed.Manifest.Transfer)));
             }
         }
     }

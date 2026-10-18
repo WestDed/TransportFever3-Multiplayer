@@ -814,8 +814,7 @@ namespace MPFever
         void EndSession(string why = null)
         {
             Log.W(why ?? T("=== Retour au menu principal : fin de la session ===", "=== Back to the main menu: the session ends ==="));
-            sessionGen++;
-            clientCancelled = true;
+            lock(sessionGate) { sessionGen++;clientCancelled = true; }
             foreach (var cl in clients.ToList()) try { cl.Dispose(); } catch { }
             lock (clients) clients.Clear();
             var r = relay; relay = null;
@@ -1127,7 +1126,7 @@ namespace MPFever
                     if (m.Kind == "connection") { resumeToken = client.ResumeToken; resumeEpoch = client.ResumeEpoch; return; }
                     if(m.Kind=="lobby_state") {ReceiveLobby(m.Payload);return;}
                     if (m.Kind == "resync_offer") { OnSnapshotOffer(game,m,client);return; }
-                    if (m.Kind == "resync_begin" || m.Kind == "resync_file") { OnResyncFile(game, m, client,()=>gen==sessionGen); return; }
+                    if (m.Kind == "resync_begin" || m.Kind == "resync_file") { OnResyncFile(game, m, client,()=>gen==sessionGen && ReferenceEquals(current,client)); return; }
                     if (m.Kind == "mpstatus")
                     {
                         if (LuaLit.Parse(m.Payload) is Dictionary<object, object> st && st.TryGetValue("text", out var tx) && tx is string text)
@@ -2069,7 +2068,7 @@ namespace MPFever
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
-            sessionGen++;clientCancelled=true;
+            lock(sessionGate) {sessionGen++;clientCancelled=true;}
             foreach (var g in games) g.Dispose();
             foreach (var c in clients) c.Dispose();
             relay?.Dispose();
