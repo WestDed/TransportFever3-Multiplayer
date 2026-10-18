@@ -36,10 +36,12 @@ namespace MPFever
                 SnapshotTests();
                 OutboxTests();
                 SnapshotControlTests();
+                LobbyTests();
+                SnapshotCacheTests();
+                SpeedRegressionTests();
                 CheckpointTests();
                 IdentityTests();
                 SchemaTests();
-                SpeedRegressionTests();
                 JournalTests();
                 Console.WriteLine("Offline C# components: " + checks + " checks passed; no game was run.");
                 return 0;

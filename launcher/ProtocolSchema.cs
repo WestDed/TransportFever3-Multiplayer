@@ -11,7 +11,7 @@ namespace MPFever
         public const long MaxInteger = 9007199254740991L;
         public static readonly HashSet<string> ClientKinds = new HashSet<string> {
             "hello", "clock", "act", "speed_req", "sync_hash", "chat", "replay_failed", "act_fail", "act_refused",
-            "det_hash", "autotest_done", "area_done", "nat_pending", "nat_cancel", "resync_received", "load_status" };
+            "det_hash", "autotest_done", "area_done", "nat_pending", "nat_cancel", "resync_received", "resync_need", "load_status", "lobby_ready" };
         public static readonly HashSet<string> ClientCommands = new HashSet<string> {
             "makeVehicleBuyCmd", "makeVehicleSellCmd", "makeVehicleSetLineCmd", "makeVehicleSendToDepotCmd", "makeVehicleReverseCmd",
             "makeVehicleReplaceCmd", "makeVehicleSetStoppedByUserCmd", "makeVehicleTryToDepartCmd", "makeVehicleSetManualDepartureCmd",
@@ -60,12 +60,19 @@ namespace MPFever
                 case "load_status":
                     if (t.Count!=3 || Text(t,"phase",16)!="loading" && Text(t,"phase",16)!="ready") throw new InvalidDataException("Invalid load status");
                     goto case "resync_received";
+                case "resync_need":
                 case "resync_received": Integer(t,"id",1,int.MaxValue); if (!SnapshotLimits.Hex(Text(t,"transfer",32),32)) throw new InvalidDataException("Invalid receipt"); break;
+                case "lobby_ready":
+                    if(t.Count!=5 || !(Get(t,"ready") is bool))throw new InvalidDataException("Invalid lobby readiness");
+                    Text(t,"room",32); Integer(t,"revision",1,int.MaxValue); Text(t,"version",64);
+                    if(!SnapshotLimits.Hex(Text(t,"content",64),64))throw new InvalidDataException("Invalid lobby content fingerprint");
+                    break;
                 case "area_done": Integer(t,"n",0,int.MaxValue); break;
             }
             return t;
         }
-        // Observed engine/UI messages and the existing pacing support every integer 0..4.
+        // The relay and pacing already support integer speeds 0..4. Real game
+        // messages include 3; rejecting it caused an endless reconnect loop.
         static void Speed(Dictionary<object, object> t, string key) => Integer(t,key,0,4);
         public static void Action(Dictionary<object, object> t, string from)
         {

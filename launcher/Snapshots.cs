@@ -183,6 +183,7 @@ namespace MPFever
             timer = new Timer(_ => { try { Expire(); } catch (IOException e) { Log.Warn("Snapshot cleanup: " + e.Message); } }, null, 30000, 30000);
         }
         public int Percent { get { lock (gate) return manifest == null ? 0 : 100 * received / manifest.Parts; } }
+        public long ReceivedBytes { get { lock(gate)return manifest==null?0:seen.Select((yes,i)=>yes?Math.Min(SnapshotLimits.ChunkBytes,manifest.Bytes-(long)i*SnapshotLimits.ChunkBytes):0).Sum(); } }
         public void Begin(string payload)
         {
             var next = SnapshotManifest.Parse(payload); // before touching disk or allocating flags
