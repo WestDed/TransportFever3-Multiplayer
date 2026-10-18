@@ -1,8 +1,9 @@
-WESTDED PR #15 UPDATE: 0.3.7-westded.2-experimental / protocol 7.
+WESTDED 18.10 MAP LOAD FIX: 0.3.7-westded.3-experimental / protocol 8.
+See INCIDENT_2026_10_18_MAP_LOAD.md; restart TF3 and install the full package on both PCs. Game retest pending.
 Personal company development, migration, headquarters/landmarks and game acceptance: COMPANY_PROGRESSION.md. Component tests are not game tests. The upstream text below describes older behavior where noted.
 
 MPFever - Multiplayer for Transport Fever 3
-Version 0.3.7-westded.1-experimental
+Version 0.3.7-westded.3-experimental
 ===========================================
 
 MPFever lets several players play the same Transport Fever 3 world together, each one
@@ -16,7 +17,7 @@ problem" below).
 
 WESTDED BRANCH
 --------------
-This package differs from upstream MPFever 0.3.7/0.3.11. Protocol 6 requires the same
+This package differs from upstream MPFever 0.3.7/0.3.11. Protocol 8 requires the same
 full package on every PC. See OFFLINE_UPSTREAM_FIXES.md and BUSINESS_MECHANICS.md.
 Persistent company ownership uses your local private identity key; keep it private.
 New fixes are component-tested; the game acceptance matrix is still pending.

@@ -1,5 +1,7 @@
 # Состояние функций
 
+18.10.2026: пользователь подтвердил fatal crash пакета .2 при запуске карты; [разбор и фикс .3](docs/INCIDENT_2026_10_18_MAP_LOAD.md). Устранён межскриптовый доступ через просроченный callback handle. Это исправление по реальному стеку и регрессиям; успешный повтор загрузки TF3 ещё нужен. Остальные mechanics из #11/#12/#14/#15 сохранены в основе main a543fa8.
+
 16.10.2026, PR #15: [личные XP, уровни, разрешения и вкладка развития](docs/COMPANY_PROGRESSION.md), 0.3.7-westded.2-experimental/protocol 7. Код/миграция/UI/scheduler проверены offline, игровые здания и полный save/restart ещё NOT TESTED. Следующий абзац описывает предыдущий PR #14.
 
 16.10.2026: [offline исправления](docs/OFFLINE_UPSTREAM_FIXES.md), 0.3.7-westded.1-experimental/protocol 6, поверх PR #12: данные/waypoints, indexed refs/rotated checks, очереди покупок/edits, unique load identity, speed/notice UI и bounded notification preferences. В документе — полная матрица выполненного и отложенного для двигателя. Ниже историческое состояние #11; новые игровые проверки ещё не выполнены.

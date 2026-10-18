@@ -1,3 +1,11 @@
+0.3.7-westded.3-experimental — map-load callback lifetime fix (game retest pending)
+- Fix the reported activeCount assertion in progression registry during map startup.
+- Never retain a callback GameScriptState; cross-script readers use current GAME_SCRIPT.state.
+- Resolve the bridge entity afresh across world replacement; tolerate incomplete load.
+- Eight lifetime/load/bootstrap regressions; no personal progression data reset.
+- Protocol 8 / FileVersion 0.3.7.3: full package on both PCs, backup saves first.
+- Incident, evidence and game retest: INCIDENT_2026_10_18_MAP_LOAD.md.
+
 0.3.7-westded.2-experimental — personal company development (game NOT TESTED)
 - Saved personal XP/applied rank/potential rank, stable company ids, one-time legacy migration.
 - Own paid transport legs give XP; native rank thresholds/permits/ticket multipliers preserved.
