@@ -10,7 +10,7 @@ namespace MPFever
 {
     sealed partial class MainForm
     {
-        bool prelaunchLobby, lobbyGameLaunched;
+        bool prelaunchLobby, lobbyGameLaunched,lobbyLaunchFailed;
         LobbyRoom hostLobby;
         volatile LobbyView lobbyView;
         string lobbyContent,lobbyPeerName;
@@ -51,7 +51,7 @@ namespace MPFever
                 Client[] connected;lock(clients)connected=clients.ToArray();
                 foreach(var c in connected)c.Send(Msg.Make("lobby_ready",menuGame.Name,v.ReadyPayload(Version,lobbyContent,!currentlyReady)));
             };
-            lobbyLaunch.Click+=(s,e)=>LaunchLobby();
+            lobbyLaunch.Click+=(s,e)=> {if(lobbyLaunchFailed)LaunchLobbyGame();else LaunchLobby();};
             lobbyCancel.Click+=(s,e)=>
             {
                 if(lobbyGameLaunched)return;
@@ -112,7 +112,8 @@ namespace MPFever
             var old=lobbyView;
             if(old!=null && old.Room==view.Room && view.Revision<old.Revision)return;
             lobbyView=view;
-            if(view.Phase=="launching" && !lobbyGameLaunched)
+            if(view.Version!=Version || view.Content!=lobbyContent)throw new InvalidDataException("MPFever files differ; install the same complete package as the host");
+            if(view.Phase=="launching" && !lobbyGameLaunched && lobbyPeerName!=null && view.Members.TryGetValue(lobbyPeerName,out var memberReady) && memberReady)
             {
                 if(view.Version!=Version || view.Content!=lobbyContent || !view.Members.Values.All(v=>v))throw new InvalidDataException("Incompatible or unready lobby launch");
                 BeginInvoke((Action)LaunchLobbyGame);
@@ -137,11 +138,11 @@ namespace MPFever
             try
             {
                 lobbyGameLaunched=true;
-                MenuStatus();menuGame.Launch(gameDir);
+                MenuStatus();menuGame.Launch(gameDir);lobbyLaunchFailed=false;
                 Log.W("Lobby launched Transport Fever 3. Host prepares the authoritative snapshot; clients wait for verification and load.");
                 UpdateLobbyUi();
             }
-            catch(Exception e) { Log.Err("Game launch failed: "+e.Message); /* fail closed: no simulation start */ }
+            catch(Exception e) { lobbyGameLaunched=menuGame.GameRunning;lobbyLaunchFailed=!lobbyGameLaunched;Log.Err("Game launch failed: "+e.Message);UpdateLobbyUi(); }
         }
         void UpdateLobbyUi()
         {
@@ -155,8 +156,8 @@ namespace MPFever
             bool compatible=view!=null && view.Version==Version && view.Content==lobbyContent;
             lobbyReady.Enabled=!host && connected && compatible && view.Phase=="waiting";
             lobbyReady.Active=view!=null && lobbyPeerName!=null && view.Members.TryGetValue(lobbyPeerName,out var ownReady) && ownReady;
-            lobbyLaunch.Enabled=host && hostLobby.CanLaunch;
-            lobbyCancel.Enabled=host || connected;
+            lobbyLaunch.Enabled=lobbyLaunchFailed || host && hostLobby.CanLaunch;
+            lobbyCancel.Enabled=running || host || connected;
             lobbyPlayers.Text=view==null?T("Jeu fermé. Créez un salon ou rejoignez l'hôte.","Game closed. Create a lobby or join the host."):
                 (!compatible?T("Les fichiers MPFever diffèrent. Installez le même paquet.","MPFever files differ. Install the same package.")+"\n":"")
                 +view.Save+"\n"+string.Join("\n",view.Members.Select(p=>BaseName(p.Key)+": "+(p.Value?T("Prêt","Ready"):T("En attente","Waiting"))));

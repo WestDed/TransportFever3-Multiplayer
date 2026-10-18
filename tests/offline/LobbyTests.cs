@@ -18,6 +18,8 @@ namespace MPFever
             Reject<InvalidDataException>(()=>room.Ready("one",room.Id,room.Revision,"old",content,true),"mismatched launcher cannot ready");
             Reject<InvalidDataException>(()=>room.Ready("one",room.Id,room.Revision,"test",new string('b',64),true),"mismatched mod/native cannot ready");
             room.Ready("one",room.Id,room.Revision,"test",content,true);
+            room.Join("one");Check(!room.CanLaunch,"new socket for same player invalidates previous ready state");
+            room.Ready("one",room.Id,room.Revision,"test",content,true);
             Check(!room.CanLaunch && !room.Launch(room.Revision),"one ready peer cannot start an unready group");
             room.Ready("two",room.Id,room.Revision,"test",content,true);
             var view=LobbyView.Parse(room.Payload());
@@ -45,7 +47,7 @@ namespace MPFever
                     live.Ready(p.Name,(string)t["room"],(int)(double)t["revision"],(string)t["version"],(string)t["content"],(bool)t["ready"]);
                     relay.Send(p,Msg.Make("lobby_state","Host",live.Payload()));
                 };
-                client.Received+=m=> {if(m.Kind=="lobby_state")received=LobbyView.Parse(m.Payload());};
+                client.Received+=m=> {if(m.Kind=="lobby_state")received=LobbyView.Parse(m.Payload);};
                 relay.Start(0);client.Connect("127.0.0.1",relay.Port,"guest");
                 Wait(()=>received!=null,"real TCP lobby available before any game process");
                 client.Send(Msg.Make("lobby_ready","guest",received.ReadyPayload("test",content,true)));

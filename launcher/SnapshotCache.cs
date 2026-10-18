@@ -19,6 +19,7 @@ namespace MPFever
         public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"MPFever","snapshots");
         public CompletedSnapshot Find(SnapshotManifest manifest,IEnumerable<string> saves,Func<bool> cancelled)
         {
+            SweepStaleTemporary();
             string cached=Path.Combine(directory,manifest.Sha256+".sav");
             var paths=new[]{cached}.Concat(saves).Distinct(StringComparer.OrdinalIgnoreCase).Take(MaxCandidates);
             int hashed=0;
@@ -61,6 +62,17 @@ namespace MPFever
                 catch(UnauthorizedAccessException) { Log.Dim("Local snapshot candidate is inaccessible"); }
             }
             return null;
+        }
+        void SweepStaleTemporary()
+        {
+            if(!Directory.Exists(directory))return;
+            try
+            {
+                foreach(var file in new DirectoryInfo(directory).GetFiles(".mpfever-*.tmp").Take(MaxCandidates))
+                    if(file.LastWriteTimeUtc<DateTime.UtcNow.AddDays(-1))
+                        try {file.Delete();} catch(IOException) { } catch(UnauthorizedAccessException) { }
+            }
+            catch(IOException) { } catch(UnauthorizedAccessException) { }
         }
         public void Store(CompletedSnapshot snapshot)
         {

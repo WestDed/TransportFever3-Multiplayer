@@ -25,7 +25,7 @@ namespace MPFever
             lock(gate)
             {
                 if(Launching)throw new InvalidDataException("Lobby already launching");
-                if(members.ContainsKey(peer))return;
+                if(members.ContainsKey(peer)) {Invalidate();return;}
                 if(members.Count>=Wire.MaxPeers)throw new InvalidDataException("Lobby full");
                 members.Add(peer,false);Invalidate();
             }

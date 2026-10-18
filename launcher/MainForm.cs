@@ -1048,6 +1048,11 @@ namespace MPFever
                     hostLobby.Join(p.Name);BroadcastLobby();
                 }
                 else if(prelaunchLobby && !lobbyGameLaunched) { hostRelay.Close(p);return; }
+                else if(hostLobby!=null && hostLobby.Launching)
+                {
+                    hostRelay.Send(p,Msg.Make("lobby_state",hostName,hostLobby.Payload()));
+                    joinPending=true;MenuStatus();
+                }
                 else if (menuMode) { joinPending = true; MenuStatus(); }
             };
             relay.Left += p =>
@@ -1157,6 +1162,10 @@ namespace MPFever
                     Log.Warn(F("[{0}] connexion à l'hôte perdue", "[{0}] connection to the host lost", name));
                     ClientStatus("lost", 0);
                     game.ToGame(Msg.Make("session", "MPFever", "{[\"started\"]=false,[\"speed\"]=0}"));
+                    if(lobbyView!=null && (lobbyView.Version!=Version || lobbyView.Content!=lobbyContent))
+                    {
+                        clientCancelled=true;menuPhase="error";menuText=T("Les fichiers MPFever diffèrent. Installez le même paquet.","MPFever files differ. Install the same package.");MenuStatus();return;
+                    }
                     if (!menuMode || clientCancelled || gen != sessionGen) return;
                     // the connection dropped: try again for 5 minutes; back with the host, this game receives its
                     // game again like any player who joins
@@ -1902,7 +1911,7 @@ namespace MPFever
                                 var peer=peers[index];SnapshotDecision probe;
                                 lock(resyncWaiting)probe=snapshotDecisions[peer.Name];
                                 SnapshotExchange.Send(source,hostName,probe,
-                                    m=>activeRelay.Send(peer,m),m=>activeRelay.SendBulk(peer,m),
+                                    m=>activeRelay.SendBulk(peer,m,false),m=>activeRelay.SendBulk(peer,m),
                                     ()=>!Current() || Volatile.Read(ref cancelled)!=0 || !Present(new[]{peer}),
                                     (bytes,seconds)=>Log.W("Snapshot queued to "+peer.Name+": "+bytes+"/"+source.Manifest.Bytes+" bytes, "+(long)(bytes/Math.Max(1,seconds))+" B/s (queueing, not receipt)"));
                             }
@@ -2060,6 +2069,7 @@ namespace MPFever
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            sessionGen++;clientCancelled=true;
             foreach (var g in games) g.Dispose();
             foreach (var c in clients) c.Dispose();
             relay?.Dispose();

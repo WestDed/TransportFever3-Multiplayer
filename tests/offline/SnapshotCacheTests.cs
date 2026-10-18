@@ -26,7 +26,9 @@ namespace MPFever
                         Check(File.ReadAllBytes(committed).SequenceEqual(data),"local hit is staged and atomically committed");
                         cache.Store(found);
                     }
+                    string orphan=Path.Combine(root,"cache",".mpfever-old.tmp");File.WriteAllText(orphan,"orphan");File.SetLastWriteTimeUtc(orphan,DateTime.UtcNow.AddDays(-2));
                     using(var found=cache.Find(snapshot.Manifest,new string[0],()=>false))Check(found!=null,"persistent cache survives a new lookup without original saves");
+                    Check(!File.Exists(orphan),"crash-left cache staging is cleaned after one day");
                     // A changed local original must not change the already staged load.
                     using(var found=cache.Find(snapshot.Manifest,new[]{local},()=>false))
                     {
@@ -90,7 +92,7 @@ namespace MPFever
                     }
                 };
                 relay.Start(0);client.Connect("127.0.0.1",relay.Port,"cache");Wait(()=>peer!=null && decision!=null,"real TCP snapshot cache peer connected");
-                SnapshotExchange.Send(snapshot,"Host",decision,m=>relay.Send(peer,m),m=>relay.SendBulk(peer,m),()=>false,probeMilliseconds:5000);
+                SnapshotExchange.Send(snapshot,"Host",decision,m=>relay.SendBulk(peer,m,false),m=>relay.SendBulk(peer,m),()=>false,probeMilliseconds:5000);
                 Check(parts==0 && decision.Need==false,"real TCP cache offer skips all snapshot chunks after verified local match");
             }
         }
