@@ -103,7 +103,19 @@ local function req(name)
 	end
 end
 local function registry()
-	local st = E.state and E.state:get(); return st and st.co
+	-- GameScriptState is a callback-local engine handle. Retaining it and calling
+	-- :get() from company_growth.update/handleEvent triggers a fatal native
+	-- activeCount assertion; Lua pcall cannot recover from that assertion.
+	-- Other scripts read the current saved table through the documented ECS API.
+	-- Resolve afresh so loading another world never reuses the previous registry.
+	local ok, reg = pcall(function()
+		local e = api.engine.system.gameScriptSystem.getEntityForGameScript("mpfever_1::/mpfever.gs")
+		if type(e) ~= "number" or e < 0 then return nil end
+		local script = api.engine.getComponent(e, api.type.ComponentType.GAME_SCRIPT)
+		local st = script and script.state
+		return st and st.co
+	end)
+	return ok and reg or nil
 end
 local function comp(e, ct)
 	if type(e) ~= "number" or e < 0 then return nil end
@@ -120,10 +132,9 @@ local function read(entity)
 end
 function E.configure(common, refs, companies, logger)
 	C, R, CO, log = common, refs, companies, logger
-	E.state, E.warned = nil, nil
+	E.warned = nil
 end
-local function active()
-	local reg = registry()
+local function active(reg)
 	return reg and reg.mode == "separate" and reg.progression and reg.progression.version == P.VERSION and reg
 end
 -- Keep the native script's documented companyState mirror current for save
@@ -173,14 +184,14 @@ function E.install()
 	if not g.__mpfProgression then
 		local oldUpdate, oldEvent = g.update, g.handleEvent
 		g.update = function(u, st, ...)
-			local reg = active()
+			local reg = active(registry())
 			if not reg then return oldUpdate(u, st, ...) end
 			E.syncNative(st, reg)
 			-- The original update raises XP from WORLD population. It must not also
 			-- advance company 1 after the saved independent model is active.
 		end
 		g.handleEvent = function(u, st, src, id, name, param, ...)
-			local reg = active()
+			local reg = active(registry())
 			if reg then
 				if name == "applyLevel" or name == "_debugAddExperience" then return end
 				if name == "OnCalcTicketPrice" and (id == "TransportVehicleSystem" or id == "SimEntityAtVehicleSystem") then
@@ -196,7 +207,6 @@ function E.install()
 	return true
 end
 function E.update(state)
-	E.state = state
 	local st = state:get(); local reg = st and st.co
 	if not reg or reg.mode ~= "separate" then return end
 	if not E.install() then
@@ -227,7 +237,6 @@ function E.update(state)
 	if changed then state:set(st) end
 end
 function E.command(state, p)
-	E.state = state
 	local st = state:get(); local reg = st and st.co
 	if not reg or reg.mode ~= "separate" or type(p) ~= "table" then return end
 	local ok, changed = P.apply(reg, p.mpfCo, p.level)
@@ -235,10 +244,8 @@ function E.command(state, p)
 	log("companies: apply rank for company " .. tostring(p.mpfCo) .. ": " .. tostring(ok) .. " " .. tostring(changed))
 end
 function E.engineEvent(state, id, name, param, now)
-	E.state = state
 	if name ~= "OnCalcTicketPrice" or id ~= "TransportVehicleSystem" and id ~= "SimEntityAtVehicleSystem" then return end
-	local reg = active(); if not reg then return end
-	local st = state:get(); reg = st.co
+	local st = state:get(); local reg = active(st and st.co); if not reg then return end
 	local plain = C.marshal(param); local list = plain and (plain.param or plain)
 	if type(list) ~= "table" then return end
 	if list.vehicleEntity then list = { list } end

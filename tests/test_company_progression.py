@@ -100,7 +100,17 @@ class ProgressionEngine(unittest.TestCase):
             ug_require=function(n)if n:find("company_progression_util",1,true)then return util elseif n:find("company_util",1,true)then return cu end;error("unavailable")end
             world={[10]={PLAYER_OWNED={player=7}},[20]={PLAYER_OWNED={player=8}},[30]={PLAYER_OWNED={player=8}},
                 [40]={SIM_CARGO={startTime=0,pickupTime=1},SIM_ENTITY_AT_VEHICLE={lineStop1=0,roundTripCounter=1}}}
-            api={type={ComponentType=setmetatable({},{__index=function(_,k)return k end})},engine={getComponent=function(e,k)return world[e] and world[e][k]end}}
+            bridgeEntity=90;bridgeLookups=0
+            api={type={ComponentType=setmetatable({},{__index=function(_,k)return k end})},engine={
+                getComponent=function(e,k)
+                    if e==bridgeEntity and k=="GAME_SCRIPT" then return {state=state.value} end
+                    return world[e] and world[e][k]
+                end,
+                system={gameScriptSystem={getEntityForGameScript=function(path)
+                    assert(path=="mpfever_1::/mpfever.gs","wrong bridge resource")
+                    bridgeLookups=bridgeLookups+1;return bridgeEntity
+                end}}
+            }}
             C.marshal=function(x)return x end
             E=P.engine;E.configure(C,{},CO,function(s)logs[#logs+1]=s end)
             event={{vehicleEntity=30,lineEntity=20,simEntity=40,basePrice=10,distance=100}}
@@ -167,6 +177,51 @@ class ProgressionEngine(unittest.TestCase):
 
     def test_native_hash_normalizes_player_entities_without_hiding_values(self):
         self.check('E.update(state);growth.update({},nativeState,200);local a=C.ser(P.nativeDigest(nativeState.value,reg));reg.list[2].ent=999;nativeState.value.companyState[999]=nativeState.value.companyState[8];nativeState.value.companyState[8]=nil;assert(C.ser(P.nativeDigest(nativeState.value,reg))==a);nativeState.value.companyState[999].experience=500;assert(C.ser(P.nativeDigest(nativeState.value,reg))~=a)')
+
+    def expire_bridge_callback(self):
+        # TF3's native assertion is fatal and cannot be caught with Lua pcall.
+        # This fixture raises a regular Lua error to expose the same forbidden
+        # access after the MPFever callback has returned; it is not the engine.
+        self.check('''state.get=function()error("expired MPFever callback state:get")end
+            state.set=function()error("expired MPFever callback state:set")end''')
+
+    def test_growth_update_does_not_reuse_expired_bridge_callback(self):
+        self.check('E.update(state)')
+        self.expire_bridge_callback()
+        self.check('growth.update({},nativeState,200);assert(originalUpdates==0 and nativeState.value.companyState[8].experience==105)')
+
+    def test_growth_events_and_progression_reader_do_not_reuse_expired_callback(self):
+        self.check('E.update(state);for i=1,5 do P.credit(reg,2,"t"..i,i)end;P.apply(reg,2,2)')
+        self.expire_bridge_callback()
+        self.check('''local p=growth.handleEvent(nil,nil,"","TransportVehicleSystem","OnCalcTicketPrice",{{lineEntity=20}})
+            assert(p[1]==0.9 and util.getCompanyProgressionState(8).level==2)
+            growth.handleEvent({},nativeState,"","","storeSavegameMetadata",{})
+            assert(nativeState.value.companyState[8].level==2 and originalEvents==1)''')
+
+    def test_commands_and_unrelated_events_do_not_leak_callback_handles(self):
+        self.check('E.update(state);E.command(state,{mpfCo=2,level=1});E.engineEvent(state,"Other","otherEvent",{},10)')
+        self.expire_bridge_callback()
+        self.check('growth.update({},nativeState,200);assert(nativeState.value.companyState[8].level==1)')
+
+    def test_world_replacement_is_visible_before_next_bridge_callback(self):
+        self.check('''E.update(state);local previous=reg
+            reg={mode="separate",canon=7,list={{id=1,ent=7},{id=2,ent=8}}}
+            P.ensure(reg,{basePopulation=100,ranks={{xp=0,ticket=1},{xp=110,ticket=0.9}}},{})
+            P.credit(reg,2,"new-world-trip",1);state.value={co=reg}''')
+        self.expire_bridge_callback()
+        self.check('growth.update({},nativeState,200);assert(nativeState.value.companyState[8].experience==101 and util.getCompanyProgressionState(8).experience==101)')
+
+    def test_absent_bridge_during_load_does_not_use_previous_world(self):
+        self.check('E.update(state);bridgeEntity=-1;growth.update({},nativeState,200);assert(originalUpdates==1 and nativeState.value.companyState[8]==nil)')
+
+    def test_missing_bridge_component_and_state_are_safe_during_load(self):
+        self.check('''E.update(state);local get=api.engine.getComponent
+            api.engine.getComponent=function(e,k)if k=="GAME_SCRIPT" then return nil end;return get(e,k)end
+            growth.update({},nativeState,200);assert(originalUpdates==1)
+            api.engine.getComponent=get;state.value=nil;growth.update({},nativeState,200);assert(originalUpdates==2)''')
+
+    def test_unavailable_script_system_during_load_is_safe(self):
+        self.check('E.update(state);api.engine.system=nil;growth.update({},nativeState,200);assert(originalUpdates==1)')
 
 
 class CompanyPermits(unittest.TestCase):
@@ -236,6 +291,15 @@ class ProgressionBridge(unittest.TestCase):
             ug_require=function(n)if n:find("company_progression_util",1,true)then return pm elseif n:find("company_util",1,true)then return {getBasePopulation=function()return 100 end}end;return old(n)end
             game={["::/game_mechanics/company/company_growth.script"]={update=function()end,handleEvent=function()end}}
             api.util={getDefaultYearDuration=function()return 1200 end,getDefaultMonthDuration=function()return 100 end}
+            api.type.ComponentType.GAME_SCRIPT=90
+            local get=api.engine.getComponent
+            api.engine.getComponent=function(e,k)
+                if e==900 and k==90 then return {state=STATE_DATA} end
+                return get(e,k)
+            end
+            api.engine.system.gameScriptSystem={getEntityForGameScript=function(path)
+                assert(path=="mpfever_1::/mpfever.gs");return 900
+            end}
             P=ug_require("mpfever_progression.lua");P.engine.update(STATE)
             function requestRank(actor,level,forged)
                 SIM_EVENT("queue",{fn="makeScriptingSendEventCmd",co=actor,args={n=4,"","mpfever","progression",{level=level,mpfCo=forged}},at=GAME.time+200,uid="rank:"..level,origin="RankHost",oseq=level})
@@ -248,6 +312,15 @@ class ProgressionBridge(unittest.TestCase):
 
     def test_real_bridge_command_refuses_an_unearned_rank(self):
         self.L.execute('requestRank(2,3);assert(P.view(STATE_DATA.co,2).level==1)')
+
+    def test_packaged_native_wrapper_reads_saved_data_after_bridge_callback_ends(self):
+        self.L.execute('''
+            local native={value={},get=function(s)return s.value end,set=function(s,v)s.value=v end}
+            STATE.get=function()error("expired MPFever callback state:get")end
+            STATE.set=function()error("expired MPFever callback state:set")end
+            game["::/game_mechanics/company/company_growth.script"].update({},native,200)
+            assert(native.value.companyState[8].experience==105 and pm.getCompanyProgressionState(8).level==1)
+        ''')
 
 
 if __name__ == '__main__':

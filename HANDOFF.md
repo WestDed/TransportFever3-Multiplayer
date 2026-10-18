@@ -1,5 +1,13 @@
 # Продолжение проекта в следующей сессии
 
+## Вылет запуска карты — 18.10.2026
+
+Пользователь и брат уже имеют игру и выполняют игровые испытания. На двух скриншотах fatal `m_gameScriptData.activeCount == m_initCounter + m_numUsed`, стек `[C]:get → mpfever_progression.lua:106 registry → 126 active → 176 growth.update`. Это запуск карты, не лаунчера, и не доказанная причина прежнего reconnect на 50%.
+
+Ветка `fix/progression-state-lifetime-2026-10-18` от актуальной main `a543fa891617d4d485fe4dc863932559bbdddc60` (заказчик объединил #11/#12/#14/#15). Удалён сохранённый `E.state`: current own callbacks используют свой GameScriptState, cross-script readers получают текущий `GAME_SCRIPT.state.co` ресурса `mpfever_1::/mpfever.gs`. Никакого cache handle/entity/registry между мирами. [Полный разбор/источники/регрессии/повтор](docs/INCIDENT_2026_10_18_MAP_LOAD.md).
+
+Пакет .3/protocol 8/FileVersion 0.3.7.3, полный набор обоим, без изменений схемы сохранения/identity/прав/финансов. Восемь новых regression cases; прежний полный suite содержал 281, новый — 289. Exact итоговые CI/head/artifact — в новом PR, main напрямую не меняется, автоматического merge нет. Реальная игра в среде разработчика не запускалась, .3 требует повтора у заказчика. Старые сведения ниже — история; не советовать вновь .2 для этого crash.
+
 ## Личное развитие — PR #15, 16.10.2026
 
 Новый запрос заказчика разрешает реализовать личные уровни/опыт/штаб/уникальные здания, расширяя прежнее ограничение game-only. Ветка `feat/company-progression-2026-10-16` создана от свежей main 937318b7, затем fast-forward к открытому #14 для сохранения полного набора исправлений. [PR #15](https://github.com/WestDed/TransportFever3-Multiplayer/pull/15) stacked в ветку #14; автоматического merge нет. [Правила, реализация, источники, ограничения и приёмка](docs/COMPANY_PROGRESSION.md).

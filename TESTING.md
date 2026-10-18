@@ -1,5 +1,7 @@
 # Тестирование и границы доказательства
 
+18.10.2026: [регрессии вылета карты](docs/INCIDENT_2026_10_18_MAP_LOAD.md). Восемь новых tests запрещают использование callback handle после возврата и проверяют текущий ECS registry при другом мире/неполной загрузке, native update/price/metadata/readers и bootstrap настоящего wrapper. Весь suite — 289 Python/Lua/C++ tests; результат exact-head CI/Windows package фиксируется в PR. Это модель ограничения, не исполнение native activeCount assertion. Пользовательский crash .2 — подтверждён, игровой повтор .3 ещё NOT RETESTED.
+
 16.10.2026, PR #15: [матрица личного развития](docs/COMPANY_PROGRESSION.md#приёмка-в-игре). Локально 281 Python/Lua/C++ tests PASS, 288/288 keys × 11 локалей, git diff --check. Новые проверки: миграция, личные XP/уровни, настоящий Lua scheduler, цена по владельцу линии, bounded dedup, native hash normalization, permits census failure, GUI/view/schema. C# и Windows exact-head CI фиксируются в PR #15 после завершения. **Game NOT TESTED для новых изменений.** Сведения ниже о PR #14 и более ранних heads — исторические.
 
 16.10.2026: [новые offline regressions и границы](docs/OFFLINE_UPSTREAM_FIXES.md). Локально 231 tests PASS, 282/282 переводов × 11 локалей. Production functions проверяются на constructor/clock/async/React fixtures и настоящих temporary files; game engine не запускался. Новые C# cases включены во все три runtime/OS jobs, Windows ZIP имеет WestDed номер/protocol 6. Exact итоговые head/run/counts — в PR после CI, до этого проверка не объявляется успешной.
