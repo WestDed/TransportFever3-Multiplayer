@@ -65,8 +65,8 @@ namespace MPFever
             }
             return t;
         }
-        static void Speed(Dictionary<object, object> t, string key)
-        { long speed = Integer(t,key,0,4); if (speed != 0 && speed != 1 && speed != 2 && speed != 4) throw new InvalidDataException("Unsupported speed"); }
+        // Observed engine/UI messages and the existing pacing support every integer 0..4.
+        static void Speed(Dictionary<object, object> t, string key) => Integer(t,key,0,4);
         public static void Action(Dictionary<object, object> t, string from)
         {
             string fn = Text(t,"fn",64);

@@ -722,6 +722,7 @@ namespace MPFever
 
         void ReadLoop(Peer p)
         {
+            string lastKind="handshake";
             try
             {
                 var r = new BoundedLineReader(p.Tcp.GetStream());
@@ -772,6 +773,7 @@ namespace MPFever
                         continue;
                     }
                     m.From = p.Name; // the relay decides who is speaking; the host decides who receives it
+                    lastKind=m.Kind;
                     ProtocolSchema.ValidateClient(m);
                     Received?.Invoke(p, m);
                 }
@@ -780,7 +782,7 @@ namespace MPFever
             {
                 if(!p.Joined && !stop)
                     try {var rejection=Wire.Encode(Msg.Make("reject","MPFever","{[\"reason\"]="+LuaLit.Quote(e.Message)+"}"));p.Tcp.GetStream().Write(rejection,0,rejection.Length);}catch(Exception){} // best-effort rejection on a possibly closed socket
-                if (!stop) Log.W($"{p.Name} : {e.Message}");
+                if (!stop) Log.W($"{p.Name} [{lastKind}] : {e.Message}");
             }
             p.Outbox.Dispose();
             try { p.Tcp.Close(); } catch { }
