@@ -1,5 +1,7 @@
 # Продолжение проекта в следующей сессии
 
+19.10.2026 — PR #18, ветка feat/prelaunch-lobby-snapshot-cache-2026-10-19 от main a4038f0 (PR #17 объединён заказчиком). .5/protocol 10/FileVersion 0.3.7.5. Реализованы lobby-before-TF3, ready gate, package fingerprint и exact local snapshot cache; исправлены speed=3 reject loop и ожидание departed peers/нулевых клиентов. [Разбор логов, новые классы/протокол, инструкции и игровые критерии](docs/LOBBY_AND_SNAPSHOT_CACHE.md). Новые launcher/Lobby.cs, SnapshotCache.cs, MainForm.Lobby.cs, MainForm.SnapshotCache.cs; tests/offline и test_prelaunch_wiring.py. Не путать успешно проверенный пользовательский join .4 с полным PASS механик .5. Окончательные CI/head/artifact в PR; raw личные логи не публикуются. Main не меняется напрямую; не мержить автоматически.
+
 ## Обрыв передачи сохранения — PR #17, 18.10.2026
 
 Main c06a075 содержит объединённый заказчиком PR #16. Новые 8 логов: host принимает клиента и сохраняет мир 171–174 MB, но исходящая очередь закрывает peer на session/peerclock/mpstatus. Последняя попытка сопоставлена по id 8/174497012 bytes/666 parts; часы двух ПК отличаются примерно на 7 часов. Verified/commit/load клиента в logs нет. В 5 из 8 попыток прямо указан queue overflow; остальные разрывы не имеют установленной причины. Raw logs/адреса/owner fingerprints в репозиторий не копировать.

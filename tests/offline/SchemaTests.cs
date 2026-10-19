@@ -21,7 +21,7 @@ namespace MPFever
                 Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("act","Peer#1",payload)),"malformed or privileged action refused");
             Check(ProtocolSchema.ValidateClient(Msg.Make("clock","Peer#1","{[\"t\"]=10,[\"sp\"]=4,[\"ah\"]=3,[\"tl\"]=2}")) != null,"valid clock");
             Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("clock","Peer#1","{[\"t\"]=1e30,[\"sp\"]=1}")),"clock beyond exact integer range");
-            Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("speed_req","Peer#1","{[\"speed\"]=3}")),"unsupported speed");
+            Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("speed_req","Peer#1","{[\"speed\"]=5}")),"unsupported speed");
             Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("nat_cancel","Peer#1","{[\"origin\"]=\"spoof\",[\"id\"]=1}")),"forged native hold identity");
             Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("act","Peer#1",Act(fn:"makeScriptingSendEventCmd",args:"{[1]=\"script\",[2]=\"Company\",[3]=\"hack\",[4]={}}"))),"arbitrary scripting event");
             string RankEvent(string p)=>Act(fn:"makeScriptingSendEventCmd",args:"{[1]=\"\",[2]=\"mpfever\",[3]=\"progression\",[4]="+p+"}");

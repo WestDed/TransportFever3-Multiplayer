@@ -1,3 +1,8 @@
+19.10: .5 adds prelaunch lobby/readiness and exact local snapshot negotiation/cache.
+Next gate: two-PC TF3/Porthole cold/hit/corrupt cache, readiness/reconnect/DPI tests.
+Investigate observed loan/native drift separately; do not disable consistency checks.
+See LOBBY_AND_SNAPSHOT_CACHE.md; later sections are earlier plans.
+
 MPFever - Roadmap
 =================
 

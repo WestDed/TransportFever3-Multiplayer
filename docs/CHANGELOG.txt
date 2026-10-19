@@ -1,3 +1,13 @@
+0.3.7-westded.5-experimental — lobby and exact snapshot cache (game retest pending)
+- Open a launcher lobby before starting TF3; existing save and separate/shared companies.
+- Gate host launch on current clients readiness and shipped mod/native compatibility.
+- Check exact local SHA-256 snapshots before bulk; persistent bounded completed cache.
+- Accept integer speed 3, retain typed/range checks; log rejected message kind.
+- Abort recovery when targets disconnect; never reload host with zero clients.
+- Add transfer receive/queue progress; retain existing ordered chunks and load receipts.
+- Protocol 10 / FileVersion 0.3.7.5; full package on both PCs.
+- Evidence, limitations and acceptance: LOBBY_AND_SNAPSHOT_CACHE.md.
+
 0.3.7-westded.4-experimental — snapshot status backpressure (game retest pending)
 - Coalesce queued peer clocks per player and UI statuses within ordered segments.
 - Deduplicate identical session heartbeats at their earlier position; preserve every real pause/speed transition.

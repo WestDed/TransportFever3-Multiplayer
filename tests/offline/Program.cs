@@ -36,6 +36,9 @@ namespace MPFever
                 SnapshotTests();
                 OutboxTests();
                 SnapshotControlTests();
+                LobbyTests();
+                SnapshotCacheTests();
+                SpeedRegressionTests();
                 CheckpointTests();
                 IdentityTests();
                 SchemaTests();
