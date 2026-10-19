@@ -20,16 +20,22 @@ namespace MPFever
             room.Ready("one",room.Id,room.Revision,"test",content,true);
             room.Join("one");Check(!room.CanLaunch,"new socket for same player invalidates previous ready state");
             room.Ready("one",room.Id,room.Revision,"test",content,true);
-            Check(!room.CanLaunch && !room.Launch(room.Revision),"one ready peer cannot start an unready group");
+            Check(!room.CanLaunch && !room.Prepare(room.Revision),"one ready peer cannot start an unready group");
             room.Ready("two",room.Id,room.Revision,"test",content,true);
             var view=LobbyView.Parse(room.Payload());
             Check(view.Members.Count==2 && view.Members.Values.All(v=>v) && view.Save=="Карта" && view.Mode=="separate","lobby state survives production data decoder");
             ProtocolSchema.ValidateClient(Msg.Make("lobby_ready","one",view.ReadyPayload("test",content,true)));
             Check(true,"lobby readiness passes production schema");
-            Check(!room.Launch(old),"stale host start cannot launch");
+            Check(!room.Prepare(old),"stale host start cannot launch");
             room.Leave("two");Check(!room.CanLaunch,"disconnect invalidates remaining readiness");
             room.Ready("one",room.Id,room.Revision,"test",content,true);
-            Check(room.Launch(room.Revision) && !room.Launch(room.Revision),"host launches an all-ready room exactly once");
+            Check(room.Prepare(room.Revision) && !room.Prepare(room.Revision),"host prepares an all-ready room exactly once");
+            Check(LobbyView.Parse(room.Payload()).Phase=="preparing" && !room.Launching,"preparing save does not grant game launch");
+            Check(!room.LaunchPrepared(room.Revision,new string('1',32)),"cannot launch before verified snapshot has been selected");
+            Check(room.SetSnapshot(room.Revision,new string('1',32)),"preparation binds current transfer token");
+            Check(!room.LaunchPrepared(room.Revision,new string('2',32)),"another transfer cannot launch lobby");
+            Check(room.LaunchPrepared(room.Revision,new string('1',32)),"host commits launch for the exact prepared snapshot");
+            Check(!room.LaunchPrepared(room.Revision,new string('1',32)),"committed launch is idempotent");
             Check(!room.Ready("one",room.Id,room.Revision,"test",content,false),"late unready cannot mutate committed start");
             Reject<InvalidDataException>(()=>room.Join("late"),"membership frozen at launch");
             foreach(var kind in new[]{"lobby_state","resync_offer"})

@@ -15,6 +15,8 @@ namespace MPFever
         public readonly string Id = Guid.NewGuid().ToString("N"), Content, Version, Save, Mode;
         public int Revision { get; private set; } = 1;
         public bool Launching { get; private set; }
+        public bool Preparing { get; private set; }
+        public string Snapshot { get; private set; }="";
         public LobbyRoom(string version,string content,string save,string mode)
         {
             if(!SnapshotLimits.Hex(content,64) || string.IsNullOrWhiteSpace(save) || save.Length>512 || mode!="shared" && mode!="separate")throw new InvalidDataException("Invalid lobby configuration");
@@ -24,7 +26,7 @@ namespace MPFever
         {
             lock(gate)
             {
-                if(Launching)throw new InvalidDataException("Lobby already launching");
+                if(Launching || Preparing)throw new InvalidDataException("Lobby already preparing or launching");
                 if(members.ContainsKey(peer)) {Invalidate();return;}
                 if(members.Count>=Wire.MaxPeers)throw new InvalidDataException("Lobby full");
                 members.Add(peer,false);Invalidate();
@@ -36,24 +38,34 @@ namespace MPFever
         {
             lock(gate)
             {
-                if(Launching || room!=Id || revision!=Revision || !members.ContainsKey(peer))return false;
+                if(Launching || Preparing || room!=Id || revision!=Revision || !members.ContainsKey(peer))return false;
                 if(version!=Version || content!=Content)throw new InvalidDataException("Launcher/mod/native files differ from the host");
                 members[peer]=ready;return true;
             }
         }
-        public bool CanLaunch { get { lock(gate)return !Launching && members.Values.All(v=>v); } }
-        public bool Launch(int revision)
-        { lock(gate) { if(revision!=Revision || !CanLaunch)return false;Launching=true;return true; } }
+        public bool CanLaunch { get { lock(gate)return !Launching && !Preparing && members.Values.All(v=>v); } }
+        public bool Prepare(int revision)
+        { lock(gate) { if(revision!=Revision || !CanLaunch)return false;Preparing=true;return true; } }
+        public bool SetSnapshot(int revision,string transfer)
+        {
+            if(!SnapshotLimits.Hex(transfer,32))throw new InvalidDataException("Invalid lobby snapshot token");
+            lock(gate) {if(!Preparing || revision!=Revision || Snapshot!="")return false;Snapshot=transfer;return true;}
+        }
+        public bool LaunchPrepared(int revision,string transfer)
+        { lock(gate) {if(!Preparing || revision!=Revision || Snapshot=="" || Snapshot!=transfer)return false;Preparing=false;Launching=true;return true;} }
+        public bool AbortPreparation()
+        { lock(gate) {if(!Preparing)return false;Preparing=false;Snapshot="";Invalidate();return true;} }
         public string Payload()
         {
-            lock(gate)return "{[\"room\"]="+LuaLit.Quote(Id)+",[\"revision\"]="+Revision+",[\"phase\"]="+LuaLit.Quote(Launching?"launching":"waiting")
+            lock(gate)return "{[\"room\"]="+LuaLit.Quote(Id)+",[\"revision\"]="+Revision+",[\"phase\"]="+LuaLit.Quote(Launching?"launching":Preparing?"preparing":"waiting")
+                +",[\"snapshot\"]="+LuaLit.Quote(Snapshot)
                 +",[\"save\"]="+LuaLit.Quote(Save)+",[\"mode\"]="+LuaLit.Quote(Mode)+",[\"version\"]="+LuaLit.Quote(Version)+",[\"content\"]="+LuaLit.Quote(Content)
                 +",[\"members\"]={"+string.Join(",",members.OrderBy(p=>p.Key,StringComparer.Ordinal).Select(p=>"["+LuaLit.Quote(p.Key)+"]="+(p.Value?"true":"false")))+"}}";
         }
     }
     sealed class LobbyView
     {
-        public string Room,Phase,Save,Mode,Version,Content;
+        public string Room,Phase,Save,Mode,Version,Content,Snapshot;
         public int Revision;
         public Dictionary<string,bool> Members;
         public static LobbyView Parse(string payload)
@@ -62,7 +74,11 @@ namespace MPFever
             var v=new LobbyView { Room=ProtocolSchema.Text(t,"room",32),Revision=(int)ProtocolSchema.Integer(t,"revision",1,int.MaxValue),
                 Phase=ProtocolSchema.Text(t,"phase",16),Save=ProtocolSchema.Text(t,"save",512),Mode=ProtocolSchema.Text(t,"mode",16),
                 Version=ProtocolSchema.Text(t,"version",64),Content=ProtocolSchema.Text(t,"content",64),Members=new Dictionary<string,bool>() };
-            if(t.Count!=8 || !SnapshotLimits.Hex(v.Room,32) || !SnapshotLimits.Hex(v.Content,64) || v.Phase!="waiting" && v.Phase!="launching" || v.Mode!="shared" && v.Mode!="separate")throw new InvalidDataException("Invalid lobby state");
+            v.Snapshot=ProtocolSchema.Get(t,"snapshot") as string;
+            if(t.Count!=9 || !SnapshotLimits.Hex(v.Room,32) || !SnapshotLimits.Hex(v.Content,64)
+                || v.Phase!="waiting" && v.Phase!="preparing" && v.Phase!="launching" || v.Mode!="shared" && v.Mode!="separate"
+                || v.Snapshot==null || v.Snapshot!="" && !SnapshotLimits.Hex(v.Snapshot,32)
+                || v.Phase=="waiting" && v.Snapshot!="" || v.Phase=="launching" && v.Snapshot=="")throw new InvalidDataException("Invalid lobby state");
             var members=ProtocolSchema.Table(ProtocolSchema.Get(t,"members"),"members");
             if(members.Count>Wire.MaxPeers)throw new InvalidDataException("Lobby too large");
             foreach(var p in members)

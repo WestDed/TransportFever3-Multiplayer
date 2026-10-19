@@ -520,6 +520,7 @@ namespace MPFever
             }
         }
 
+        string lastMenuState;
         public void WriteMenuState(IDictionary<string, string> st)
         {
             var sb = new StringBuilder();
@@ -528,9 +529,12 @@ namespace MPFever
             var dst = Path.Combine(Dir, "menu_state.txt");
             lock (writeGate)
             {
-                File.WriteAllText(tmp, sb.ToString(), Utf8);
+                string text=sb.ToString();
+                if(text==lastMenuState && File.Exists(dst))return;
+                File.WriteAllText(tmp, text, Utf8);
                 try { if (File.Exists(dst)) File.Replace(tmp, dst, null); else File.Move(tmp, dst); }
                 catch { File.Copy(tmp, dst, true); }
+                lastMenuState=text;
             }
         }
 

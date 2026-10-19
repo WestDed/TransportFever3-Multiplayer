@@ -12,6 +12,7 @@
     <Compile Include="../../launcher/SnapshotResume.cs" Link="SnapshotResume.cs" />
     <Compile Include="../../launcher/SnapshotCache.cs" Link="SnapshotCache.cs" />
     <Compile Include="../../launcher/Lobby.cs" Link="Lobby.cs" />
+    <Compile Include="../../launcher/LobbyPreparation.cs" Link="LobbyPreparation.cs" />
     <Compile Include="../../launcher/CheckpointState.cs" Link="CheckpointState.cs" />
     <Compile Include="../../launcher/PeerIdentity.cs" Link="PeerIdentity.cs" />
     <Compile Include="../../launcher/OwnerIdentity.cs" Link="OwnerIdentity.cs" />
