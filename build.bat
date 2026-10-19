@@ -32,6 +32,7 @@ copy /y docs\COMPANY_PROGRESSION.md "%DIST%\COMPANY_PROGRESSION.md" >nul || exit
 copy /y docs\INCIDENT_2026_10_18_MAP_LOAD.md "%DIST%\INCIDENT_2026_10_18_MAP_LOAD.md" >nul || exit /b 1
 copy /y docs\INCIDENT_2026_10_18_SNAPSHOT_QUEUE.md "%DIST%\INCIDENT_2026_10_18_SNAPSHOT_QUEUE.md" >nul || exit /b 1
 copy /y docs\LOBBY_AND_SNAPSHOT_CACHE.md "%DIST%\LOBBY_AND_SNAPSHOT_CACHE.md" >nul || exit /b 1
+copy /y docs\FASTER_CONNECTIONS.md "%DIST%\FASTER_CONNECTIONS.md" >nul || exit /b 1
 xcopy /e /i /q /y mod\mpfever_1 "%DIST%\mod\mpfever_1" >nul || exit /b 1
 if exist "release\MPFever-%VERSION%.zip" del "release\MPFever-%VERSION%.zip"
 rem explicit forward-slash zip entries, also on the older framework used by PowerShell 5

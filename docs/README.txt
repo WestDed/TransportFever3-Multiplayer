@@ -1,3 +1,8 @@
+19.10.2026: package .6 / protocol 11. Update EXE, DLL and mod on both PCs.
+See FASTER_CONNECTIONS.md: the selected save is verified/transferred before TF3
+starts, then all engines must become ready. Identical partial files can resume;
+a changed live world can still need a full transfer. Game acceptance pending.
+
 WESTDED .5 / protocol 10: PRELAUNCH LOBBY + EXACT LOCAL SAVE CACHE.
 Start MPFever.exe with TF3 closed; host selects a save, clients connect and ready,
 then the host launches TF3. See LOBBY_AND_SNAPSHOT_CACHE.md for the current flow.

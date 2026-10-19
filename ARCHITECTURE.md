@@ -1,5 +1,7 @@
 # Архитектура Transport Fever 3 Multiplayer
 
+19.10, .6/protocol 11: [общий файл до запуска и докачка](docs/FASTER_CONNECTIONS.md). waiting → preparing → запуск только после точных receipts; затем отдельный барьер готовности движков. Первый старт не создаёт новый engine snapshot и не перезагружает мир второй раз. Частичный кеш проверяет каждый chunk и полный SHA. Ниже — история .5 и предыдущих решений.
+
 19.10: [лобби и точный кеш снимков](docs/LOBBY_AND_SNAPSHOT_CACHE.md), .5/protocol 10. Нормальный Init теперь открывает лобби без игрового процесса; существующие Relay/Client и порт используются для room/revision/ready. Перед bulk — offer → exact local SHA+atomic commit/receipt либо need → прежние chunks. Подтверждения привязаны к Peer+id+transfer; при уходе клиентов ожидание прекращается. Подробности, ограничения и реальные наблюдения .4 — в документе.
 
 18.10: [snapshot queue backpressure](docs/INCIDENT_2026_10_18_SNAPSHOT_QUEUE.md), пакет .4/protocol 9. BoundedOutbox объединяет pending peerclock/mpstatus только в последнем сегменте между ordered frames. Session changes — отдельные границы порядка; идентичный heartbeat сохраняет прежнюю позицию. FIFO команд/частей snapshot и лимиты 8 MiB/128 frames, включая in-flight, сохранены.

@@ -1,3 +1,8 @@
+19.10.2026: package .6 / protocol 11. Update EXE, DLL and mod on both PCs.
+See FASTER_CONNECTIONS.md: the selected save is verified/transferred before TF3
+starts, then all engines must become ready. Identical partial files can resume;
+a changed live world can still need a full transfer. Game acceptance pending.
+
 ОБНОВЛЕНИЕ .5 / protocol 10: лобби перед запуском TF3, проверка точных локальных .sav.
 Одинаковый полный новый пакет обоим. Инструкция, ограничения и игровой повтор:
 LOBBY_AND_SNAPSHOT_CACHE.md. Игра не запускается до кнопки хоста после готовности клиентов.
