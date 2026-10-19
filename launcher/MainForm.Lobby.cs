@@ -173,12 +173,17 @@ namespace MPFever
                     string name="MPFever lobby";int saved=0;
                     using(var staged=source.Stage(Path.Combine(menuGame.Dir,"snapshots"),()=>!Current()))
                     {
-                        foreach(var directory in GameInstall.SaveDirs())
+                        // Serialize with new-session commits: a cancelled copy
+                        // cannot finish after and overwrite their common save.
+                        lock(snapshotCommitGate)
                         {
-                            if(!Current())return;
-                            try {staged.CommitTo(directory,name);saved++;}
-                            catch(IOException e) {Log.Warn("Host lobby destination: "+e.Message);}
-                            catch(UnauthorizedAccessException e) {Log.Warn("Host lobby destination: "+e.Message);}
+                            foreach(var directory in GameInstall.SaveDirs())
+                            {
+                                if(!Current())return;
+                                try {staged.CommitTo(directory,name);saved++;}
+                                catch(IOException e) {Log.Warn("Host lobby destination: "+e.Message);}
+                                catch(UnauthorizedAccessException e) {Log.Warn("Host lobby destination: "+e.Message);}
+                            }
                         }
                     }
                     if(saved==0)throw new IOException("No host save directory is writable");

@@ -38,6 +38,9 @@ class PrelaunchWiringTests(unittest.TestCase):
         self.assertIn('preparation.AllCommitted',start)
         self.assertIn('room.LaunchPrepared(revision,source.Manifest.Transfer)',start)
         self.assertIn('QueueLobbyLaunch(room.Id',start)
+        staging=body(start,'using(var staged=','if(saved==0)')
+        self.assertIn('lock(snapshotCommitGate)',staging)
+        self.assertLess(staging.index('if(!Current())return;'),staging.index('staged.CommitTo'))
         self.assertNotIn('BroadcastLobby();LaunchLobbyGame();',start)
         receive=body(self.lobby,'void ReceiveLobby(','void LaunchLobby()')
         self.assertIn('view.Members.Values.All',receive)
@@ -65,6 +68,8 @@ class PrelaunchWiringTests(unittest.TestCase):
         initial=auto[auto.index('var prepared=lobbyPreparation;'):auto.index('// With waiting clients')]
         self.assertNotIn('Resync(',initial)
         self.assertIn('StartSession();',initial)
+        final=initial[initial.index('lock(sessionGate)'):]
+        self.assertLess(final.index('if(!Current())return;'),final.index('StartSession();'))
         start=body(self.main,'void StartSession(','void SetSpeed(')
         self.assertIn('if(resume && startGen==sessionGen)',start)
         self.assertIn('speed = resume ? 0 : 1',start)

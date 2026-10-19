@@ -863,22 +863,25 @@ namespace MPFever
                 bool ClocksReady() {lock(clocks)return clocks.ContainsKey(expectedHost) && prepared.Peers.All(p=>clocks.ContainsKey(p.Name));}
                 Log.W("Common save already committed; waiting for all engines, without creating or transmitting another snapshot");
                 bool done=WaitUntil(()=>!Current() || !Present() || prepared.Expired(DateTime.UtcNow) || prepared.AllReady && ClocksReady(),LoadLiveness.HardSeconds);
-                if(!Current())return;
-                if(!Present())
+                lock(sessionGate)
                 {
-                    // Reconnecting after engines began loading needs the normal
-                    // authoritative recovery, never the stale prelaunch world.
-                    lobbyPreparation=null;StartSession(false);joinPending=true;
-                    Log.Warn("Initial load membership changed; waiting paused for a fresh authoritative recovery");return;
-                }
-                if(!done || !prepared.AllReady || !ClocksReady())
-                {Log.Err("Initial engine load not acknowledged; games stay paused. Collect both launcher logs and restart the session.");return;}
-                StartSession();
-                if(started)
-                {
-                    lobbyPreparation=null;joinPending=false;
-                    Log.W("Common-save startup complete in "+(int)(DateTime.UtcNow-prepared.Started).TotalSeconds+"s; no initial resync/save/reload cycle");
-                    menuPhase="ingame";menuText=T("Partie en cours.","Game running.");MenuStatus();
+                    if(!Current())return;
+                    if(!Present())
+                    {
+                        // Reconnecting after engines began loading needs the normal
+                        // authoritative recovery, never the stale prelaunch world.
+                        lobbyPreparation=null;StartSession(false);joinPending=true;
+                        Log.Warn("Initial load membership changed; waiting paused for a fresh authoritative recovery");return;
+                    }
+                    if(!done || !prepared.AllReady || !ClocksReady())
+                    {Log.Err("Initial engine load not acknowledged; games stay paused. Collect both launcher logs and restart the session.");return;}
+                    StartSession();
+                    if(started)
+                    {
+                        lobbyPreparation=null;joinPending=false;
+                        Log.W("Common-save startup complete in "+(int)(DateTime.UtcNow-prepared.Started).TotalSeconds+"s; no initial resync/save/reload cycle");
+                        menuPhase="ingame";menuText=T("Partie en cours.","Game running.");MenuStatus();
+                    }
                 }
                 return;
             }
