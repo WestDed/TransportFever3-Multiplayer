@@ -1,3 +1,13 @@
+0.3.7-westded.7-experimental (protocol 11) - keep progress and measure stalls
+  - Preserve verified partial data on Cancel, normal Close and cancelled hashing.
+  - Isolate completed temporary files from new downloads and their cleanup.
+  - Log current/average rates, including zero-byte windows, and actual socket,
+    frame, handler, disk and checkpoint times without changing wire ordering.
+  - Exercise 192519583-byte TCP transfers on net8 and Windows net48, including
+    repeated flushes; actual WinForms Cancel/Close and resume regressions.
+  - See TRANSFER_STALLS_2026_10_20.md. Root cause of the user throughput cliff
+    is not established; CI is not a TF3/Porthole test. Full update on both PCs.
+
 0.3.7-westded.6-experimental (protocol 11) - connection startup and resume
   - Verify/transfer the selected save before launching TF3; wait for all file
     receipts, then all engine-ready reports, without an initial second reload.
