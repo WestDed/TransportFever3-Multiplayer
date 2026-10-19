@@ -61,6 +61,9 @@ namespace MPFever
                     if (t.Count!=3 || Text(t,"phase",16)!="loading" && Text(t,"phase",16)!="ready") throw new InvalidDataException("Invalid load status");
                     goto case "resync_received";
                 case "resync_need":
+                    if(t.Count!=2 && t.Count!=3 || t.Count==3 && !t.ContainsKey("have"))throw new InvalidDataException("Invalid snapshot request");
+                    if(t.TryGetValue("have",out var mask) && (!(mask is string bits) || bits.Length<1 || bits.Length>4096 || bits.Any(c=>c!='0' && c!='1')))throw new InvalidDataException("Invalid snapshot resume mask");
+                    goto case "resync_received";
                 case "resync_received": Integer(t,"id",1,int.MaxValue); if (!SnapshotLimits.Hex(Text(t,"transfer",32),32)) throw new InvalidDataException("Invalid receipt"); break;
                 case "lobby_ready":
                     if(t.Count!=5 || !(Get(t,"ready") is bool))throw new InvalidDataException("Invalid lobby readiness");

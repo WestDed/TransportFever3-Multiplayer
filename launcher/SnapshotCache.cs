@@ -89,7 +89,7 @@ namespace MPFever
     }
     static class SnapshotExchange
     {
-        public static void Send(SnapshotSource source,string from,SnapshotDecision decision,Func<Msg,bool> control,Func<Msg,bool> bulk,Func<bool> cancelled,Action<long,double> progress=null,int probeMilliseconds=90000)
+        public static void Send(SnapshotSource source,string from,SnapshotDecision decision,Func<Msg,bool> control,Func<Msg,bool> bulk,Func<bool> cancelled,Action<long,double> progress=null,int probeMilliseconds=180000)
         {
             if(cancelled() || !control(Msg.Make("resync_offer",from,source.Manifest.Payload())))throw new IOException("Snapshot offer could not be queued");
             DateTime deadline=DateTime.UtcNow.AddMilliseconds(probeMilliseconds);
@@ -101,14 +101,20 @@ namespace MPFever
             if(cancelled())throw new IOException("Snapshot peer disconnected");
             if(!decision.Need.Value) {Log.W("Exact local snapshot acknowledged; bulk file skipped");return;}
             DateTime began=DateTime.UtcNow,last=began;long bytes=0;
+            var have=decision.Have;int part=0;
             source.SendTo(m=>
             {
                 bool sent=bulk(m);
-                if(sent && m.Kind=="resync_file")bytes=Math.Min(source.Manifest.Bytes,bytes+SnapshotLimits.ChunkBytes);
+                if(sent && m.Kind=="resync_file")
+                {
+                    while(have!=null && part<have.Length && have[part])part++;
+                    bytes+=Math.Min(SnapshotLimits.ChunkBytes,source.Manifest.Bytes-(long)part*SnapshotLimits.ChunkBytes);part++;
+                }
                 if((DateTime.UtcNow-last).TotalSeconds>=10)
                 {last=DateTime.UtcNow;progress?.Invoke(bytes,(last-began).TotalSeconds);}
                 return sent;
-            },from,cancelled);
+            },from,cancelled,have);
+            progress?.Invoke(bytes,(DateTime.UtcNow-began).TotalSeconds);
         }
     }
     // A decision belongs to this Peer object and exact manifest, not a reused
@@ -120,14 +126,22 @@ namespace MPFever
         public readonly SnapshotManifest Manifest;
         public bool? Need { get { lock(gate)return need; } }
         bool? need;
+        bool[] have;
+        public bool[] Have { get { lock(gate)return have==null?null:(bool[])have.Clone(); } }
         public SnapshotDecision(Peer peer,SnapshotManifest manifest) { this.peer=peer;Manifest=manifest; }
         public bool Reply(Peer from,Dictionary<object,object> t,bool missing)
         {
             lock(gate)
             {
                 if(!ReferenceEquals(peer,from) || SnapshotLimits.Integer(t,"id",1,int.MaxValue)!=Manifest.Id || SnapshotLimits.Text(t,"transfer")!=Manifest.Transfer)return false;
+                bool[] next=null;
+                if(missing && t.TryGetValue("have",out var value))
+                {
+                    if(!(value is string mask) || mask.Length!=Manifest.Parts || mask.Any(c=>c!='0' && c!='1'))throw new InvalidDataException("Invalid snapshot resume mask");
+                    next=mask.Select(c=>c=='1').ToArray();
+                }
                 if(need.HasValue)return need.Value==missing;
-                need=missing;return true;
+                have=next;need=missing;return true;
             }
         }
     }
