@@ -23,6 +23,7 @@ namespace MPFever
             {
                 var bulk = Msg.Make("resync_file", "Host", new string('a', 1024));
                 Check(box.Enqueue(bulk) && sink.Started.Wait(5000), "slow transfer has one bulk frame in flight");
+                Check(box.WriteTiming.Capture().ActiveMilliseconds>0 && box.WriteTiming.Capture().Bytes==0,"blocked production socket writer exposes in-flight wait without claiming bytes were delivered");
                 int count = 1;
                 while (count < 128 && box.Enqueue(bulk)) count++;
                 Check(count < 128, "snapshot producer respects reserved capacity");

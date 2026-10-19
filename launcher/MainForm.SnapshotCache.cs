@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -14,7 +15,23 @@ namespace MPFever
         sealed class CacheProbe { public volatile bool Cancelled;public Func<bool> Current; }
         readonly Dictionary<GameLink,CacheProbe> cacheProbes=new Dictionary<GameLink,CacheProbe>();
         readonly Dictionary<GameLink,SnapshotManifest> downloadOffers=new Dictionary<GameLink,SnapshotManifest>();
-        sealed class DownloadProgress { public DateTime Started=DateTime.UtcNow,Last=DateTime.UtcNow;public long Reused; }
+        sealed class DownloadProgress
+        {
+            public readonly Stopwatch Clock=Stopwatch.StartNew();
+            public readonly TransferRate Rate;
+            public readonly Client Client;
+            public readonly SnapshotReceiver Receiver;
+            public readonly long Reused,Total;
+            public long Verified,LastVerified;
+            public double Last;
+            public OperationSample Read,Frame,Handler,Write,Checkpoint;
+            public DownloadProgress(Client client,SnapshotReceiver receiver,long total)
+            {
+                Client=client;Receiver=receiver;Total=total;LastVerified=Verified=Reused=receiver.ReceivedBytes;Rate=new TransferRate(Reused);
+                Read=client.SocketReadTiming.Capture();Frame=client.FrameReadTiming.Capture();Handler=client.HandlerTiming.Capture();
+                Write=receiver.WriteTiming.Capture();Checkpoint=receiver.CheckpointTiming.Capture();
+            }
+        }
         readonly Dictionary<GameLink,DownloadProgress> downloadProgress=new Dictionary<GameLink,DownloadProgress>();
         void SuspendDownloads()
         {
@@ -86,19 +103,53 @@ namespace MPFever
                     if(!Active())return;
                     using(var done=receiver.CompleteIfReady())
                     {if(done!=null) {CommitSnapshot(game,done,client,message.From,true,Active);return;}}
-                    lock(snapshotReceivers)downloadProgress[game]=new DownloadProgress {Reused=receiver.ReceivedBytes};
+                    lock(snapshotReceivers)downloadProgress[game]=new DownloadProgress(client,receiver,manifest.Bytes);
                     Log.W("["+game.Name+"] local verification took "+(DateTime.UtcNow-began).TotalSeconds.ToString("0.0",System.Globalization.CultureInfo.InvariantCulture)+"s; partial verified: "+receiver.ReceivedBytes+"/"+manifest.Bytes+" bytes reusable; requesting missing parts only");
                     if(Active())client.Send(Msg.Make("resync_need",game.Name,"{[\"id\"]="+manifest.Id+",[\"transfer\"]="+LuaLit.Quote(manifest.Transfer)+",[\"have\"]="+LuaLit.Quote(receiver.HaveMask)+"}"));
                 }
                 catch(Exception e) {if(Active()) {Log.Err("Snapshot resume preparation: "+e.Message);client.Dispose();}}
             }) {IsBackground=true,Name="Snapshot cache verification"}.Start();
         }
-        void ReportDownload(GameLink game,SnapshotReceiver receiver)
+        void UpdateDownload(GameLink game,Client client,SnapshotReceiver receiver,long verified)
+        {
+            lock(snapshotReceivers)
+                if(downloadProgress.TryGetValue(game,out var progress) && ReferenceEquals(progress.Client,client)
+                    && ReferenceEquals(progress.Receiver,receiver) && verified>Interlocked.Read(ref progress.Verified))Interlocked.Exchange(ref progress.Verified,verified);
+        }
+        void ReportDownload(GameLink game,Client client,bool force=false)
         {
             DownloadProgress progress;lock(snapshotReceivers)downloadProgress.TryGetValue(game,out progress);
-            if(progress==null || (DateTime.UtcNow-progress.Last).TotalSeconds<10)return;
-            progress.Last=DateTime.UtcNow;
-            Log.W("["+game.Name+"] snapshot receiving: "+receiver.Percent+"%, "+receiver.ReceivedBytes+" verified bytes ("+progress.Reused+" reused), "+(long)(Math.Max(0,receiver.ReceivedBytes-progress.Reused)/Math.Max(1,(progress.Last-progress.Started).TotalSeconds))+" B/s newly received");
+            if(progress==null || !ReferenceEquals(progress.Client,client))return;
+            lock(progress)
+            {
+                double elapsed=progress.Clock.Elapsed.TotalSeconds;
+                if(!force && elapsed-progress.Last<10)return;
+                long verified=Interlocked.Read(ref progress.Verified);
+                if(force && verified==progress.LastVerified && elapsed-progress.Last<1)return;
+                var rate=progress.Rate.Take(verified,elapsed);
+                // Capture does not acquire the receiver lock, even when its disk
+                // flush is stalled. A zero-byte window is useful evidence too.
+                var read=client.SocketReadTiming.Capture();var frame=client.FrameReadTiming.Capture();var handler=client.HandlerTiming.Capture();
+                var write=progress.Receiver.WriteTiming.Capture();var checkpoint=progress.Receiver.CheckpointTiming.Capture();
+                Log.W("["+game.Name+"] snapshot receiving: "+(100*verified/progress.Total)+"%, "+verified+"/"+progress.Total+" verified bytes ("+progress.Reused+" reused), current="+rate.CurrentBps+" B/s, average="+rate.AverageBps+" B/s; window="+OperationSample.Ms(rate.IntervalSeconds)+"s"
+                    +", socket_wait_ms="+OperationSample.Ms(read.Since(progress.Read))+", frame_read_ms="+OperationSample.Ms(frame.Since(progress.Frame))
+                    +", handler_ms="+OperationSample.Ms(handler.Since(progress.Handler))+", disk_write_ms="+OperationSample.Ms(write.Since(progress.Write))
+                    +", checkpoint_ms="+OperationSample.Ms(checkpoint.Since(progress.Checkpoint))+", wire_bytes="+Math.Max(0,read.Bytes-progress.Read.Bytes)
+                    +", active_read_ms="+OperationSample.Ms(read.ActiveMilliseconds)+", active_handler_ms="+OperationSample.Ms(handler.ActiveMilliseconds)
+                    +", active_write_ms="+OperationSample.Ms(write.ActiveMilliseconds)+", active_checkpoint_ms="+OperationSample.Ms(checkpoint.ActiveMilliseconds));
+                progress.Read=read;progress.Frame=frame;progress.Handler=handler;progress.Write=write;progress.Checkpoint=checkpoint;progress.Last=elapsed;progress.LastVerified=verified;
+            }
+        }
+        Action<long,double> SendingProgress(Peer peer,long total,string phase)
+        {
+            var rate=new TransferRate(0);var previous=peer.Outbox.WriteTiming.Capture();
+            return (bytes,seconds)=>
+            {
+                var speed=rate.Take(bytes,seconds);var write=peer.Outbox.WriteTiming.Capture();
+                Log.W(phase+" queued to "+peer.Name+": "+bytes+"/"+total+" bytes, current="+speed.CurrentBps+" B/s, average="+speed.AverageBps+" B/s (queueing, not receipt); socket_write_ms="+OperationSample.Ms(write.Since(previous))
+                    +", wire_written="+Math.Max(0,write.Bytes-previous.Bytes)+", active_write_ms="+OperationSample.Ms(write.ActiveMilliseconds)+"; "+peer.Outbox.Describe());
+                previous=write;
+            };
         }
         void CommitSnapshot(GameLink game,CompletedSnapshot completed,Client client,string from,bool cached,Func<bool> current)
         {

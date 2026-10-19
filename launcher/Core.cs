@@ -859,6 +859,7 @@ namespace MPFever
     /// <summary>Client side: one TCP connection to the host.</summary>
     sealed class Client : IDisposable
     {
+        public readonly OperationMeter SocketReadTiming=new OperationMeter(),FrameReadTiming=new OperationMeter(),HandlerTiming=new OperationMeter();
         TcpClient tcp;
         BoundedOutbox outbox;
         volatile bool stop;
@@ -884,7 +885,7 @@ namespace MPFever
                 }
                 connect.GetAwaiter().GetResult(); // Preserve the original socket exception.
                 outbox = new BoundedOutbox(tcp.GetStream(), () => tcp.Close(), "Client send");
-                var reader=new BoundedLineReader(tcp.GetStream());
+                var reader=new BoundedLineReader(tcp.GetStream(),readTiming:SocketReadTiming);
                 var challenge = Msg.Parse(reader.ReadLine(Wire.HandshakeMs, Wire.MaxHandshakeBytes));
                 if (challenge == null || challenge.Kind != "challenge") throw new InvalidDataException("Host did not send an ownership challenge");
                 var ch = ProtocolSchema.Table(LuaLit.Parse(challenge.Payload),"ownership challenge");
@@ -913,16 +914,21 @@ namespace MPFever
             try
             {
                 string line;
-                while ((line = r.ReadLine()) != null)
+                while (true)
                 {
-                    var m = Msg.Parse(line);
-                    if (m == null) throw new InvalidDataException("Invalid message envelope");
-                    if (m.Kind == "reject") throw new InvalidDataException(m.Payload);
-                    if (m.Kind == "connection")
+                    FrameReadTiming.Begin();
+                    try {line=r.ReadLine();}finally {FrameReadTiming.End();}
+                    if(line==null)break;
+                    HandlerTiming.Begin();
+                    try
                     {
-                        throw new InvalidDataException("Unexpected repeated connection credential");
+                        var m = Msg.Parse(line);
+                        if (m == null) throw new InvalidDataException("Invalid message envelope");
+                        if (m.Kind == "reject") throw new InvalidDataException(m.Payload);
+                        if (m.Kind == "connection")throw new InvalidDataException("Unexpected repeated connection credential");
+                        Received?.Invoke(m);
                     }
-                    Received?.Invoke(m);
+                    finally {HandlerTiming.End();}
                 }
             }
             catch (Exception e) { if (!stop) Log.W("client : " + e.Message); }

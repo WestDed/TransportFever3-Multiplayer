@@ -1254,6 +1254,7 @@ namespace MPFever
                         { pending.LastSent=DateTime.UtcNow;loading=pending; }
                     }
                     if(loading!=null) current?.Send(Msg.Make("load_status",game.Name,LoadStatus(loading.Manifest,"loading")));
+                    var receiving=current;if(receiving!=null)ReportDownload(game,receiving);
                     foreach (var line in game.ReadChatOut())
                     {
                         var text = ChatClean(line);
@@ -1957,7 +1958,7 @@ namespace MPFever
                                 SnapshotExchange.Send(source,hostName,probe,
                                     m=>activeRelay.SendBulk(peer,m,false),m=>activeRelay.SendBulk(peer,m),
                                     ()=>!Current() || Volatile.Read(ref cancelled)!=0 || !Present(new[]{peer}),
-                                    (bytes,seconds)=>Log.W("Snapshot queued to "+peer.Name+": "+bytes+"/"+source.Manifest.Bytes+" bytes, "+(long)(bytes/Math.Max(1,seconds))+" B/s (queueing, not receipt)"));
+                                    SendingProgress(peer,source.Manifest.Bytes,"Snapshot"));
                             }
                             catch (Exception e) { lock (failures) failures.Add(peers[index].Name + ": " + e.Message); activeRelay.Close(peers[index]); }
                             finally { done[index].Set(); }
@@ -2051,12 +2052,17 @@ namespace MPFever
             }
             using (var completed = receiver.Add(fields))
             {
+                if(!current() || !probe.Current())return;
+                UpdateDownload(game,client,receiver,completed==null?receiver.ReceivedBytes:completed.Manifest.Bytes);
                 if (completed == null)
                 {
-                    ReportDownload(game,receiver);
+                    ReportDownload(game,client);
                     if (menuMode && !game.InGame) { menuPhase = "downloading"; menuText = F("Réception de la partie de l'hôte : {0} %", "Receiving the host's game: {0} %", receiver.Percent); }
                     return;
                 }
+                ReportDownload(game,client,true);
+                lock(snapshotReceivers)
+                    if(downloadProgress.TryGetValue(game,out var progress) && ReferenceEquals(progress.Receiver,receiver))downloadProgress.Remove(game);
                 CommitSnapshot(game,completed,client,m.From,false,()=>current() && probe.Current());
             }
         }

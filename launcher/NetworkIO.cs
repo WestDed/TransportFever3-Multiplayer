@@ -71,8 +71,9 @@ namespace MPFever
         readonly int partialMs;
         readonly int limit;
         int pos, count;
-        public BoundedLineReader(Stream stream, int limit = Wire.MaxFrameBytes, int partialMs = Wire.PartialFrameMs)
-        { this.stream = stream; this.limit = limit; line = new LineAccumulator(limit); this.partialMs = partialMs; }
+        readonly OperationMeter readTiming;
+        public BoundedLineReader(Stream stream, int limit = Wire.MaxFrameBytes, int partialMs = Wire.PartialFrameMs,OperationMeter readTiming=null)
+        { this.stream = stream; this.limit = limit; line = new LineAccumulator(limit); this.partialMs = partialMs;this.readTiming=readTiming; }
         // A smaller first-frame cap must keep this reader's already buffered bytes:
         // replacing the reader after join could lose the next pipelined message.
         public string ReadLine(int idleMs = -1, int? maxBytes = null)
@@ -95,7 +96,9 @@ namespace MPFever
                 if (idleMs >= 0) timeout = Math.Min(timeout < 0 && partial == null ? idleMs : timeout, idleMs - (int)Math.Min(int.MaxValue, idle.ElapsedMilliseconds));
                 if (timeout == 0 || timeout < 0 && (partial != null || idleMs >= 0)) throw new IOException("Message read deadline exceeded");
                 if (stream.CanTimeout) stream.ReadTimeout = timeout;
-                count = stream.Read(buffer, 0, buffer.Length); pos = 0;
+                readTiming?.Begin();int received=0;
+                try {received=stream.Read(buffer,0,buffer.Length);count=received;pos=0;}
+                finally {readTiming?.End(received);}
                 if (count == 0)
                 {
                     if (line.Length != 0) throw new InvalidDataException("Truncated message at end of stream");
@@ -174,6 +177,7 @@ namespace MPFever
         int bytes, frames;
         long coalesced;
         bool stopped;
+        public readonly OperationMeter WriteTiming=new OperationMeter();
         public BoundedOutbox(Stream stream, Action close, string name, int byteLimit = MaxQueuedBytes)
         {
             this.stream = stream; this.close = close; this.byteLimit = byteLimit; this.name = name;
@@ -261,7 +265,9 @@ namespace MPFever
                         if (node.Value.StateKey != null && latest.TryGetValue(node.Value.StateKey, out var pending) && pending == node)
                             latest.Remove(node.Value.StateKey);
                     }
-                    stream.Write(data, 0, data.Length);
+                    WriteTiming.Begin();long written=0;
+                    try {stream.Write(data,0,data.Length);written=data.Length;}
+                    finally {WriteTiming.End(written);}
                     lock (gate) { bytes -= data.Length; frames--; Monitor.PulseAll(gate); }
                 }
             }

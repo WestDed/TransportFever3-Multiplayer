@@ -8,6 +8,7 @@
   <ItemGroup>
     <Compile Include="../../launcher/Core.cs" Link="Core.cs" />
     <Compile Include="../../launcher/NetworkIO.cs" Link="NetworkIO.cs" />
+    <Compile Include="../../launcher/TransferDiagnostics.cs" Link="TransferDiagnostics.cs" />
     <Compile Include="../../launcher/Snapshots.cs" Link="Snapshots.cs" />
     <Compile Include="../../launcher/SnapshotResume.cs" Link="SnapshotResume.cs" />
     <Compile Include="../../launcher/SnapshotCache.cs" Link="SnapshotCache.cs" />

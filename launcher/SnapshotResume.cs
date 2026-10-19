@@ -68,6 +68,7 @@ namespace MPFever
                     catch(InvalidDataException) {stored=null;}
                 }
                 file=new FileStream(path,stored==null?FileMode.Create:FileMode.Open,FileAccess.ReadWrite,FileShare.None);
+                ownsPath=true;
                 file.SetLength(next.Bytes);
                 if(stored!=null)
                 {
@@ -90,11 +91,16 @@ namespace MPFever
             {
                 // Verification only read the previous checkpoint. Cancelling it
                 // must not destroy parts that the next attempt can revalidate.
-                file?.Dispose();file=null;path=null;manifest=null;seen=null;digests=null;received=0;throw;
+                file?.Dispose();file=null;path=null;manifest=null;seen=null;digests=null;received=0;ownsPath=false;throw;
             }
             catch {Clear();throw;}
         }
         void Checkpoint()
+        {
+            CheckpointTiming.Begin();
+            try {WriteCheckpoint();}finally {CheckpointTiming.End();}
+        }
+        void WriteCheckpoint()
         {
             // Flush data before committing the map. Up to five seconds may be
             // retransmitted after a crash; unflushed bytes are never trusted.
@@ -119,7 +125,7 @@ namespace MPFever
                 if(disposed)return;
                 try {if(resumable && manifest!=null)Checkpoint();else Clear();}
                 catch {Clear();throw;}
-                finally {disposed=true;timer.Dispose();file?.Dispose();file=null;path=null;manifest=null;seen=null;digests=null;received=0;}
+                finally {disposed=true;timer.Dispose();file?.Dispose();file=null;path=null;manifest=null;seen=null;digests=null;received=0;ownsPath=false;}
             }
         }
     }

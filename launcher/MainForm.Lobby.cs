@@ -200,7 +200,7 @@ namespace MPFever
                                     SnapshotExchange.Send(source,hostName,preparation.Decision(peer),
                                         m=>network.SendBulk(peer,m,false),m=>network.SendBulk(peer,m),
                                         ()=>!Current() || Volatile.Read(ref stop)!=0 || !Present(),
-                                        (bytes,seconds)=>Log.W("Prelaunch queued to "+peer.Name+": "+bytes+" bytes, "+(long)(bytes/Math.Max(1,seconds))+" B/s (queueing, not receipt)"));
+                                        SendingProgress(peer,source.Manifest.Bytes,"Prelaunch"));
                                 }
                                 catch(Exception e) {lock(failures)failures.Add(peer.Name+": "+e.Message);}
                             }) {IsBackground=true,Name="Prelaunch to "+peer.Name};threads.Add(thread);thread.Start();
