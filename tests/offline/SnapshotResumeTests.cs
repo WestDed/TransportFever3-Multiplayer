@@ -86,6 +86,9 @@ namespace MPFever
                 {
                     using(var receiver=new SnapshotReceiver(spool,resumable:true))receiver.Begin(old[0].Payload,()=>true);
                 },"cancelled partial disk verification cannot advertise unverified chunks");
+                Check(SnapshotReceiver.HasPartial(spool,oldManifest),"cancelled local verification retains the previous checkpoint");
+                using(var receiver=new SnapshotReceiver(spool,resumable:true))
+                {receiver.Begin(old[0].Payload);Check(receiver.HaveMask=="100","a new attempt restores all chunks retained before verification was cancelled");}
                 foreach(string payload in new[]{"{[\"id\"]=1,[\"transfer\"]=\""+oldManifest.Transfer+"\",[\"have\"]=\"001\"}","{[\"id\"]=1,[\"transfer\"]=\""+oldManifest.Transfer+"\"}"})
                     Check(ProtocolSchema.ValidateClient(Msg.Make("resync_need","guest",payload))!=null,"production schema accepts bounded new mask and legacy full request");
                 foreach(string value in new[]{"\"\"","\"10x\"","true","{}","\""+new string('1',4097)+"\""})

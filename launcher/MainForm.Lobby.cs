@@ -118,7 +118,7 @@ namespace MPFever
             if(view.Version!=Version || view.Content!=lobbyContent)throw new InvalidDataException("MPFever files differ; install the same complete package as the host");
             if(view.Phase=="preparing") {menuPhase="downloading";menuText=T("Préparation de la sauvegarde commune avant lancement...","Preparing the common save before game launch...");MenuStatus();}
             if(view.Phase=="waiting" && old!=null && old.Phase=="preparing")
-            {lobbyCommittedTransfer=null;menuLoad="";menuLoadSeq="";menuText=T("Connectez les joueurs, confirmez leur état prêt, puis lancez le jeu depuis le salon.","Connect players, confirm readiness, then launch the game from the lobby.");MenuStatus();}
+            {SuspendDownloads();lobbyCommittedTransfer=null;menuLoad="";menuLoadSeq="";menuText=T("Connectez les joueurs, confirmez leur état prêt, puis lancez le jeu depuis le salon.","Connect players, confirm readiness, then launch the game from the lobby.");MenuStatus();}
             if(view.Phase=="launching" && !lobbyGameLaunched && lobbyPeerName!=null && view.Members.TryGetValue(lobbyPeerName,out var memberReady) && memberReady)
             {
                 if(view.Version!=Version || view.Content!=lobbyContent || !view.Members.Values.All(v=>v))throw new InvalidDataException("Incompatible or unready lobby launch");

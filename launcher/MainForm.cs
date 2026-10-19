@@ -829,7 +829,7 @@ namespace MPFever
             lock (clocks) clocks.Clear();
             lock (hashes) hashes.Clear();
             lock (chatLog) { chatLog.Clear(); chatId = 0; }
-            lock (snapshotReceivers) { foreach(var probe in cacheProbes.Values)probe.Cancelled=true;foreach (var receiver in snapshotReceivers.Values) receiver.Dispose(); snapshotReceivers.Clear(); loadingClients.Clear();cacheProbes.Clear();downloadOffers.Clear();downloadProgress.Clear(); }
+            SuspendDownloads();
             hashN = 0; syncText = "—"; actsRelayed = actRefused = actFails = desyncs = 0;
             resyncing = false; resyncFailed = false; resyncWaiting.Clear(); loadWatches.Clear(); ignoredParts.Clear(); checkpointState.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = "";
             joinPending = false;
@@ -2116,6 +2116,7 @@ namespace MPFever
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             lock(sessionGate) {sessionGen++;clientCancelled=true;}
+            SuspendDownloads();
             foreach (var g in games) g.Dispose();
             foreach (var c in clients) c.Dispose();
             relay?.Dispose();

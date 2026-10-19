@@ -16,6 +16,16 @@ namespace MPFever
         readonly Dictionary<GameLink,SnapshotManifest> downloadOffers=new Dictionary<GameLink,SnapshotManifest>();
         sealed class DownloadProgress { public DateTime Started=DateTime.UtcNow,Last=DateTime.UtcNow;public long Reused; }
         readonly Dictionary<GameLink,DownloadProgress> downloadProgress=new Dictionary<GameLink,DownloadProgress>();
+        void SuspendDownloads()
+        {
+            lock(snapshotReceivers)
+            {
+                foreach(var probe in cacheProbes.Values)probe.Cancelled=true;
+                foreach(var receiver in snapshotReceivers.Values)
+                    try {receiver.Suspend();}catch(Exception e) {Log.Warn("Snapshot checkpoint on leave: "+e.Message);}
+                snapshotReceivers.Clear();loadingClients.Clear();cacheProbes.Clear();downloadOffers.Clear();downloadProgress.Clear();
+            }
+        }
         IEnumerable<string> LocalSnapshotCandidates()
         {
             foreach(var directory in GameInstall.SaveDirs())

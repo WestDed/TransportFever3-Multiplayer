@@ -86,6 +86,12 @@ namespace MPFever
                 }
                 Checkpoint();
             }
+            catch(OperationCanceledException)
+            {
+                // Verification only read the previous checkpoint. Cancelling it
+                // must not destroy parts that the next attempt can revalidate.
+                file?.Dispose();file=null;path=null;manifest=null;seen=null;digests=null;received=0;throw;
+            }
             catch {Clear();throw;}
         }
         void Checkpoint()
@@ -104,8 +110,8 @@ namespace MPFever
             if(File.Exists(Metadata))File.Replace(Metadata+".tmp",Metadata,null);else File.Move(Metadata+".tmp",Metadata);
             checkpointed=now();
         }
-        // Network loss keeps only verified data. Explicit disposal/cancel still
-        // removes an active transfer, preserving the old non-resumable contract.
+        // App leave/cancel/close and network loss keep verified data. Dispose
+        // remains the explicit destructive API for an active spool.
         public void Suspend()
         {
             lock(gate)
