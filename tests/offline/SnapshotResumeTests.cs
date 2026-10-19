@@ -86,10 +86,27 @@ namespace MPFever
                 {
                     using(var receiver=new SnapshotReceiver(spool,resumable:true))receiver.Begin(old[0].Payload,()=>true);
                 },"cancelled partial disk verification cannot advertise unverified chunks");
+                Check(SnapshotReceiver.HasPartial(spool,oldManifest),"cancelled local verification retains the previous checkpoint");
+                using(var receiver=new SnapshotReceiver(spool,resumable:true))
+                {receiver.Begin(old[0].Payload);Check(receiver.HaveMask=="100","a new attempt restores all chunks retained before verification was cancelled");}
                 foreach(string payload in new[]{"{[\"id\"]=1,[\"transfer\"]=\""+oldManifest.Transfer+"\",[\"have\"]=\"001\"}","{[\"id\"]=1,[\"transfer\"]=\""+oldManifest.Transfer+"\"}"})
                     Check(ProtocolSchema.ValidateClient(Msg.Make("resync_need","guest",payload))!=null,"production schema accepts bounded new mask and legacy full request");
                 foreach(string value in new[]{"\"\"","\"10x\"","true","{}","\""+new string('1',4097)+"\""})
                     Reject<InvalidDataException>(()=>ProtocolSchema.ValidateClient(Msg.Make("resync_need","guest","{[\"id\"]=1,[\"transfer\"]=\""+oldManifest.Transfer+"\",[\"have\"]="+value+"}")),"production schema refuses malformed or oversized resume mask");
+                // A completed old download may still be copying while a new
+                // connection reuses the profile's download.part filename.
+                using(var first=new SnapshotReceiver(spool,resumable:true))
+                using(var second=new SnapshotReceiver(spool,resumable:true))
+                {
+                    first.Begin(old[0].Payload);first.Add(old[1].Payload);first.Add(old[2].Payload);
+                    using(var complete=first.Add(old[3].Payload))
+                    {
+                        second.Begin(old[0].Payload);second.Add(old[1].Payload);
+                        Check(File.ReadAllBytes(complete.CommitTo(Path.Combine(root,"handoff"),"old")).SequenceEqual(data),"new transfer cannot truncate a verified old snapshot still being committed");
+                        complete.Dispose();
+                        Check(File.Exists(Path.Combine(spool,"download.part")) && second.HaveMask=="100","disposing old completed transfer cannot delete new active partial");
+                    }
+                }
                 // Crash after the final checkpoint but before whole-file commit:
                 // a subsequent process can finish locally, still checking SHA-256.
                 Action<byte[]> checkpointAll=contents=>

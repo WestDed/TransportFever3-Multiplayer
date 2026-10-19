@@ -17,7 +17,7 @@ echo === 2/3 launcher
 "%MSBUILD%" launcher\MPFever.csproj -restore -p:Configuration=Release -v:minimal -nologo || exit /b 1
 
 echo === 3/3 package
-set "VERSION=0.3.7-westded.6-experimental"
+set "VERSION=0.3.7-westded.7-experimental"
 set "DIST=release\dist\MPFever"
 if exist release\dist rmdir /s /q release\dist
 mkdir "%DIST%" || exit /b 1
@@ -33,6 +33,7 @@ copy /y docs\INCIDENT_2026_10_18_MAP_LOAD.md "%DIST%\INCIDENT_2026_10_18_MAP_LOA
 copy /y docs\INCIDENT_2026_10_18_SNAPSHOT_QUEUE.md "%DIST%\INCIDENT_2026_10_18_SNAPSHOT_QUEUE.md" >nul || exit /b 1
 copy /y docs\LOBBY_AND_SNAPSHOT_CACHE.md "%DIST%\LOBBY_AND_SNAPSHOT_CACHE.md" >nul || exit /b 1
 copy /y docs\FASTER_CONNECTIONS.md "%DIST%\FASTER_CONNECTIONS.md" >nul || exit /b 1
+copy /y docs\TRANSFER_STALLS_2026_10_20.md "%DIST%\TRANSFER_STALLS_2026_10_20.md" >nul || exit /b 1
 xcopy /e /i /q /y mod\mpfever_1 "%DIST%\mod\mpfever_1" >nul || exit /b 1
 if exist "release\MPFever-%VERSION%.zip" del "release\MPFever-%VERSION%.zip"
 rem explicit forward-slash zip entries, also on the older framework used by PowerShell 5

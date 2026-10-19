@@ -1,3 +1,10 @@
+20.10.2026: current package .7 / protocol 11 / FileVersion 0.3.7.7.
+Update the full package on both PCs. Cancel and normal Close retain verified
+partial downloads; transfer logs show current/average speed and I/O timings.
+See TRANSFER_STALLS_2026_10_20.md for exact-save copying to skip bulk and limits.
+The real throughput cliff remains undiagnosed; game/Porthole acceptance pending.
+Earlier release notes below are historical.
+
 19.10.2026: package .6 / protocol 11. Update EXE, DLL and mod on both PCs.
 See FASTER_CONNECTIONS.md: the selected save is verified/transferred before TF3
 starts, then all engines must become ready. Identical partial files can resume;
@@ -18,7 +25,7 @@ See INCIDENT_2026_10_18_MAP_LOAD.md; restart TF3 and install the full package on
 Personal company development, migration, headquarters/landmarks and game acceptance: COMPANY_PROGRESSION.md. Component tests are not game tests. The upstream text below describes older behavior where noted.
 
 MPFever - Multiplayer for Transport Fever 3
-Version 0.3.7-westded.5-experimental
+Version 0.3.7-westded.7-experimental
 ===========================================
 
 MPFever lets several players play the same Transport Fever 3 world together, each one

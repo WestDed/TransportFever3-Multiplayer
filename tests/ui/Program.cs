@@ -105,7 +105,32 @@ static class LauncherUiTests
                 Check(!(bool)link.GetType().GetProperty("GameRunning",Instance).GetValue(link),"queued launch tests never started a game process");
                 Set(form,"running",true);Call(form,"UpdateLobbyUi");((Button)Get(form,"lobbyCancel")).PerformClick();Call(form,"UpdateLobbyUi");Layout(form);
                 Check(!(bool)Get(form,"lobbyLaunchFailed") && !((Button)Get(form,"lobbyLaunch")).Enabled,"cancel clears failed-launch retry and cannot launch outside a room");
+                // Regression for the user's Cancel -> reconnect sequence.
+                string spool=System.IO.Path.Combine(System.IO.Path.GetTempPath(),"mpf-ui-cancel-"+Guid.NewGuid().ToString("N"));
+                System.IO.Directory.CreateDirectory(spool);
+                string sourceFile=System.IO.Path.Combine(spool,"source.sav");
+                System.IO.File.WriteAllBytes(sourceFile,new byte[256*1024+7]);
+                Type sourceType=assembly.GetType("MPFever.SnapshotSource"),receiverType=assembly.GetType("MPFever.SnapshotReceiver");
+                var snapshot=Activator.CreateInstance(sourceType,Instance,null,new object[]{sourceFile,1},null);
+                var manifest=Get(snapshot,"Manifest");string payload=(string)Call(manifest,"Payload"),transfer=(string)Get(manifest,"Transfer");
+                string partial=System.IO.Path.Combine(spool,"partial");
+                object receiver=Activator.CreateInstance(receiverType,Instance,null,new object[]{partial,null,true},null);
+                Call(receiver,"Begin",payload,null);
+                string part="{[\"id\"]=1,[\"transfer\"]=\""+transfer+"\",[\"i\"]=0,[\"n\"]=2,[\"data\"]=\""+Convert.ToBase64String(new byte[256*1024])+"\"}";
+                receiverType.GetMethod("Add",Instance,null,new[]{typeof(string)},null).Invoke(receiver,new object[]{part});
+                ((IDictionary)Get(form,"snapshotReceivers"))[link]=receiver;
+                Set(form,"running",true);Call(form,"UpdateLobbyUi");((Button)Get(form,"lobbyCancel")).PerformClick();Layout(form);
+                Check(System.IO.File.Exists(System.IO.Path.Combine(partial,"download.part")),"actual Cancel retains already downloaded snapshot bytes");
+                var restored=Activator.CreateInstance(receiverType,Instance,null,new object[]{partial,null,true},null);
+                Call(restored,"Begin",payload,null);
+                Check((string)receiverType.GetProperty("HaveMask",Instance).GetValue(restored)=="10","actual Cancel allows a new connection to reuse the first chunk");
+                ((IDictionary)Get(form,"snapshotReceivers"))[link]=restored;
                 form.Close();
+                var afterClose=Activator.CreateInstance(receiverType,Instance,null,new object[]{partial,null,true},null);
+                Call(afterClose,"Begin",payload,null);
+                Check((string)receiverType.GetProperty("HaveMask",Instance).GetValue(afterClose)=="10","actual window close checkpoints and releases the partial file");
+                ((IDisposable)afterClose).Dispose();((IDisposable)snapshot).Dispose();System.IO.Directory.Delete(spool,true);
+
             }
             Console.WriteLine("Windows WinForms lobby: "+checks+" checks passed; game initialization disabled, no game was run.");return 0;
         }

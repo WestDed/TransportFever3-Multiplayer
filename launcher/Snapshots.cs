@@ -187,6 +187,7 @@ namespace MPFever
     // lives in a temporary file and never replaces a loadable save before SHA-256.
     sealed partial class SnapshotReceiver : IDisposable
     {
+        public readonly OperationMeter WriteTiming=new OperationMeter(),CheckpointTiming=new OperationMeter();
         readonly object gate = new object();
         readonly string directory;
         readonly Func<DateTime> now;
@@ -197,7 +198,7 @@ namespace MPFever
         bool[] seen;
         int received, highestId;
         DateTime touched, begun;
-        bool disposed;
+        bool disposed,ownsPath;
         public SnapshotReceiver(string directory, Func<DateTime> clock = null,bool resumable=false)
         {
             this.directory = directory; now = clock ?? (() => DateTime.UtcNow);this.resumable=resumable;
@@ -221,6 +222,7 @@ namespace MPFever
                 try
                 {
                     file = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+                    ownsPath=true;
                     file.SetLength(next.Bytes);
                     manifest = next; seen = new bool[next.Parts]; received = 0; begun = touched = now();
                 }
@@ -259,7 +261,10 @@ namespace MPFever
                 }
                 else
                 {
-                    file.Write(bytes, 0, bytes.Length); seen[i] = true; received++;
+                    WriteTiming.Begin();long written=0;
+                    try {file.Write(bytes,0,bytes.Length);written=bytes.Length;}
+                    finally {WriteTiming.End(written);}
+                    seen[i] = true; received++;
                     if(resumable)using(var sha=SHA256.Create())digests[i]=sha.ComputeHash(bytes);
                 }
                 touched = now();
@@ -277,10 +282,17 @@ namespace MPFever
                 {
                     file.Flush(true); file.Position = 0;
                     if (SnapshotLimits.Hash(file) != manifest.Sha256) throw new InvalidDataException("Snapshot SHA-256 mismatch");
-                    file.Dispose(); file = null;
                     DeleteMetadata();
+                    file.Dispose(); file = null;
+                    if(resumable)
+                    {
+                        // The completed object must own a unique file. A retry
+                        // may create download.part while the old copy commits.
+                        string completed=Path.Combine(directory,".mpfever-"+Guid.NewGuid().ToString("N")+".part");
+                        File.Move(path,completed);path=completed;
+                    }
                     var done = new CompletedSnapshot(manifest, path);
-                    path = null; manifest = null; seen = null; received = 0;
+                    path = null; manifest = null; seen = null; received = 0;ownsPath=false;
                     return done;
                 }
                 catch { Clear(); throw; }
@@ -297,8 +309,9 @@ namespace MPFever
         void Clear()
         {
             file?.Dispose(); file = null;
-            if (path != null && File.Exists(path)) File.Delete(path);
-            if(path!=null)DeleteMetadata();
+            if(ownsPath && path!=null)
+            {if(File.Exists(path))File.Delete(path);DeleteMetadata();}
+            ownsPath=false;
             path = null; manifest = null; seen = null; received = 0;
         }
         public void Dispose() { lock (gate) { disposed = true; timer.Dispose(); Clear(); } }

@@ -68,6 +68,7 @@ namespace MPFever
                     catch(InvalidDataException) {stored=null;}
                 }
                 file=new FileStream(path,stored==null?FileMode.Create:FileMode.Open,FileAccess.ReadWrite,FileShare.None);
+                ownsPath=true;
                 file.SetLength(next.Bytes);
                 if(stored!=null)
                 {
@@ -86,9 +87,20 @@ namespace MPFever
                 }
                 Checkpoint();
             }
+            catch(OperationCanceledException)
+            {
+                // Verification only read the previous checkpoint. Cancelling it
+                // must not destroy parts that the next attempt can revalidate.
+                file?.Dispose();file=null;path=null;manifest=null;seen=null;digests=null;received=0;ownsPath=false;throw;
+            }
             catch {Clear();throw;}
         }
         void Checkpoint()
+        {
+            CheckpointTiming.Begin();
+            try {WriteCheckpoint();}finally {CheckpointTiming.End();}
+        }
+        void WriteCheckpoint()
         {
             // Flush data before committing the map. Up to five seconds may be
             // retransmitted after a crash; unflushed bytes are never trusted.
@@ -104,8 +116,8 @@ namespace MPFever
             if(File.Exists(Metadata))File.Replace(Metadata+".tmp",Metadata,null);else File.Move(Metadata+".tmp",Metadata);
             checkpointed=now();
         }
-        // Network loss keeps only verified data. Explicit disposal/cancel still
-        // removes an active transfer, preserving the old non-resumable contract.
+        // App leave/cancel/close and network loss keep verified data. Dispose
+        // remains the explicit destructive API for an active spool.
         public void Suspend()
         {
             lock(gate)
@@ -113,7 +125,7 @@ namespace MPFever
                 if(disposed)return;
                 try {if(resumable && manifest!=null)Checkpoint();else Clear();}
                 catch {Clear();throw;}
-                finally {disposed=true;timer.Dispose();file?.Dispose();file=null;path=null;manifest=null;seen=null;digests=null;received=0;}
+                finally {disposed=true;timer.Dispose();file?.Dispose();file=null;path=null;manifest=null;seen=null;digests=null;received=0;ownsPath=false;}
             }
         }
     }

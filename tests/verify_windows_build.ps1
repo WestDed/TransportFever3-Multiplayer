@@ -38,7 +38,7 @@ $buildVersion = [regex]::Match([IO.File]::ReadAllText((Join-Path $root 'build.ba
 if (!$packageVersion -or $packageVersion -ne $buildVersion) { throw 'Launcher/package versions differ' }
 $zip = [IO.Compression.ZipFile]::OpenRead((Join-Path $root "release/MPFever-$packageVersion.zip"))
 try {
-    foreach ($entry in @('MPFever/MPFever.exe','MPFever/MPFever.exe.config','MPFever/winhttp.dll','MPFever/LICENSE','MPFever/BUSINESS_MECHANICS.md','MPFever/OFFLINE_UPSTREAM_FIXES.md','MPFever/COMPANY_PROGRESSION.md','MPFever/INCIDENT_2026_10_18_MAP_LOAD.md','MPFever/INCIDENT_2026_10_18_SNAPSHOT_QUEUE.md','MPFever/LOBBY_AND_SNAPSHOT_CACHE.md','MPFever/FASTER_CONNECTIONS.md','MPFever/mod/mpfever_1/content/mpfever_common.lua')) {
+    foreach ($entry in @('MPFever/MPFever.exe','MPFever/MPFever.exe.config','MPFever/winhttp.dll','MPFever/LICENSE','MPFever/BUSINESS_MECHANICS.md','MPFever/OFFLINE_UPSTREAM_FIXES.md','MPFever/COMPANY_PROGRESSION.md','MPFever/INCIDENT_2026_10_18_MAP_LOAD.md','MPFever/INCIDENT_2026_10_18_SNAPSHOT_QUEUE.md','MPFever/LOBBY_AND_SNAPSHOT_CACHE.md','MPFever/FASTER_CONNECTIONS.md','MPFever/TRANSFER_STALLS_2026_10_20.md','MPFever/mod/mpfever_1/content/mpfever_common.lua')) {
         $found = $zip.GetEntry($entry)
         if ($null -eq $found -or $found.Length -eq 0) { throw "Missing or empty packaged entry: $entry" }
         Write-Host "PASS package entry: $entry"

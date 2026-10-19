@@ -75,7 +75,8 @@ class PrelaunchWiringTests(unittest.TestCase):
         self.assertIn('speed = resume ? 0 : 1',start)
 
     def test_cancelled_cache_worker_cannot_request_a_new_session_load(self):
-        self.assertIn('cacheProbes.Clear()',self.main)
+        self.assertIn('SuspendDownloads();',self.main)
+        self.assertIn('cacheProbes.Clear()',self.cache)
         self.assertIn('cacheProbes.Remove(game)',self.main)
         self.assertIn('gen==sessionGen',self.cache)
         commit=self.cache[self.cache.index('void CommitSnapshot('):]

@@ -118,7 +118,7 @@ namespace MPFever
             if(view.Version!=Version || view.Content!=lobbyContent)throw new InvalidDataException("MPFever files differ; install the same complete package as the host");
             if(view.Phase=="preparing") {menuPhase="downloading";menuText=T("Préparation de la sauvegarde commune avant lancement...","Preparing the common save before game launch...");MenuStatus();}
             if(view.Phase=="waiting" && old!=null && old.Phase=="preparing")
-            {lobbyCommittedTransfer=null;menuLoad="";menuLoadSeq="";menuText=T("Connectez les joueurs, confirmez leur état prêt, puis lancez le jeu depuis le salon.","Connect players, confirm readiness, then launch the game from the lobby.");MenuStatus();}
+            {SuspendDownloads();lobbyCommittedTransfer=null;menuLoad="";menuLoadSeq="";menuText=T("Connectez les joueurs, confirmez leur état prêt, puis lancez le jeu depuis le salon.","Connect players, confirm readiness, then launch the game from the lobby.");MenuStatus();}
             if(view.Phase=="launching" && !lobbyGameLaunched && lobbyPeerName!=null && view.Members.TryGetValue(lobbyPeerName,out var memberReady) && memberReady)
             {
                 if(view.Version!=Version || view.Content!=lobbyContent || !view.Members.Values.All(v=>v))throw new InvalidDataException("Incompatible or unready lobby launch");
@@ -200,7 +200,7 @@ namespace MPFever
                                     SnapshotExchange.Send(source,hostName,preparation.Decision(peer),
                                         m=>network.SendBulk(peer,m,false),m=>network.SendBulk(peer,m),
                                         ()=>!Current() || Volatile.Read(ref stop)!=0 || !Present(),
-                                        (bytes,seconds)=>Log.W("Prelaunch queued to "+peer.Name+": "+bytes+" bytes, "+(long)(bytes/Math.Max(1,seconds))+" B/s (queueing, not receipt)"));
+                                        SendingProgress(peer,source.Manifest.Bytes,"Prelaunch"));
                                 }
                                 catch(Exception e) {lock(failures)failures.Add(peer.Name+": "+e.Message);}
                             }) {IsBackground=true,Name="Prelaunch to "+peer.Name};threads.Add(thread);thread.Start();

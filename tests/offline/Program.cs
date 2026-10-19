@@ -26,6 +26,7 @@ namespace MPFever
         {
             try
             {
+                if(args.Length==1 && args[0]=="--large-transfer")return LargeSnapshotBenchmark.Run();
 #if NET8_0_OR_GREATER
                 if(args.Length==1 && args[0]=="--bench") return TcpBenchmark.Run();
 #endif
@@ -35,6 +36,7 @@ namespace MPFever
                 CompanyRosterTests();
                 SnapshotTests();
                 SnapshotResumeTests();
+                TransferDiagnosticsTests();
                 OutboxTests();
                 SnapshotControlTests();
                 LobbyTests();

@@ -51,7 +51,7 @@ jobs:
   network-components:
     name: Real TCP and file components (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 5
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -64,10 +64,14 @@ jobs:
       - run: dotnet run --project tests/offline/Offline.csproj --configuration Release
       - name: Generated 32 MiB snapshot through real TCP for 1, 4 and 8 peers (no game)
         run: dotnet run --project tests/offline/Offline.csproj --configuration Release -- --bench
+      - name: User-sized 192.5 MB decode-only and resumable-disk TCP transfer (no game)
+        run: dotnet run --project tests/offline/Offline.csproj --configuration Release -- --large-transfer
       - uses: actions/upload-artifact@v4
         with:
           name: tcp-load-${{ matrix.os }}
-          path: audit-results/tcp-load.json
+          path: |
+            audit-results/tcp-load.json
+            audit-results/large-transfer.json
           if-no-files-found: error
   framework-components:
     name: Actual .NET Framework 4.8 TCP, ownership and file tests (no game)
@@ -84,7 +88,14 @@ jobs:
           dotnet build tests/offline/Offline48.csproj --configuration Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & ./tests/offline/bin48/net48/Offline48.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./tests/offline/bin48/net48/Offline48.exe --large-transfer
           exit $LASTEXITCODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: large-transfer-net48
+          path: audit-results/large-transfer.json
+          if-no-files-found: error
   windows-build:
     name: Full Windows EXE and native DLL build (no game)
     runs-on: windows-latest

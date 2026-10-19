@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -100,7 +101,7 @@ namespace MPFever
             }
             if(cancelled())throw new IOException("Snapshot peer disconnected");
             if(!decision.Need.Value) {Log.W("Exact local snapshot acknowledged; bulk file skipped");return;}
-            DateTime began=DateTime.UtcNow,last=began;long bytes=0;
+            var watch=Stopwatch.StartNew();double last=0;long bytes=0,lastReported=0;
             var have=decision.Have;int part=0;
             source.SendTo(m=>
             {
@@ -110,11 +111,11 @@ namespace MPFever
                     while(have!=null && part<have.Length && have[part])part++;
                     bytes+=Math.Min(SnapshotLimits.ChunkBytes,source.Manifest.Bytes-(long)part*SnapshotLimits.ChunkBytes);part++;
                 }
-                if((DateTime.UtcNow-last).TotalSeconds>=10)
-                {last=DateTime.UtcNow;progress?.Invoke(bytes,(last-began).TotalSeconds);}
+                if(watch.Elapsed.TotalSeconds-last>=10)
+                {last=watch.Elapsed.TotalSeconds;lastReported=bytes;progress?.Invoke(bytes,last);}
                 return sent;
             },from,cancelled,have);
-            progress?.Invoke(bytes,(DateTime.UtcNow-began).TotalSeconds);
+            if(last==0 || bytes!=lastReported)progress?.Invoke(bytes,watch.Elapsed.TotalSeconds);
         }
     }
     // A decision belongs to this Peer object and exact manifest, not a reused

@@ -43,7 +43,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.3.7-westded.6-experimental";
+        public const string Version = "0.3.7-westded.7-experimental";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -829,7 +829,7 @@ namespace MPFever
             lock (clocks) clocks.Clear();
             lock (hashes) hashes.Clear();
             lock (chatLog) { chatLog.Clear(); chatId = 0; }
-            lock (snapshotReceivers) { foreach(var probe in cacheProbes.Values)probe.Cancelled=true;foreach (var receiver in snapshotReceivers.Values) receiver.Dispose(); snapshotReceivers.Clear(); loadingClients.Clear();cacheProbes.Clear();downloadOffers.Clear();downloadProgress.Clear(); }
+            SuspendDownloads();
             hashN = 0; syncText = "—"; actsRelayed = actRefused = actFails = desyncs = 0;
             resyncing = false; resyncFailed = false; resyncWaiting.Clear(); loadWatches.Clear(); ignoredParts.Clear(); checkpointState.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = "";
             joinPending = false;
@@ -1254,6 +1254,7 @@ namespace MPFever
                         { pending.LastSent=DateTime.UtcNow;loading=pending; }
                     }
                     if(loading!=null) current?.Send(Msg.Make("load_status",game.Name,LoadStatus(loading.Manifest,"loading")));
+                    var receiving=current;if(receiving!=null)ReportDownload(game,receiving);
                     foreach (var line in game.ReadChatOut())
                     {
                         var text = ChatClean(line);
@@ -1957,7 +1958,7 @@ namespace MPFever
                                 SnapshotExchange.Send(source,hostName,probe,
                                     m=>activeRelay.SendBulk(peer,m,false),m=>activeRelay.SendBulk(peer,m),
                                     ()=>!Current() || Volatile.Read(ref cancelled)!=0 || !Present(new[]{peer}),
-                                    (bytes,seconds)=>Log.W("Snapshot queued to "+peer.Name+": "+bytes+"/"+source.Manifest.Bytes+" bytes, "+(long)(bytes/Math.Max(1,seconds))+" B/s (queueing, not receipt)"));
+                                    SendingProgress(peer,source.Manifest.Bytes,"Snapshot"));
                             }
                             catch (Exception e) { lock (failures) failures.Add(peers[index].Name + ": " + e.Message); activeRelay.Close(peers[index]); }
                             finally { done[index].Set(); }
@@ -2051,12 +2052,17 @@ namespace MPFever
             }
             using (var completed = receiver.Add(fields))
             {
+                if(!current() || !probe.Current())return;
+                UpdateDownload(game,client,receiver,completed==null?receiver.ReceivedBytes:completed.Manifest.Bytes);
                 if (completed == null)
                 {
-                    ReportDownload(game,receiver);
+                    ReportDownload(game,client);
                     if (menuMode && !game.InGame) { menuPhase = "downloading"; menuText = F("Réception de la partie de l'hôte : {0} %", "Receiving the host's game: {0} %", receiver.Percent); }
                     return;
                 }
+                ReportDownload(game,client,true);
+                lock(snapshotReceivers)
+                    if(downloadProgress.TryGetValue(game,out var progress) && ReferenceEquals(progress.Receiver,receiver))downloadProgress.Remove(game);
                 CommitSnapshot(game,completed,client,m.From,false,()=>current() && probe.Current());
             }
         }
@@ -2116,6 +2122,7 @@ namespace MPFever
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             lock(sessionGate) {sessionGen++;clientCancelled=true;}
+            SuspendDownloads();
             foreach (var g in games) g.Dispose();
             foreach (var c in clients) c.Dispose();
             relay?.Dispose();
