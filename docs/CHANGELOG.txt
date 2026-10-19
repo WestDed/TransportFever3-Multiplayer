@@ -1,3 +1,15 @@
+0.3.7-westded.6-experimental (protocol 11) - connection startup and resume
+  - Verify/transfer the selected save before launching TF3; wait for all file
+    receipts, then all engine-ready reports, without an initial second reload.
+  - Keep validated partial chunks on network loss; request only missing chunks
+    of the exact same snapshot. Changed worlds require a fresh transfer.
+  - Guard cancellation, revision, transfer and socket lifetime; retain the live
+    recovery path for late joins and membership changes during engine loading.
+  - Avoid unchanged menu IPC writes; log local verification, reused/new bytes,
+    copy/commit and engine readiness separately. Full package update on all PCs.
+  - See FASTER_CONNECTIONS.md for limitations and manual game acceptance.
+    Component/Windows CI is not evidence of successful gameplay.
+
 0.3.7-westded.5-experimental — lobby and exact snapshot cache (game retest pending)
 - Open a launcher lobby before starting TF3; existing save and separate/shared companies.
 - Gate host launch on current clients readiness and shipped mod/native compatibility.

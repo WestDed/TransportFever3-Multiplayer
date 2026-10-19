@@ -14,6 +14,9 @@ namespace MPFever
         LobbyRoom hostLobby;
         volatile LobbyView lobbyView;
         string lobbyContent,lobbyPeerName;
+        volatile object lobbyAttempt;
+        volatile LobbyPreparation lobbyPreparation;
+        string lobbyCommittedTransfer;
         readonly ComboBox lobbySave = new ComboBox { DropDownStyle=ComboBoxStyle.DropDownList };
         readonly CheckBox lobbySeparate = new CheckBox { Checked=true,AutoSize=true };
         readonly ModernButton lobbyReady = new ModernButton(ButtonKind.Secondary);
@@ -113,10 +116,14 @@ namespace MPFever
             if(old!=null && old.Room==view.Room && view.Revision<old.Revision)return;
             lobbyView=view;
             if(view.Version!=Version || view.Content!=lobbyContent)throw new InvalidDataException("MPFever files differ; install the same complete package as the host");
+            if(view.Phase=="preparing") {menuPhase="downloading";menuText=T("Préparation de la sauvegarde commune avant lancement...","Preparing the common save before game launch...");MenuStatus();}
+            if(view.Phase=="waiting" && old!=null && old.Phase=="preparing")
+            {lobbyCommittedTransfer=null;menuLoad="";menuLoadSeq="";menuText=T("Connectez les joueurs, confirmez leur état prêt, puis lancez le jeu depuis le salon.","Connect players, confirm readiness, then launch the game from the lobby.");MenuStatus();}
             if(view.Phase=="launching" && !lobbyGameLaunched && lobbyPeerName!=null && view.Members.TryGetValue(lobbyPeerName,out var memberReady) && memberReady)
             {
                 if(view.Version!=Version || view.Content!=lobbyContent || !view.Members.Values.All(v=>v))throw new InvalidDataException("Incompatible or unready lobby launch");
-                QueueLobbyLaunch(view.Room);
+                if(view.Snapshot!=lobbyCommittedTransfer)return; // late join waits for a fresh authoritative offer
+                QueueLobbyLaunch(view.Room,()=>lobbyView!=null && lobbyView.Phase=="launching" && lobbyView.Snapshot==lobbyCommittedTransfer && clients.Count>0);
             }
         }
         void LaunchLobby()
@@ -126,11 +133,110 @@ namespace MPFever
             try
             {
                 if(GameInstall.FindSave(room.Save)==null)throw new IOException("Host save no longer exists");
+                activeLoadTimeout=SnapshotLimits.LoadTimeoutSeconds(Environment.GetEnvironmentVariable("MPFEVER_LOAD_TIMEOUT_SECONDS"));
                 if(LobbyFiles.Fingerprint(GameInstall.FindModSource(),Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"winhttp.dll"))!=lobbyContent)throw new IOException("MPFever files changed; recreate the lobby");
-                if(!room.Launch(room.Revision))return;
-                BroadcastLobby();LaunchLobbyGame();
+                if(!room.Prepare(room.Revision))return;
+                var attempt=new object();lobbyAttempt=attempt;lobbyPreparation=null;
+                int generation=sessionGen,revision=room.Revision;var network=relay;var peers=network.Peers();
+                menuPhase="downloading";menuText=T("Préparation de la sauvegarde commune avant lancement...","Preparing the common save before game launch...");MenuStatus();
+                BroadcastLobby();
+                new Thread(()=>PrepareLobbySave(room,revision,network,peers,attempt,generation)) {IsBackground=true,Name="Prelaunch common save"}.Start();
             }
             catch(Exception e) { Log.Err("Lobby launch: "+e.Message); }
+        }
+        void AbortLobbyPreparation()
+        {
+            lock(sessionGate)
+            {
+                if(hostLobby==null || !hostLobby.AbortPreparation())return;
+                lobbyAttempt=null;lobbyPreparation=null;
+                Log.Warn("Prelaunch transfer cancelled. Games stay closed; reconnect, mark Ready and start again to resume the same save.");
+            }
+        }
+        void PrepareLobbySave(LobbyRoom room,int revision,Relay network,Peer[] peers,object attempt,int generation)
+        {
+            bool Current() => generation==sessionGen && ReferenceEquals(relay,network) && ReferenceEquals(hostLobby,room)
+                && ReferenceEquals(lobbyAttempt,attempt) && room.Preparing && room.Revision==revision;
+            bool Present() {var live=network.Peers();return live.Length==peers.Length && peers.All(live.Contains);}
+            bool success=false;int stop=0;
+            try
+            {
+                using(var source=new SnapshotSource(GameInstall.FindSave(room.Save),Interlocked.Increment(ref resyncId)))
+                {
+                    if(!Current() || !Present())return;
+                    var preparation=new LobbyPreparation(source.Manifest,revision,peers);
+                    lock(sessionGate)
+                    {
+                        if(!Current() || !room.SetSnapshot(revision,source.Manifest.Transfer))return;
+                        lobbyPreparation=preparation;BroadcastLobby();
+                    }
+                    string name="MPFever lobby";int saved=0;
+                    using(var staged=source.Stage(Path.Combine(menuGame.Dir,"snapshots"),()=>!Current()))
+                    {
+                        // Serialize with new-session commits: a cancelled copy
+                        // cannot finish after and overwrite their common save.
+                        lock(snapshotCommitGate)
+                        {
+                            foreach(var directory in GameInstall.SaveDirs())
+                            {
+                                if(!Current())return;
+                                try {staged.CommitTo(directory,name);saved++;}
+                                catch(IOException e) {Log.Warn("Host lobby destination: "+e.Message);}
+                                catch(UnauthorizedAccessException e) {Log.Warn("Host lobby destination: "+e.Message);}
+                            }
+                        }
+                    }
+                    if(saved==0)throw new IOException("No host save directory is writable");
+                    Log.W("Prelaunch snapshot prepared: "+source.Manifest.Bytes+" bytes, SHA-256 "+source.Manifest.Sha256+"; game processes remain closed");
+                    var threads=new List<Thread>();var failures=new List<string>();
+                    try
+                    {
+                        foreach(var peer in peers)
+                        {
+                            var thread=new Thread(()=>
+                            {
+                                try
+                                {
+                                    SnapshotExchange.Send(source,hostName,preparation.Decision(peer),
+                                        m=>network.SendBulk(peer,m,false),m=>network.SendBulk(peer,m),
+                                        ()=>!Current() || Volatile.Read(ref stop)!=0 || !Present(),
+                                        (bytes,seconds)=>Log.W("Prelaunch queued to "+peer.Name+": "+bytes+" bytes, "+(long)(bytes/Math.Max(1,seconds))+" B/s (queueing, not receipt)"));
+                                }
+                                catch(Exception e) {lock(failures)failures.Add(peer.Name+": "+e.Message);}
+                            }) {IsBackground=true,Name="Prelaunch to "+peer.Name};threads.Add(thread);thread.Start();
+                        }
+                        var deadline=DateTime.UtcNow.AddSeconds(SnapshotLimits.TransferTimeoutSeconds);
+                        while(Current() && Present() && DateTime.UtcNow<deadline)
+                        {
+                            lock(failures)if(failures.Count>0)throw new IOException(string.Join("; ",failures));
+                            if(preparation.AllCommitted && threads.All(t=>!t.IsAlive))break;
+                            Thread.Sleep(100);
+                        }
+                        if(!Current() || !Present())return;
+                        if(!preparation.AllCommitted)throw new IOException("Prelaunch snapshot receipt deadline exceeded");
+                        lock(sessionGate)
+                        {
+                            if(!Current() || !Present())return;
+                            menuLoad=name;menuLoadSeq=SnapshotControl.MenuSequence(source.Manifest.Transfer);
+                            if(!room.LaunchPrepared(revision,source.Manifest.Transfer))return;
+                            joinPending=false;success=true;MenuStatus();BroadcastLobby();
+                            Log.W("Prelaunch verified by all "+peers.Length+" client(s) in "+(int)(DateTime.UtcNow-preparation.Started).TotalSeconds+"s; launching once from the common save");
+                            QueueLobbyLaunch(room.Id,()=>ReferenceEquals(lobbyPreparation,preparation));
+                        }
+                    }
+                    finally
+                    {
+                        Interlocked.Exchange(ref stop,1);
+                        // Keep the source's immutable handle until senders stop.
+                        foreach(var thread in threads)thread.Join();
+                    }
+                }
+            }
+            catch(Exception e) {Log.Err("Prelaunch save: "+e.Message);}
+            finally
+            {
+                if(!success && Current()) {AbortLobbyPreparation();BroadcastLobby();}
+            }
         }
         void QueueLobbyLaunch(string room=null,Func<bool> current=null)
         {
@@ -148,7 +254,7 @@ namespace MPFever
             {
                 lobbyGameLaunched=true;
                 MenuStatus();menuGame.Launch(gameDir);lobbyLaunchFailed=false;
-                Log.W("Lobby launched Transport Fever 3. Host prepares the authoritative snapshot; clients wait for verification and load.");
+                Log.W("Lobby launched Transport Fever 3 from the verified common save; waiting for engine readiness.");
                 UpdateLobbyUi();
             }
             catch(Exception e) { lobbyGameLaunched=menuGame.GameRunning;lobbyLaunchFailed=!lobbyGameLaunched;Log.Err("Game launch failed: "+e.Message);UpdateLobbyUi(); }
@@ -161,7 +267,7 @@ namespace MPFever
             if(!prelaunchLobby || lobbyGameLaunched)return;
             var view=lobbyView;bool host=hostLobby!=null,connected=clients.Count>0;
             lobbySave.Enabled=lobbySeparate.Enabled=lobbyRefresh.Enabled=nameBox.Enabled=hostBox.Enabled=portBox.Enabled=!host && !connected;
-            hint.Text=T("Connectez les joueurs, confirmez leur état prêt, puis lancez le jeu depuis le salon.","Connect players, confirm readiness, then launch the game from the lobby.");
+            hint.Text=!string.IsNullOrEmpty(menuText)?menuText:T("Connectez les joueurs, confirmez leur état prêt, puis lancez le jeu depuis le salon.","Connect players, confirm readiness, then launch the game from the lobby.");
             bool compatible=view!=null && view.Version==Version && view.Content==lobbyContent;
             lobbyReady.Enabled=!host && connected && compatible && view.Phase=="waiting";
             lobbyReady.Active=view!=null && lobbyPeerName!=null && view.Members.TryGetValue(lobbyPeerName,out var ownReady) && ownReady;
@@ -169,7 +275,7 @@ namespace MPFever
             lobbyCancel.Enabled=running || host || connected;
             lobbyPlayers.Text=view==null?T("Jeu fermé. Créez un salon ou rejoignez l'hôte.","Game closed. Create a lobby or join the host."):
                 (!compatible?T("Les fichiers MPFever diffèrent. Installez le même paquet.","MPFever files differ. Install the same package.")+"\n":"")
-                +view.Save+"\n"+string.Join("\n",view.Members.Select(p=>BaseName(p.Key)+": "+(p.Value?T("Prêt","Ready"):T("En attente","Waiting"))));
+                +view.Save+(view.Phase=="preparing"?"\n"+T("Préparation de la sauvegarde commune avant lancement...","Preparing the common save before game launch..."):"")+"\n"+string.Join("\n",view.Members.Select(p=>BaseName(p.Key)+": "+(p.Value?T("Prêt","Ready"):T("En attente","Waiting"))));
         }
     }
 }

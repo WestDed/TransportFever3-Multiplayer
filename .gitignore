@@ -8,6 +8,7 @@ tests/offline/bin/
 tests/offline/obj/
 tests/offline/bin48/
 tests/offline/obj48/
+tests/ui/obj/
 *.private-owner.lua
 *.private-owner.lua.lock
 *.private-owner.lua.owner

@@ -67,6 +67,31 @@ static class LauncherUiTests
                 // Process.Start; lobbyLaunchFailed reveals such an attempt.
                 var link=Activator.CreateInstance(assembly.GetType("MPFever.GameLink"),Instance,null,new object[]{"ui-lifetime","menu"},null);
                 Set(form,"menuGame",link);((IList)Get(form,"games")).Add(link);Set(form,"gameDir",null);
+                // The actual received lobby packet cannot launch before a
+                // verified copy, and a preparing packet never starts a process.
+                Call(room,"Ready","guest",id,(int)roomType.GetProperty("Revision",Instance).GetValue(room),version,new string('a',64),true);
+                int preparingRevision=(int)roomType.GetProperty("Revision",Instance).GetValue(room);
+                Call(room,"Prepare",preparingRevision);Call(room,"SetSnapshot",preparingRevision,new string('1',32));
+                Set(form,"lobbyPeerName","guest");Set(form,"lobbyView",null);
+                Call(form,"ReceiveLobby",Call(room,"Payload"));Layout(form);
+                Check(!(bool)Get(form,"lobbyLaunchFailed") && !(bool)Get(form,"lobbyGameLaunched"),"actual preparing packet keeps TF3 closed");
+                Call(room,"LaunchPrepared",preparingRevision,new string('1',32));
+                Call(form,"ReceiveLobby",Call(room,"Payload"));Layout(form);
+                Check(!(bool)Get(form,"lobbyLaunchFailed"),"actual launch packet with no verified snapshot waits for authoritative offer");
+                Set(form,"lobbyCommittedTransfer",new string('1',32));
+                ((IList)Get(form,"clients")).Add(Activator.CreateInstance(assembly.GetType("MPFever.Client"),true));
+                Call(form,"ReceiveLobby",Call(room,"Payload"));
+                Call(form,"EndSession",new object[]{null});Layout(form);
+                Check(!(bool)Get(form,"lobbyLaunchFailed"),"cancelled verified lobby packet cannot launch after leaving room");
+                string linkDir=(string)Get(link,"Dir");
+                var menuState=new System.Collections.Generic.Dictionary<string,string>{{"load","common"},{"loadSeq","r1"}};
+                Call(link,"WriteMenuState",menuState);
+                var menuPath=System.IO.Path.Combine(linkDir,"menu_state.txt");
+                var timestamp=new DateTime(2020,1,1,0,0,0,DateTimeKind.Utc);System.IO.File.SetLastWriteTimeUtc(menuPath,timestamp);
+                Call(link,"WriteMenuState",menuState);
+                Check(System.IO.File.GetLastWriteTimeUtc(menuPath)==timestamp,"unchanged actual menu state avoids repeated disk replacement");
+                menuState["loadSeq"]="r2";Call(link,"WriteMenuState",menuState);
+                Check(System.IO.File.ReadAllText(menuPath).Contains("loadSeq=r2"),"changed actual menu state still publishes unique load request");
                 Call(form,"QueueLobbyLaunch",new object[]{null,null});
                 Call(form,"EndSession",new object[]{null});Layout(form);
                 Check(!(bool)Get(form,"lobbyLaunchFailed"),"actual queued launch is discarded after session cancellation");

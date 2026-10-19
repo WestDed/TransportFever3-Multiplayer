@@ -117,8 +117,27 @@ namespace MPFever
             }
             catch { file.Dispose(); throw; }
         }
-        public void SendTo(Func<Msg, bool> send, string from, Func<bool> cancelled)
+        public CompletedSnapshot Stage(string directory,Func<bool> cancelled)
         {
+            Directory.CreateDirectory(directory);
+            string path=Path.Combine(directory,".mpfever-"+Guid.NewGuid().ToString("N")+".tmp");
+            try
+            {
+                using(var input=new FileStream(file.Name,FileMode.Open,FileAccess.Read,FileShare.Read))
+                using(var output=new FileStream(path,FileMode.CreateNew,FileAccess.Write,FileShare.None))
+                {
+                    var buffer=new byte[64*1024];int read;
+                    while((read=input.Read(buffer,0,buffer.Length))>0)
+                    { if(cancelled())throw new OperationCanceledException();output.Write(buffer,0,read); }
+                    output.Flush(true);
+                }
+                return new CompletedSnapshot(Manifest,path);
+            }
+            catch { if(File.Exists(path))File.Delete(path);throw; }
+        }
+        public void SendTo(Func<Msg, bool> send, string from, Func<bool> cancelled,bool[] have=null)
+        {
+            if(have!=null && have.Length!=Manifest.Parts)throw new InvalidDataException("Invalid resume mask length");
             if (cancelled() || !send(Msg.Make("resync_begin", from, Manifest.Payload()))) throw new IOException("Snapshot transfer cancelled");
             // Each peer opens its own cursor while this source keeps the file immutable.
             using (var reader = new FileStream(file.Name, FileMode.Open, FileAccess.Read, FileShare.Read))
@@ -126,6 +145,8 @@ namespace MPFever
                 var buffer = new byte[SnapshotLimits.ChunkBytes];
                 for (int i = 0; i < Manifest.Parts; i++)
                 {
+                    if(cancelled())throw new IOException("Snapshot transfer cancelled");
+                    if(have!=null && have[i]) {reader.Position=Math.Min(Manifest.Bytes,(long)(i+1)*SnapshotLimits.ChunkBytes);continue;}
                     int wanted = (int)Math.Min(buffer.Length, Manifest.Bytes - (long)i * buffer.Length), n = 0;
                     while (n < wanted) { int r = reader.Read(buffer, n, wanted - n); if (r == 0) throw new IOException("Snapshot source truncated"); n += r; }
                     string payload = "{[\"id\"]=" + Manifest.Id + ",[\"transfer\"]=" + LuaLit.Quote(Manifest.Transfer) + ",[\"i\"]=" + i
@@ -164,7 +185,7 @@ namespace MPFever
 
     // One transfer per local game, <=4096 flags and one chunk of RAM. Partial data
     // lives in a temporary file and never replaces a loadable save before SHA-256.
-    sealed class SnapshotReceiver : IDisposable
+    sealed partial class SnapshotReceiver : IDisposable
     {
         readonly object gate = new object();
         readonly string directory;
@@ -177,14 +198,14 @@ namespace MPFever
         int received, highestId;
         DateTime touched, begun;
         bool disposed;
-        public SnapshotReceiver(string directory, Func<DateTime> clock = null)
+        public SnapshotReceiver(string directory, Func<DateTime> clock = null,bool resumable=false)
         {
-            this.directory = directory; now = clock ?? (() => DateTime.UtcNow);
+            this.directory = directory; now = clock ?? (() => DateTime.UtcNow);this.resumable=resumable;
             timer = new Timer(_ => { try { Expire(); } catch (IOException e) { Log.Warn("Snapshot cleanup: " + e.Message); } }, null, 30000, 30000);
         }
         public int Percent { get { lock (gate) return manifest == null ? 0 : 100 * received / manifest.Parts; } }
         public long ReceivedBytes { get { lock(gate)return manifest==null?0:seen.Select((yes,i)=>yes?Math.Min(SnapshotLimits.ChunkBytes,manifest.Bytes-(long)i*SnapshotLimits.ChunkBytes):0).Sum(); } }
-        public void Begin(string payload)
+        public void Begin(string payload,Func<bool> cancelled=null)
         {
             var next = SnapshotManifest.Parse(payload); // before touching disk or allocating flags
             lock (gate)
@@ -195,6 +216,7 @@ namespace MPFever
                 if (next.Id <= highestId) throw new InvalidDataException("Stale or conflicting snapshot manifest");
                 Clear(); highestId = next.Id;
                 Directory.CreateDirectory(directory);
+                if(resumable) { OpenResumable(next,cancelled??(()=>false));return; }
                 path = Path.Combine(directory, ".mpfever-" + Guid.NewGuid().ToString("N") + ".part");
                 try
                 {
@@ -209,6 +231,10 @@ namespace MPFever
         {
             var t = LuaLit.Parse(payload) as Dictionary<object, object>;
             if (t == null) throw new InvalidDataException("Invalid snapshot part");
+            return Add(t);
+        }
+        public CompletedSnapshot Add(Dictionary<object,object> t)
+        {
             lock (gate)
             {
                 if (disposed) throw new ObjectDisposedException(nameof(SnapshotReceiver));
@@ -231,14 +257,28 @@ namespace MPFever
                     while (got < old.Length) { int r = file.Read(old, got, old.Length - got); if (r == 0) break; got += r; }
                     if (got != wanted || !old.SequenceEqual(bytes)) throw new InvalidDataException("Conflicting duplicate part");
                 }
-                else { file.Write(bytes, 0, bytes.Length); seen[i] = true; received++; }
+                else
+                {
+                    file.Write(bytes, 0, bytes.Length); seen[i] = true; received++;
+                    if(resumable)using(var sha=SHA256.Create())digests[i]=sha.ComputeHash(bytes);
+                }
                 touched = now();
-                if (received != manifest.Parts) return null;
+                if(resumable && (touched-checkpointed).TotalSeconds>=5)Checkpoint();
+                return CompleteIfReady();
+            }
+        }
+        public CompletedSnapshot CompleteIfReady()
+        {
+            lock(gate)
+            {
+                if(disposed)throw new ObjectDisposedException(nameof(SnapshotReceiver));
+                if(manifest==null || received!=manifest.Parts)return null;
                 try
                 {
                     file.Flush(true); file.Position = 0;
                     if (SnapshotLimits.Hash(file) != manifest.Sha256) throw new InvalidDataException("Snapshot SHA-256 mismatch");
                     file.Dispose(); file = null;
+                    DeleteMetadata();
                     var done = new CompletedSnapshot(manifest, path);
                     path = null; manifest = null; seen = null; received = 0;
                     return done;
@@ -258,6 +298,7 @@ namespace MPFever
         {
             file?.Dispose(); file = null;
             if (path != null && File.Exists(path)) File.Delete(path);
+            if(path!=null)DeleteMetadata();
             path = null; manifest = null; seen = null; received = 0;
         }
         public void Dispose() { lock (gate) { disposed = true; timer.Dispose(); Clear(); } }
