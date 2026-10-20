@@ -17,6 +17,7 @@
     <Compile Include="../../launcher/Lobby.cs" Link="Lobby.cs" />
     <Compile Include="../../launcher/LobbyPreparation.cs" Link="LobbyPreparation.cs" />
     <Compile Include="../../launcher/CheckpointState.cs" Link="CheckpointState.cs" />
+    <Compile Include="../../launcher/RecoveryGate.cs" Link="RecoveryGate.cs" />
     <Compile Include="../../launcher/PeerIdentity.cs" Link="PeerIdentity.cs" />
     <Compile Include="../../launcher/OwnerIdentity.cs" Link="OwnerIdentity.cs" />
     <Compile Include="../../launcher/ProtocolSchema.cs" Link="ProtocolSchema.cs" />

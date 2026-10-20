@@ -67,9 +67,14 @@ class PrelaunchWiringTests(unittest.TestCase):
         self.assertIn('StartSession(!waiting)',auto)
         initial=auto[auto.index('var prepared=lobbyPreparation;'):auto.index('// With waiting clients')]
         self.assertNotIn('Resync(',initial)
-        self.assertIn('StartSession();',initial)
+        self.assertIn('StartSession(true,true);',initial)
         final=initial[initial.index('lock(sessionGate)'):]
-        self.assertLess(final.index('if(!Current())return;'),final.index('StartSession();'))
+        self.assertLess(final.index('if(!Current())return;'),final.index('StartSession(true,true);'))
+        # an engine that never reported ready no longer leaves the host without any session (no speed control at all)
+        failed=final[final.index('if(!done || !prepared.AllReady || !ClocksReady())'):final.index('StartSession(true,true);')]
+        self.assertIn('StartSession(false,true);joinPending=true;',failed)
+        self.assertIn('relay?.Close(p)',failed)
+        self.assertNotIn('games stay paused. Collect',self.main)
         start=body(self.main,'void StartSession(','void SetSpeed(')
         self.assertIn('if(resume && startGen==sessionGen)',start)
         self.assertIn('speed = resume ? 0 : 1',start)

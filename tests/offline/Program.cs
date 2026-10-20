@@ -35,6 +35,7 @@ namespace MPFever
                 CompanyRosterTests();
                 SnapshotTests();
                 SnapshotResumeTests();
+                TransferResilienceTests();
                 OutboxTests();
                 SnapshotControlTests();
                 LobbyTests();
@@ -42,6 +43,7 @@ namespace MPFever
                 SnapshotCacheTests();
                 SpeedRegressionTests();
                 CheckpointTests();
+                RecoveryGateTests();
                 IdentityTests();
                 SchemaTests();
                 JournalTests();

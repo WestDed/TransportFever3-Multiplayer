@@ -43,7 +43,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.3.7-westded.6-experimental";
+        public const string Version = "0.3.7-westded.7-experimental";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -131,8 +131,10 @@ namespace MPFever
         const double ResyncCooldownSeconds = 120;   // at most one resynchronisation every 2 minutes
         const string ResyncSaveName = "MPFever resync";
         volatile bool resyncing;
-        volatile bool resyncFailed;
+        // a failed recovery keeps the games paused until a retry succeeds or the host resumes (never for good)
+        readonly RecoveryGate recovery = new RecoveryGate();
         double lastResync = -1e9;
+        double lastResumeDeniedLog = -1e9;
         int resyncId;
         readonly HashSet<string> resyncWaiting = new HashSet<string>();
         volatile Dictionary<object, object> saveDone;
@@ -188,9 +190,9 @@ namespace MPFever
             localBtn.Click += (s, e) => Guard(StartLocalTest);
             startBtn.Click += (s, e) => StartSession();
             pauseBtn.Click += (s, e) => Pause(T("hôte", "host"));
-            x1Btn.Click += (s, e) => SetSpeed(1, T("hôte", "host"));
-            x2Btn.Click += (s, e) => SetSpeed(2, T("hôte", "host"));
-            x4Btn.Click += (s, e) => SetSpeed(4, T("hôte", "host"));
+            x1Btn.Click += (s, e) => SetSpeed(1, T("hôte", "host"), true);
+            x2Btn.Click += (s, e) => SetSpeed(2, T("hôte", "host"), true);
+            x4Btn.Click += (s, e) => SetSpeed(4, T("hôte", "host"), true);
             detBtn.Click += (s, e) => new Thread(RunDeterminism) { IsBackground = true }.Start();
 
             if(initializeOnShown)Shown += (s, e) => Init();
@@ -831,7 +833,7 @@ namespace MPFever
             lock (chatLog) { chatLog.Clear(); chatId = 0; }
             lock (snapshotReceivers) { foreach(var probe in cacheProbes.Values)probe.Cancelled=true;foreach (var receiver in snapshotReceivers.Values) receiver.Dispose(); snapshotReceivers.Clear(); loadingClients.Clear();cacheProbes.Clear();downloadOffers.Clear();downloadProgress.Clear(); }
             hashN = 0; syncText = "—"; actsRelayed = actRefused = actFails = desyncs = 0;
-            resyncing = false; resyncFailed = false; resyncWaiting.Clear(); loadWatches.Clear(); ignoredParts.Clear(); checkpointState.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = "";
+            resyncing = false; recovery.Clear(); resyncWaiting.Clear(); loadWatches.Clear(); ignoredParts.Clear(); checkpointState.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = "";
             joinPending = false;
             hostLobby=null;lobbyView=null;lobbyPeerName=null;lobbyLaunchFailed=false;
             lobbyAttempt=null;lobbyPreparation=null;lobbyCommittedTransfer=null;
@@ -870,12 +872,22 @@ namespace MPFever
                     {
                         // Reconnecting after engines began loading needs the normal
                         // authoritative recovery, never the stale prelaunch world.
-                        lobbyPreparation=null;StartSession(false);joinPending=true;
+                        lobbyPreparation=null;StartSession(false,true);joinPending=true;
                         Log.Warn("Initial load membership changed; waiting paused for a fresh authoritative recovery");return;
                     }
                     if(!done || !prepared.AllReady || !ClocksReady())
-                    {Log.Err("Initial engine load not acknowledged; games stay paused. Collect both launcher logs and restart the session.");return;}
-                    StartSession();
+                    {
+                        // Never leave the host without a session (no speed control at all): start it paused, close the
+                        // engines that never reported ready, and recover them as late joiners when they reconnect.
+                        lobbyPreparation=null;
+                        foreach(var p in prepared.Peers) {bool clock;lock(clocks)clock=clocks.ContainsKey(p.Name);if(!prepared.IsReady(p) || !clock)relay?.Close(p);}
+                        StartSession(false,true);joinPending=true;
+                        Log.Err("Initial engine load not acknowledged by every client; the session starts paused and they get a fresh snapshot when they reconnect.");
+                        return;
+                    }
+                    // Every game loaded the same SHA-verified file: a few steps run after loading are caught up by the
+                    // lockstep, they never justify refusing the session (which left every game paused for good).
+                    StartSession(true,true);
                     if(started)
                     {
                         lobbyPreparation=null;joinPending=false;
@@ -1097,6 +1109,11 @@ namespace MPFever
                 lock (players) players.Remove(p.Name);
                 lock (clocks) clocks.Remove(p.Name);
                 HostSend(Msg.Make("peerleft", hostName, "{[\"name\"]=" + LuaLit.Quote(p.Name) + "}"));
+                if (recovery.Failed && !resyncing && hostRelay.Peers().Length == 0)
+                {
+                    recovery.Clear();
+                    Log.Warn("No client remains after the failed resynchronisation: the host may resume; a returning player gets a fresh snapshot");
+                }
             };
             relay.Received += (p, m) => { if (hostGen == sessionGen && relay == hostRelay && p.Joined) OnHostMessage(m, p); };
             relay.Start((int)portBox.Value);
@@ -1451,7 +1468,7 @@ namespace MPFever
 
         void BroadcastSession() => HostSend(Msg.Make("session", hostName ?? "Host", SessionPayload()));
 
-        void StartSession(bool resume = true)
+        void StartSession(bool resume = true, bool verifiedSave = false)
         {
             List<long> times; int n;
             lock (clocks) times = clocks.Values.Select(c => c.T).Distinct().ToList();
@@ -1460,7 +1477,9 @@ namespace MPFever
             // a game often runs a few steps after loading before it pauses (issue #4): up to 10 steps apart is the same
             // savegame. The session pauses at the earliest time, as when the games overshoot a pause: the first check is
             // taken at the latest, and the games behind catch up to it.
-            if (times.Count > 1 && times.Max() - times.Min() > 10 * Step) { Log.Warn(T("Les jeux ne sont pas au même temps (", "The games are not at the same time (") + string.Join(", ", times) + T(") : chargez exactement la même sauvegarde partout.", "): load exactly the same savegame everywhere.")); return; }
+            if (times.Count > 1 && times.Max() - times.Min() > 10 * Step && verifiedSave)
+                Log.Warn("Games loaded the verified common save " + (times.Max() - times.Min()) / Step + " steps apart; the lockstep aligns them before the first check");
+            else if (times.Count > 1 && times.Max() - times.Min() > 10 * Step) { Log.Warn(T("Les jeux ne sont pas au même temps (", "The games are not at the same time (") + string.Join(", ", times) + T(") : chargez exactement la même sauvegarde partout.", "): load exactly the same savegame everywhere.")); return; }
             lock (sessionGate) { started = true; speed = resume ? 0 : 1; pauseAt = times.Count > 0 ? times.Min() : (long?)null; }
             Log.W(F("=== Partie démarrée avec {0} jeu(x) au temps {1} : vérification initiale... ===", "=== Game started with {0} game(s) at time {1}: initial check... ===", n, times.FirstOrDefault()));
             BroadcastSession();
@@ -1471,9 +1490,16 @@ namespace MPFever
             new Thread(() => { Thread.Sleep(1500); if(resume && startGen==sessionGen)SetSpeed(1, T("démarrage", "start")); }) { IsBackground = true }.Start();
         }
 
-        void SetSpeed(int s, string who)
+        /// <summary>hostOverride: the host's own request (launcher buttons, the host's game). It may resume after a
+        /// failed resynchronisation; a client may not.</summary>
+        void SetSpeed(int s, string who, bool hostOverride = false)
         {
-            if(s>0 && (resyncing || resyncFailed)) {Log.Warn("Resume denied while resynchronisation is pending or failed; finish recovery or restart the session");return;}
+            if (s > 0)
+            {
+                string why = recovery.Resume(resyncing, hostOverride, out bool overridden);
+                if (why != null) { DenyResume(why); return; }
+                if (overridden) Log.Warn("The host resumed after a failed resynchronisation; the next checks reload the host's game if the worlds still differ");
+            }
             if (!started) return;
             lock (sessionGate) { speed = Math.Max(1, Math.Min(4, s)); pauseAt = null; }
             Log.W(F("Vitesse : x{0} (demandée par {1})", "Speed: x{0} (asked by {1})", speed, who));
@@ -1484,9 +1510,18 @@ namespace MPFever
         {
             if (!started) return;
             long at = FutureStamp();
-            lock (sessionGate) pauseAt = at;
+            // the games must be able to reach the stop point: a session started paused has speed 0, and the Lua pacing
+            // runs no game at speed 0 (the resynchronisation then waited for games that could never stop there)
+            lock (sessionGate) { pauseAt = at; if (speed < 1) speed = 1; }
             Log.W(F("Pause au temps {0} (demandée par {1})", "Pause at time {0} (asked by {1})", at, who));
             BroadcastSession();
+        }
+
+        void DenyResume(string why)
+        {
+            if (Now - lastResumeDeniedLog < 10) return;
+            lastResumeDeniedLog = Now;
+            Log.Warn("Resume refused: " + why);
         }
 
         void RequestHash()
@@ -1553,6 +1588,11 @@ namespace MPFever
                         }
                         catch(Exception e) { Log.Warn("Local ownership assignment refused: " + e.Message); }
                     }
+                }
+                if (started && !resyncing && !detRunning && relay != null && relay.Peers().Length > 0 && recovery.Due(Now))
+                {
+                    resyncing = true;
+                    new Thread(() => Resync("automatic retry")) { IsBackground = true, Name = "Resync" }.Start();
                 }
                 bool paused; long? pausedAt; lock (sessionGate) { paused = pauseAt.HasValue; pausedAt = pauseAt; }
                 // paused: builds and actions still apply, so the games are checked when actions went through since the last
@@ -1628,6 +1668,10 @@ namespace MPFever
                             resyncing = true;
                             new Thread(() => { Thread.Sleep(1500); Resync(T("construction non reproduite", "build not reproduced")); }) { IsBackground = true, Name = "Resync" }.Start();
                         }
+                        // just after a resynchronisation: do it once the short cooldown is over instead of dropping it (the game
+                        // that sent it waits for this reload and holds every other game behind it)
+                        else if (started && !resyncing && !autotest && others > 0)
+                            recovery.Request(lastResync + 15);
                         break;
                     }
 
@@ -1723,7 +1767,7 @@ namespace MPFever
                             // a request for the speed already in effect changes nothing (and must not echo back)
                             bool same; lock (sessionGate) same = d > 0 && !pauseAt.HasValue && (int)d == speed || d <= 0 && pauseAt.HasValue;
                             if (same) break;
-                            if (d <= 0) Pause(m.From); else SetSpeed((int)d, m.From);
+                            if (d <= 0) Pause(m.From); else SetSpeed((int)d, m.From, from == null);
                         }
                         break;
                     }
@@ -1897,26 +1941,37 @@ namespace MPFever
             new Thread(() => Resync(k)) { IsBackground = true, Name = "Resync" }.Start();
         }
 
+        /// <summary>Snapshot bytes the host actually wrote to these peers' sockets (transfer progress).</summary>
+        static long BulkProgress(Peer[] peers) => peers.Sum(p => p.Outbox?.BulkWritten ?? 0);
+
         void Resync(string reason)
         {
-            resyncFailed=true;
             int id = Interlocked.Increment(ref resyncId), gen = sessionGen;
             Relay activeRelay = relay;
             GameLink activeGame = hostGame;
             int prevSpeed; lock (sessionGate) prevSpeed = Math.Max(1, speed);
-            bool success = false;
+            bool success = false, frozen = false;
             var t0 = DateTime.UtcNow;
             bool Current() => gen == sessionGen && activeRelay == relay;
             bool Present(Peer[] expected) => expected.All(p=>activeRelay.Peers().Contains(p));
             bool WaitCurrent(Func<bool> predicate, double seconds) => WaitUntil(() => !Current() || predicate(), seconds) && Current();
+            // waits as long as the transfer moves (see TransferProgress), not a fixed half hour
+            bool WaitProgress(Func<bool> predicate, TransferProgress progress)
+            {
+                while (Current() && !predicate()) { if (progress.Expired(DateTime.UtcNow)) return false; Thread.Sleep(500); }
+                return Current();
+            }
             try
             {
                 Log.W(F("=== Resynchronisation n°{0} sur la partie de l'hôte (écart : {1}) ===", "=== Resynchronisation #{0} on the host's game (difference: {1}) ===", id, reason));
                 if(activeRelay==null || activeRelay.Count==0) {Log.Warn("Snapshot cancelled: no clients remain; host world is not reloaded");return;}
                 Pause(T("resynchronisation", "resynchronisation"));
+                // From here the games stand still for this recovery: a failure keeps them paused until the automatic
+                // retry or the host's decision (never for good, as before)
+                frozen = true; recovery.Freeze();
                 int loadTimeout = SnapshotLimits.LoadTimeoutSeconds(Environment.GetEnvironmentVariable("MPFEVER_LOAD_TIMEOUT_SECONDS"));
                 activeLoadTimeout=loadTimeout;
-                Log.W("Snapshot deadlines: save " + SnapshotLimits.SaveTimeoutSeconds + "s, transfer " + SnapshotLimits.TransferTimeoutSeconds + "s, load " + loadTimeout + "s");
+                Log.W("Snapshot deadlines: save " + SnapshotLimits.SaveTimeoutSeconds + "s, transfer while progressing (idle " + SnapshotLimits.TransferIdleSeconds + "s, cap " + SnapshotLimits.TransferHardSeconds + "s), load " + loadTimeout + "s");
                 long at; lock (sessionGate) at = pauseAt ?? 0;
                 bool stopped = WaitCurrent(() => { lock (clocks) return clocks.Values.All(c => c.T >= at && c.Sp == 0); }, 120);
                 if (!stopped) { Log.Err(T("Resynchronisation abandonnée : les jeux ne se sont pas arrêtés.", "Resynchronisation cancelled: the games did not stop.")); return; }
@@ -1963,18 +2018,19 @@ namespace MPFever
                             finally { done[index].Set(); }
                         }) { IsBackground = true, Name = "Snapshot to " + peers[i].Name }.Start();
                     }
-                    if (!WaitCurrent(() => done.All(d => d.IsSet) || !Present(peers), SnapshotLimits.TransferTimeoutSeconds) || !Present(peers))
+                    var transfer = new TransferProgress(() => { lock (resyncWaiting) return BulkProgress(peers) + snapshotReceived.Count; }, DateTime.UtcNow);
+                    if (!WaitProgress(() => done.All(d => d.IsSet) || !Present(peers), transfer) || !Present(peers))
                     {
                         Interlocked.Exchange(ref cancelled, 1);
                         foreach (var peer in peers) activeRelay.Close(peer);
-                        Log.Err("Snapshot sending cancelled or timed out; session remains paused"); return;
+                        Log.Err("Snapshot sending cancelled or stalled; session remains paused"); return;
                     }
                     lock (failures) if (failures.Count > 0) { Log.Err(string.Join("; ", failures)); return; }
                     // SendTo has queued the final part; it has not necessarily
                     // reached the client yet. Start the load budget only after
                     // every client verifies and commits this exact snapshot.
                     Log.W("Snapshot parts queued; waiting for verified client receipts");
-                    if (!WaitCurrent(() => { lock (resyncWaiting) return peers.All(p => snapshotReceived.Contains(p.Name)) || !Present(peers); }, SnapshotLimits.TransferTimeoutSeconds) || !Present(peers))
+                    if (!WaitProgress(() => { lock (resyncWaiting) return peers.All(p => snapshotReceived.Contains(p.Name)) || !Present(peers); }, transfer) || !Present(peers))
                     {
                         Log.Err("Snapshot receipt not acknowledged; session remains paused");
                         foreach (var peer in peers) { lock (resyncWaiting) if (!snapshotReceived.Contains(peer.Name)) activeRelay.Close(peer); }
@@ -2011,8 +2067,18 @@ namespace MPFever
                 {
                     lastResync = Now; diffStreak = 0; resyncing = false;
                     lock (resyncWaiting) { snapshotTargets.Clear();snapshotPeers.Clear();snapshotDecisions.Clear(); snapshotReceived.Clear();loadWatches.Clear(); }
-                    if (success) {resyncFailed=false;SetSpeed(prevSpeed, T("fin de resynchronisation", "end of resynchronisation"));}
-                    else Log.Err("Resynchronisation failed; all games remain paused. Inspect the logs before restarting.");
+                    if (success) {recovery.Clear();SetSpeed(prevSpeed, T("fin de resynchronisation", "end of resynchronisation"));}
+                    else if (frozen && activeRelay.Peers().Length == 0)
+                    {
+                        // nobody left to differ from: the host plays on; a returning player gets a fresh snapshot
+                        recovery.Clear();
+                        Log.Warn("Resynchronisation stopped: no client remains; the host's game resumes");
+                        SetSpeed(prevSpeed, T("fin de resynchronisation", "end of resynchronisation"));
+                    }
+                    else if (frozen && recovery.Failure(Now))
+                        Log.Err("Resynchronisation failed; games stay paused. Automatic retry " + recovery.Failures + "/" + RecoveryGate.Retries + " in " + RecoveryGate.RetrySeconds + " s; the host can also resume with its speed buttons.");
+                    else if (frozen)
+                        Log.Err("Resynchronisation failed " + RecoveryGate.Retries + " times; games stay paused. The host can resume with its speed buttons (the worlds may differ) or restart the session.");
                 }
             }
         }

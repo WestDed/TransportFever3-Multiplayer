@@ -1,4 +1,8 @@
-19.10.2026: package .6 / protocol 11. Update EXE, DLL and mod on both PCs.
+20.10.2026: package .7 / protocol 12. Update EXE, DLL and mod on both PCs.
+See CONNECT_TIME_AND_STUCK_PAUSE.md: slow transfers no longer restart after 30 min,
+chunks are compressed, and a failed resync no longer locks the pause (host can resume).
+
+19.10.2026: package .6 / protocol 11.
 See FASTER_CONNECTIONS.md: the selected save is verified/transferred before TF3
 starts, then all engines must become ready. Identical partial files can resume;
 a changed live world can still need a full transfer. Game acceptance pending.
