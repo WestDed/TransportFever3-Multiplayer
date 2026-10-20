@@ -1,3 +1,13 @@
+0.3.7-westded.7-experimental (protocol 12) - connection time and stuck pause
+  - Snapshot transfers wait while bytes move (10 min idle, 4 h cap) instead of a fixed
+    30 minutes; a stalled download keeps its verified chunks for the retry.
+  - Snapshot chunks are DEFLATE-compressed when it saves at least 1/8 (bounded inflate).
+  - A failed resynchronisation no longer blocks resuming for good: automatic retries
+    (3 x 30 s), the host can always resume, a host left alone plays on.
+  - Lobby start never leaves the host without a session; Pause can always reach its stop.
+  - A paused purchase/line without engine answer no longer freezes every game.
+  - See CONNECT_TIME_AND_STUCK_PAUSE.md. Component tests only; game retest pending.
+
 0.3.7-westded.6-experimental (protocol 11) - connection startup and resume
   - Verify/transfer the selected save before launching TF3; wait for all file
     receipts, then all engine-ready reports, without an initial second reload.

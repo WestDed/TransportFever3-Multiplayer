@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Threading;
@@ -30,7 +31,12 @@ namespace MPFever
         public const int ChunkBytes = 256 * 1024;
         // A provisional safety budget, not a claim about Gigantomaniac saves.
         public const long MaxBytes = 1024L * 1024 * 1024;
-        public const int SaveTimeoutSeconds = 600, TransferTimeoutSeconds = 1800;
+        public const int SaveTimeoutSeconds = 600;
+        // A slow link is not a dead one: a 190 MB save through a relayed tunnel
+        // took 21 minutes, so a fixed 30-minute budget restarted larger saves
+        // from zero forever. Transfers end when nothing moves for the idle
+        // budget; the absolute cap only bounds a peer that trickles bytes.
+        public const int TransferIdleSeconds = 600, ReceiveIdleSeconds = 180, TransferHardSeconds = 4 * 3600;
         public static int LoadTimeoutSeconds(string value)
         {
             if (string.IsNullOrWhiteSpace(value)) return 1800;
@@ -64,6 +70,47 @@ namespace MPFever
         }
         public static string Text(Dictionary<object, object> t, string key)
         { if (!t.TryGetValue(key, out var v) || !(v is string s)) throw new InvalidDataException("Invalid snapshot string: " + key); return s; }
+        // Raw DEFLATE per chunk, kept only when it saves at least an eighth: an
+        // already compressed save costs one fast attempt per chunk and is sent as is.
+        public static byte[] Pack(byte[] data, int count)
+        {
+            using (var output = new MemoryStream(count))
+            {
+                using (var deflate = new DeflateStream(output, CompressionLevel.Fastest, true)) deflate.Write(data, 0, count);
+                return output.Length <= count - count / 8 ? output.ToArray() : null;
+            }
+        }
+        // The output is bounded by the chunk size announced in the manifest, never
+        // by the compressed data: a hostile stream cannot inflate past it.
+        public static byte[] Unpack(byte[] packed, int expected)
+        {
+            var result = new byte[expected]; int got = 0;
+            using (var deflate = new DeflateStream(new MemoryStream(packed), CompressionMode.Decompress))
+            {
+                while (got < expected) { int r = deflate.Read(result, got, expected - got); if (r == 0) break; got += r; }
+                if (got != expected || deflate.ReadByte() != -1) throw new InvalidDataException("Compressed part size mismatch");
+            }
+            return result;
+        }
+    }
+
+    // Ends a transfer only when its measure (bulk bytes written, receipts) has not
+    // moved for TransferIdleSeconds, or after the absolute TransferHardSeconds.
+    sealed class TransferProgress
+    {
+        readonly Func<long> measure;
+        readonly DateTime started;
+        readonly int idleSeconds;
+        long last;
+        DateTime moved;
+        public TransferProgress(Func<long> measure, DateTime now, int idleSeconds = SnapshotLimits.TransferIdleSeconds)
+        { this.measure = measure; this.idleSeconds = idleSeconds; started = moved = now; last = measure(); }
+        public bool Expired(DateTime now)
+        {
+            long value = measure();
+            if (value != last) { last = value; moved = now; }
+            return (now - moved).TotalSeconds >= idleSeconds || (now - started).TotalSeconds >= SnapshotLimits.TransferHardSeconds;
+        }
     }
 
     // A launcher heartbeat proves the connection is alive, not engine progress.
@@ -143,14 +190,19 @@ namespace MPFever
             using (var reader = new FileStream(file.Name, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
                 var buffer = new byte[SnapshotLimits.ChunkBytes];
+                int misses = 0;
                 for (int i = 0; i < Manifest.Parts; i++)
                 {
                     if(cancelled())throw new IOException("Snapshot transfer cancelled");
                     if(have!=null && have[i]) {reader.Position=Math.Min(Manifest.Bytes,(long)(i+1)*SnapshotLimits.ChunkBytes);continue;}
                     int wanted = (int)Math.Min(buffer.Length, Manifest.Bytes - (long)i * buffer.Length), n = 0;
                     while (n < wanted) { int r = reader.Read(buffer, n, wanted - n); if (r == 0) throw new IOException("Snapshot source truncated"); n += r; }
+                    // an already compressed save: after 16 chunks in a row that do not shrink, only every 16th is tried
+                    var packed = misses < 16 || i % 16 == 0 ? SnapshotLimits.Pack(buffer, n) : null;
+                    misses = packed == null ? misses + 1 : 0;
                     string payload = "{[\"id\"]=" + Manifest.Id + ",[\"transfer\"]=" + LuaLit.Quote(Manifest.Transfer) + ",[\"i\"]=" + i
-                        + ",[\"n\"]=" + Manifest.Parts + ",[\"data\"]=\"" + Convert.ToBase64String(buffer, 0, n) + "\"}";
+                        + ",[\"n\"]=" + Manifest.Parts + (packed == null ? "" : ",[\"z\"]=" + packed.Length)
+                        + ",[\"data\"]=\"" + (packed == null ? Convert.ToBase64String(buffer, 0, n) : Convert.ToBase64String(packed)) + "\"}";
                     if (cancelled() || !send(Msg.Make("resync_file", from, payload))) throw new IOException("Snapshot transfer cancelled or peer too slow");
                 }
             }
@@ -201,7 +253,7 @@ namespace MPFever
         public SnapshotReceiver(string directory, Func<DateTime> clock = null,bool resumable=false)
         {
             this.directory = directory; now = clock ?? (() => DateTime.UtcNow);this.resumable=resumable;
-            timer = new Timer(_ => { try { Expire(); } catch (IOException e) { Log.Warn("Snapshot cleanup: " + e.Message); } }, null, 30000, 30000);
+            timer = new Timer(_ => { try { Expire(); } catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ObjectDisposedException) { Log.Warn("Snapshot cleanup: " + e.Message); } }, null, 30000, 30000);
         }
         public int Percent { get { lock (gate) return manifest == null ? 0 : 100 * received / manifest.Parts; } }
         public long ReceivedBytes { get { lock(gate)return manifest==null?0:seen.Select((yes,i)=>yes?Math.Min(SnapshotLimits.ChunkBytes,manifest.Bytes-(long)i*SnapshotLimits.ChunkBytes):0).Sum(); } }
@@ -245,11 +297,14 @@ namespace MPFever
                 if (id != manifest.Id || n != manifest.Parts || SnapshotLimits.Text(t, "transfer") != manifest.Transfer) throw new InvalidDataException("Part does not belong to active snapshot");
                 string data = SnapshotLimits.Text(t, "data");
                 int wanted = (int)Math.Min(SnapshotLimits.ChunkBytes, manifest.Bytes - (long)i * SnapshotLimits.ChunkBytes);
-                if (!SnapshotLimits.CanonicalBase64(data,wanted)) throw new InvalidDataException("Incorrect or noncanonical encoded part");
+                bool packed = t.ContainsKey("z");
+                int encoded = packed ? (int)SnapshotLimits.Integer(t, "z", 1, wanted) : wanted;
+                if (!SnapshotLimits.CanonicalBase64(data,encoded)) throw new InvalidDataException("Incorrect or noncanonical encoded part");
                 byte[] bytes;
                 try { bytes = Convert.FromBase64String(data); }
                 catch (FormatException e) { throw new InvalidDataException("Invalid part base64", e); }
-                if (bytes.Length != wanted) throw new InvalidDataException("Incorrect decoded part size");
+                if (bytes.Length != encoded) throw new InvalidDataException("Incorrect decoded part size");
+                if (packed) bytes = SnapshotLimits.Unpack(bytes, wanted);
                 file.Position = (long)i * SnapshotLimits.ChunkBytes;
                 if (seen[i])
                 {
@@ -290,8 +345,11 @@ namespace MPFever
         {
             lock (gate)
             {
-                if (manifest == null || now() - touched <= TimeSpan.FromMinutes(3) && now() - begun <= TimeSpan.FromSeconds(SnapshotLimits.TransferTimeoutSeconds)) return false;
-                Clear(); return true;
+                if (manifest == null || now() - touched <= TimeSpan.FromSeconds(SnapshotLimits.ReceiveIdleSeconds) && now() - begun <= TimeSpan.FromSeconds(SnapshotLimits.TransferHardSeconds)) return false;
+                // A stalled resumable download keeps its verified chunks for the
+                // retry; deleting them made every slow attempt start from zero.
+                if (resumable) Retain(); else Clear();
+                return true;
             }
         }
         void Clear()

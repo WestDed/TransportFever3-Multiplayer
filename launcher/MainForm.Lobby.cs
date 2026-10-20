@@ -205,15 +205,17 @@ namespace MPFever
                                 catch(Exception e) {lock(failures)failures.Add(peer.Name+": "+e.Message);}
                             }) {IsBackground=true,Name="Prelaunch to "+peer.Name};threads.Add(thread);thread.Start();
                         }
-                        var deadline=DateTime.UtcNow.AddSeconds(SnapshotLimits.TransferTimeoutSeconds);
-                        while(Current() && Present() && DateTime.UtcNow<deadline)
+                        // Progress, not wall time: a slow tunnel may need more than half
+                        // an hour, a stalled one is stopped after the idle budget.
+                        var progress=new TransferProgress(()=>BulkProgress(peers)+preparation.CommittedCount,DateTime.UtcNow);
+                        while(Current() && Present() && !progress.Expired(DateTime.UtcNow))
                         {
                             lock(failures)if(failures.Count>0)throw new IOException(string.Join("; ",failures));
                             if(preparation.AllCommitted && threads.All(t=>!t.IsAlive))break;
                             Thread.Sleep(100);
                         }
                         if(!Current() || !Present())return;
-                        if(!preparation.AllCommitted)throw new IOException("Prelaunch snapshot receipt deadline exceeded");
+                        if(!preparation.AllCommitted)throw new IOException("Prelaunch transfer made no progress for "+SnapshotLimits.TransferIdleSeconds+"s (or exceeded "+SnapshotLimits.TransferHardSeconds+"s)");
                         lock(sessionGate)
                         {
                             if(!Current() || !Present())return;

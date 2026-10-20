@@ -25,6 +25,8 @@ namespace MPFever
         public SnapshotDecision Decision(Peer peer) => decisions[peer];
         public bool Present(Peer[] connected) => peers.Length==connected.Length && peers.All(connected.Contains);
         public bool AllCommitted { get {lock(gate)return committed.Count==peers.Length;} }
+        public int CommittedCount { get {lock(gate)return committed.Count;} }
+        public bool IsReady(Peer peer) {lock(gate)return ready.Contains(peer);}
         public bool AllReady { get {lock(gate)return ready.Count==peers.Length;} }
         public bool Expired(DateTime now) {lock(gate)return watches.Where(p=>!ready.Contains(p.Key)).Any(p=>p.Value.Expired(now));}
         public bool Reply(Peer peer,Dictionary<object,object> t,string kind,int loadSeconds)

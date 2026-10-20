@@ -3724,6 +3724,9 @@ local function shipNativeBuilds(st)
 	end
 end
 
+-- the engine's answer to a purchase/line creation made while paused (frames), then the repeated recovery requests
+local PAUSED_ANSWER_FRAMES, PAUSED_ASK_FRAMES, PAUSED_ASKS = 600, 1800, 3
+
 local function runPausedActions()
 	local natAt = nativeHoldAt()
 	if #G.pendingPaused == 0 and natAt == nil then
@@ -3748,10 +3751,22 @@ local function runPausedActions()
 	-- The engine creates the binding in its callback. Keep later actions ordered
 	-- behind it, including while paused. On a missing answer request recovery;
 	-- never turn a timeout into permission to run a dependent action early.
+	-- But not forever either: the hold also stops this game's clock, so every other game waited behind it for good when the
+	-- host did not reload (a request dropped in its cooldown, no other player). The request is repeated; without an engine
+	-- answer nor a reload after PAUSED_ASKS requests (or alone in the session) the actions after it run (desync risk, the
+	-- regular checks then reload the host's game).
 	local waiting = G.pausedCreating
-	if waiting and G.frames - waiting.frame >= 600 and not waiting.failed then
-		waiting.failed = true
-		send("replay_failed", { uid = tostring(waiting.uid), why = "paused creation callback timed out" })
+	if waiting and G.frames - waiting.frame >= PAUSED_ANSWER_FRAMES then
+		if not waiting.failed then
+			waiting.failed, waiting.asks, waiting.askedAt = true, 1, G.frames
+			send("replay_failed", { uid = tostring(waiting.uid), why = "paused creation callback timed out" })
+		elseif next(G.peers or {}) == nil or (waiting.asks >= PAUSED_ASKS and G.frames - waiting.askedAt >= PAUSED_ASK_FRAMES) then
+			log("paused action " .. tostring(waiting.uid) .. ": no engine answer and no reload, the actions after it run now (desync risk)")
+			G.pausedCreating, waiting = nil, nil
+		elseif G.frames - waiting.askedAt >= PAUSED_ASK_FRAMES then
+			waiting.asks, waiting.askedAt = waiting.asks + 1, G.frames
+			send("replay_failed", { uid = tostring(waiting.uid), why = "paused creation callback timed out (request " .. waiting.asks .. ")" })
+		end
 	end
 	local creating = waiting ~= nil
 	for _, a in ipairs(G.pendingPaused) do
@@ -3774,8 +3789,11 @@ local function runPausedActions()
 				end
 				withActor(PL(a), executeAction, a, O.sendCommand, true, G.bind, function(r)
 					if ticket then
-						if G.pausedCreating ~= ticket or ticket.failed then return end
-						G.pausedCreating = nil
+						-- a late answer still records its result and binding (later actions refer to what it created)
+						if ticket.answered then return end
+						ticket.answered = true
+						if G.pausedCreating == ticket then G.pausedCreating = nil end
+						if ticket.failed then log("paused action " .. tostring(r.uid) .. ": the engine answered after the timeout") end
 					end
 					r.at = now
 					r.answered, r.returned = nil, nil

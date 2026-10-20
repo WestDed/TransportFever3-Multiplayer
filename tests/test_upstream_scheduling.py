@@ -30,7 +30,9 @@ class SchedulingTests(unittest.TestCase):
                 return result
             end
             state={value={q={}},get=function(self)return self.value end,set=function(self,v)self.value=v end}
-            G={frames=1,session={pauseAt=100},pendingPaused={},bind={},rev={},resultsSeen={},reportResult=function()end}
+            G={frames=1,session={pauseAt=100},pendingPaused={},bind={},rev={},resultsSeen={},reportResult=function()end,
+               peers={Guest={t=100}}}
+            PAUSED_ANSWER_FRAMES,PAUSED_ASK_FRAMES,PAUSED_ASKS=600,1800,3
             nativeHoldAt=function()return nil end
             nativeWaiting=function()return false end;toSim=function()end
             send=function(k,p)sent[#sent+1]={kind=k,p=p}end
@@ -81,8 +83,30 @@ class SchedulingTests(unittest.TestCase):
     def test_missing_callback_requests_recovery_once_without_releasing_dependents(self):
         self.check('''G.pendingPaused={{fn="makeVehicleBuyCmd",at=100,uid="1"},{fn="makeVehicleSetLineCmd",at=100,uid="2"}}
             paused();G.frames=602;paused();paused()
-            assert(#applied==1 and #G.pendingPaused==1 and #sent==1 and sent[1].kind=="replay_failed")
-            callbacks[1]();paused();assert(#applied==1)''')
+            assert(#applied==1 and #G.pendingPaused==1 and #sent==1 and sent[1].kind=="replay_failed")''')
+
+    def test_late_engine_answer_records_result_and_releases_dependents(self):
+        # The old code ignored an answer arriving after the timeout and kept the
+        # dependents (and this game's clock, hence every game) held for good.
+        self.check('''G.pendingPaused={{fn="makeVehicleBuyCmd",at=100,uid="1"},{fn="makeVehicleSetLineCmd",at=100,uid="2"}}
+            paused();G.frames=602;paused();assert(#applied==1 and #sent==1)
+            callbacks[1]();assert(G.pausedCreating==nil)
+            paused();assert(#applied==2 and #G.pendingPaused==0)
+            callbacks[1]();assert(#applied==2)''')
+
+    def test_missing_answer_repeats_recovery_then_releases_hold(self):
+        self.check('''G.pendingPaused={{fn="makeVehicleBuyCmd",at=100,uid="1"},{fn="makeVehicleSetLineCmd",at=100,uid="2"}}
+            paused();G.frames=602;paused();assert(#sent==1)
+            G.frames=602+1800;paused();assert(#sent==2 and #applied==1)
+            G.frames=602+3600;paused();assert(#sent==3 and #applied==1)
+            G.frames=602+5399;paused();assert(#applied==1 and G.pausedCreating~=nil)
+            G.frames=602+5400;paused();assert(G.pausedCreating==nil and #applied==2 and #G.pendingPaused==0)
+            for _,k in ipairs(sent) do assert(k.kind=="replay_failed") end''')
+
+    def test_alone_in_session_missing_answer_does_not_freeze_game(self):
+        self.check('''G.peers={};G.pendingPaused={{fn="makeLineCreateCmd",at=100,uid="1"},{fn="makeLineUpdateCmd",at=100,uid="2"}}
+            paused();G.frames=602;paused();assert(#sent==1 and #applied==1)
+            paused();assert(G.pausedCreating==nil and #applied==2)''')
 
     def test_unrelated_callback_does_not_clear_new_creation_barrier(self):
         self.check('''G.pendingPaused={{fn="makeVehicleBuyCmd",at=100,uid="1"}}

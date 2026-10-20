@@ -11,7 +11,7 @@ namespace MPFever
     // Limits are checked before a frame or file delta can grow the allocation.
     static class Wire
     {
-        public const int Version = 11;
+        public const int Version = 12;
         public const int MaxFrameBytes = LuaLit.MaxBytes + 256;
         public const int MaxPeers = 8;
         public const int HandshakeReserve = 4;
@@ -162,6 +162,7 @@ namespace MPFever
         {
             public byte[] Data;
             public string StateKey;
+            public bool Bulk;
         }
         readonly LinkedList<Frame> queue = new LinkedList<Frame>();
         // Only the final contiguous state-update segment is replaceable. Any
@@ -172,8 +173,11 @@ namespace MPFever
         readonly string name;
         readonly int byteLimit;
         int bytes, frames;
-        long coalesced;
+        long coalesced, bulkWritten;
         bool stopped;
+        // Snapshot bytes actually handed to the socket: transfer progress, unlike
+        // the periodic status traffic that flows even when a download is stuck.
+        public long BulkWritten => Interlocked.Read(ref bulkWritten);
         public BoundedOutbox(Stream stream, Action close, string name, int byteLimit = MaxQueuedBytes)
         {
             this.stream = stream; this.close = close; this.byteLimit = byteLimit; this.name = name;
@@ -221,7 +225,7 @@ namespace MPFever
                 // Append a replacement at its NEW position. Updating the old
                 // slot would let a newer clock overtake earlier traffic.
                 if (key == null || session) latest.Clear();
-                var node = queue.AddLast(new Frame { Data = data, StateKey = key });
+                var node = queue.AddLast(new Frame { Data = data, StateKey = key, Bulk = bulk });
                 if (key != null) latest[key] = node;
                 bytes += data.Length; frames++;
                 Monitor.PulseAll(gate);
@@ -251,6 +255,7 @@ namespace MPFever
                 while (true)
                 {
                     byte[] data;
+                    bool bulk;
                     lock (gate)
                     {
                         while (!stopped && queue.Count == 0) Monitor.Wait(gate);
@@ -258,10 +263,12 @@ namespace MPFever
                         var node = queue.First;
                         queue.RemoveFirst();
                         data = node.Value.Data;
+                        bulk = node.Value.Bulk;
                         if (node.Value.StateKey != null && latest.TryGetValue(node.Value.StateKey, out var pending) && pending == node)
                             latest.Remove(node.Value.StateKey);
                     }
                     stream.Write(data, 0, data.Length);
+                    if (bulk) Interlocked.Add(ref bulkWritten, data.Length);
                     lock (gate) { bytes -= data.Length; frames--; Monitor.PulseAll(gate); }
                 }
             }

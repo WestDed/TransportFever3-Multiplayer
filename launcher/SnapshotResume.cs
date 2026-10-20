@@ -104,6 +104,14 @@ namespace MPFever
             if(File.Exists(Metadata))File.Replace(Metadata+".tmp",Metadata,null);else File.Move(Metadata+".tmp",Metadata);
             checkpointed=now();
         }
+        // Idle expiry: checkpoint, then forget the transfer in memory only. A later
+        // part fails as inactive and the next offer resumes from the files.
+        void Retain()
+        {
+            try {Checkpoint();}
+            catch {Clear();throw;}
+            file?.Dispose();file=null;path=null;manifest=null;seen=null;digests=null;received=0;
+        }
         // Network loss keeps only verified data. Explicit disposal/cancel still
         // removes an active transfer, preserving the old non-resumable contract.
         public void Suspend()
