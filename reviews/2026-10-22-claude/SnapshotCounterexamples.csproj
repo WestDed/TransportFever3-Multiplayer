@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../launcher/Core.cs" Link="Core.cs" />
+    <Compile Include="../../launcher/NetworkIO.cs" Link="NetworkIO.cs" />
+    <Compile Include="../../launcher/Snapshots.cs" Link="Snapshots.cs" />
+    <Compile Include="../../launcher/SnapshotResume.cs" Link="SnapshotResume.cs" />
+    <Compile Include="../../launcher/SnapshotCache.cs" Link="SnapshotCache.cs" />
+    <Compile Include="../../launcher/Lobby.cs" Link="Lobby.cs" />
+    <Compile Include="../../launcher/LobbyPreparation.cs" Link="LobbyPreparation.cs" />
+    <Compile Include="../../launcher/CheckpointState.cs" Link="CheckpointState.cs" />
+    <Compile Include="../../launcher/RecoveryGate.cs" Link="RecoveryGate.cs" />
+    <Compile Include="../../launcher/PeerIdentity.cs" Link="PeerIdentity.cs" />
+    <Compile Include="../../launcher/OwnerIdentity.cs" Link="OwnerIdentity.cs" />
+    <Compile Include="../../launcher/ProtocolSchema.cs" Link="ProtocolSchema.cs" />
+    <Compile Include="../../launcher/CommandJournal.cs" Link="CommandJournal.cs" />
+  </ItemGroup>
+</Project>
